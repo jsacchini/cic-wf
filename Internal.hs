@@ -7,7 +7,7 @@ import Data.Function
 import Text.PrettyPrint.HughesPJ
 import Text.ParserCombinators.Parsec.Pos
 
-import qualified Term as T
+import qualified Abstract as A
 
 data Sort 
     = Box
@@ -64,21 +64,21 @@ isFree n (Lam _ t u) = isFree n t || isFree (n+1) u
 isFree n (App t1 t2) = isFree n t1 || isFree n t2
 
 
-sortToSort :: T.Sort -> Sort
-sortToSort T.Box = Box
-sortToSort T.Star = Star
+sortToSort :: A.Sort -> Sort
+sortToSort A.Box = Box
+sortToSort A.Star = Star
 
-interp :: T.Expr -> Term
-interp (T.Ann _ t u) = interp t
-interp (T.TSort _ s) = TSort $ sortToSort s
-interp (T.Pi _ x t1 t2) = Pi x (interp t1) (interp t2)
-interp (T.Bound _ n) = Bound n
-interp (T.Free _ x) = Free x
-interp (T.Lam _ x t u) = Lam x (interp t) (interp u)
-interp (T.App _ t1 t2) = App (interp t1) (interp t2)
+interp :: A.Expr -> Term
+interp (A.Ann _ t u) = interp t
+interp (A.TSort _ s) = TSort $ sortToSort s
+interp (A.Pi _ x t1 t2) = Pi x (interp t1) (interp t2)
+interp (A.Bound _ n) = Bound n
+interp (A.Free _ x) = Free x
+interp (A.Lam _ x t u) = Lam x (interp t) (interp u)
+interp (A.App _ t1 t2) = App (interp t1) (interp t2)
 
 
--- reify_ :: m T.Expr
--- reify_ (TSort s) = return $ T.TSort s
+-- reify_ :: (HasFresh Name s, MonadState s m, Env???) => Term -> m A.Expr
+-- reify_ (TSort s) = return $ A.TSort s
 -- reify_ (Pi x t1 t2) = Pi  
 

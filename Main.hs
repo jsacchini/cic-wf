@@ -1,11 +1,13 @@
 module Main where
 
 import Position
-import Term
+import Abstract
+import TCM
 import qualified Internal as I
 import Parser
 import Typing
 import Environment
+
 
 infer0 :: Expr -> Result I.Term
 infer0 = infer emptyGlobal emptyLocal
@@ -21,6 +23,12 @@ tk :: Expr
 tk = lam "A" (sort  Box) $ lam "B" (sort  Box) $
      lam "x" (bound 1) $ lam "y" (bound 1) (bound 1)
 
+test :: String -> IO ()
+test s = case tempParse s of
+           Left e -> print "Parsing Error: " >> print e
+           Right t -> print $ infer0 t
+
+           
 
 -- g_nat = Ind [] [] Box [("O", [], []), ("S", [("",bound0)], [])]
 -- g_vec = Ind [("A",sort Box)] [("",Free "nat")] Box 

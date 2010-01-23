@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 -- Terms
 
-module Term where
+module Abstract where
 
 import Data.Function
 import Text.PrettyPrint.HughesPJ
@@ -26,7 +26,10 @@ data Expr
     | Free Pos Name
     | Lam Pos Name Expr Expr -- var name, type, body
     | App Pos Expr Expr
-    deriving(Show)
+--    deriving(Show)
+
+instance Show Expr where
+   show = show . tprint 0 []
 
 type Pos = Position
 
@@ -89,7 +92,5 @@ nestedLam l t@(Lam _ x ty u) | isLam u = text " " <> printTyDef l x ty <> nested
 printTyDef :: [Name] -> Name -> Expr -> Doc
 printTyDef l x t = parens $ text (x ++ " : ") <> tprint 0 l t
 
---instance Show Expr where
---    show = show . tprint 0 []
 
 

@@ -9,7 +9,7 @@ import qualified Text.ParserCombinators.Parsec.Token as P
 import Text.ParserCombinators.Parsec.Language(emptyDef)
 import "mtl" Control.Monad.Reader
 
-import Term
+import Abstract
 import Position
 
 tempParse = (runParser $ (runReaderT $ cxtParser parseExpr) []) () ""
@@ -26,10 +26,6 @@ type CxtParser a = CxtParserM (GenParser Char ()) a
 parseExpr = do whiteSpace
                (t,_) <- pExpr
                return t
-
-pAndReset :: CxtParser a -> CxtParser a
-pAndReset p = do x <- p
-                 return x
 
 pExpr :: CxtParser ExprPos
 pExpr = pPi <||> 

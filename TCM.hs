@@ -8,7 +8,6 @@ import "mtl" Control.Monad.Error hiding (lift)
 import qualified "mtl" Control.Monad.Error as EE
 import "mtl" Control.Monad.Identity
 import Internal
-import qualified Term as T
 
 -- Type checking
 
