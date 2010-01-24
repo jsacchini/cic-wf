@@ -3,6 +3,7 @@
 module Conversion where
 
 import "mtl" Control.Monad.Error
+import "mtl" Control.Monad.State
 import Environment
 import Internal
 import TCM
@@ -43,22 +44,28 @@ valterm (VNe v) = neterm v
 
 
 -- norm takes the global environment and a term to normalize
-norm :: GEnv -> Term -> Value
-norm g (TSort s) = VSort s
-norm g (Pi _ t1 t2) = VPi (norm g t1) (norm g t2)
-norm g (Bound n) = vbound n
-norm g (Free x) = case genvGet g x of
-                    Def _ t -> norm g t
-                    Axiom _ -> vfree x
-norm g (Lam _ t u) = VLam (norm g t) (norm g u)
-norm g (App t1 t2) = case norm g t1 of
-                       VLam t v -> norm g $ subst t2 (valterm v)
-                       VNe n -> VNe (NApp n (norm g t2))
-                       otherwise -> error "type error"
+norm :: Term -> Result Value
+norm (TSort s) = return $ VSort s
+norm (Pi _ t1 t2) = do u1 <- norm t1
+                       u2 <- norm t2
+                       return $ VPi u1 u2
+norm (Bound n) = return $ vbound n
+norm (Free x) = do t <- lookupGlobal x 
+                   case t of
+                     Def _ t -> norm t
+                     Axiom _ -> return $ vfree x
+norm (Lam _ t u) = do t1 <- norm t
+                      u1 <- norm u
+                      return $ VLam t1 u1
+norm (App t1 t2) = do u1 <- norm t1
+                      case u1 of 
+                        VLam t v -> norm $ subst t2 (valterm v)
+                        VNe n -> do u2 <- norm t2
+                                    return $ VNe (NApp n u2)
+                        otherwise -> throwError InternalError
 
-norme = norm $ MkGE []
-
-conversion :: GEnv -> Term -> Term -> Result ()
-conversion g t1 t2 = unless (norm g t1 == norm g t2) $
-		     throwError $ NotConvertible t1 t2
+conversion :: Term -> Term -> Result ()
+conversion t1 t2 = do v1 <- norm t1
+                      v2 <- norm t2
+                      unless (v1 == v2) $ throwError $ NotConvertible t1 t2
 

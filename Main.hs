@@ -9,8 +9,8 @@ import Typing
 import Environment
 
 
-infer0 :: Expr -> Result I.Term
-infer0 = infer emptyGlobal emptyLocal
+-- infer0 :: Expr -> Result I.Term
+infer0 = runInitialTCM . infer
 
 lam = Lam noPos
 sort = TSort noPos
