@@ -4,7 +4,6 @@
 
 module Typing where
 
-import "mtl" Control.Monad.Error hiding (lift)
 import qualified "mtl" Control.Monad.Error as EE
 import "mtl" Control.Monad.Identity
 import "mtl" Control.Monad.Reader
@@ -18,6 +17,7 @@ import qualified Abstract as A
 import Parser
 import Conversion
 import TCM
+
 
 
 checkSort :: A.Sort -> Result Term

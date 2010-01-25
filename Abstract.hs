@@ -29,7 +29,7 @@ data Expr
 --    deriving(Show)
 
 instance Show Expr where
-   show = show . tprint 0 []
+    show = show . tprint 0 []
 
 type Pos = Position
 
