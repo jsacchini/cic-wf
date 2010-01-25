@@ -7,6 +7,7 @@ import Data.Function
 import Text.PrettyPrint.HughesPJ
 import Text.ParserCombinators.Parsec.Pos
 
+import Position
 import qualified Abstract as A
 
 data Sort 
@@ -23,7 +24,10 @@ data Term
     | Free Name
     | Lam Name Type Term
     | App Term Term
-    deriving(Eq,Show)
+    deriving(Eq)
+
+instance Show Term where
+    show = show . reify
 
 type Type = Term
 
@@ -64,21 +68,37 @@ isFree n (Lam _ t u) = isFree n t || isFree (n+1) u
 isFree n (App t1 t2) = isFree n t1 || isFree n t2
 
 
-sortToSort :: A.Sort -> Sort
-sortToSort A.Box = Box
-sortToSort A.Star = Star
+class Interp a where
+    interp :: a -> Term
 
-interp :: A.Expr -> Term
-interp (A.Ann _ t u) = interp t
-interp (A.TSort _ s) = TSort $ sortToSort s
-interp (A.Pi _ x t1 t2) = Pi x (interp t1) (interp t2)
-interp (A.Bound _ n) = Bound n
-interp (A.Free _ x) = Free x
-interp (A.Lam _ x t u) = Lam x (interp t) (interp u)
-interp (A.App _ t1 t2) = App (interp t1) (interp t2)
+instance Interp A.Sort where
+    interp A.Box = TSort Box
+    interp A.Star = TSort Star
+
+instance Interp A.Expr where
+    interp (A.Ann _ t u) = interp t
+    interp (A.TSort _ s) = interp s
+    interp (A.Pi _ x t1 t2) = Pi x (interp t1) (interp t2)
+    interp (A.Bound _ n) = Bound n
+    interp (A.Free _ x) = Free x
+    interp (A.Lam _ x t u) = Lam x (interp t) (interp u)
+    interp (A.App _ t1 t2) = App (interp t1) (interp t2)
+
+class Reify a where
+    reify :: a -> A.Expr
+
+instance Reify Sort where
+    reify Box = A.TSort noPos A.Box
+    reify Star = A.TSort noPos A.Star
 
 
--- reify_ :: (HasFresh Name s, MonadState s m, Env???) => Term -> m A.Expr
--- reify_ (TSort s) = return $ A.TSort s
--- reify_ (Pi x t1 t2) = Pi  
+-- TODO: change names of bound variables if they clash (needs environment)
+instance Reify Term where
+    reify (TSort s) = reify s
+    reify (Pi x t1 t2) = A.Pi noPos x (reify t1) (reify t2)
+    reify (Bound n) = A.Bound noPos n
+    reify (Free x) = A.Free noPos x
+    reify (Lam x t u) = A.Lam noPos x (reify t) (reify u)
+    reify (App t1 t2) = A.App noPos (reify t1) (reify t2)
+
 
