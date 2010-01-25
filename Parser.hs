@@ -14,6 +14,8 @@ import Position
 
 tempParse = (runParser $ (runReaderT $ cxtParser parseExpr) []) () ""
 
+tempParse' p = (runParser $ runCxtParser p) () ""
+
 
 type ExprPos = (Expr, SourcePos)
 type TypeDecl = (Name, ExprPos)
@@ -22,6 +24,19 @@ newtype CxtParserM m a = CxtParserM { cxtParser :: ReaderT [TypeDecl] m a }
                          deriving(Monad, MonadReader [TypeDecl], MonadTrans)
 
 type CxtParser a = CxtParserM (GenParser Char ()) a
+
+
+runCxtParser :: CxtParserM m a -> m a
+runCxtParser = flip runReaderT [] . cxtParser
+
+
+parseLet = do whiteSpace
+	      symbol "let"
+	      x <- identifier
+	      symbol ":="
+	      (t, _) <- pExpr
+	      return (x, t)
+			 
 
 parseExpr = do whiteSpace
                (t,_) <- pExpr
@@ -155,9 +170,9 @@ lexer  = P.makeTokenParser
          { P.commentStart    = "(*",
            P.commentEnd      = "*)",
            P.commentLine     = "--",
-           P.reservedNames   = ["forall", "fun", "Type", "Prop"],
-           P.reservedOpNames = ["->", "=>", ","],
-           P.opLetter        = oneOf "->"
+           P.reservedNames   = ["forall", "fun", "Type", "Prop", "let"],
+           P.reservedOpNames = ["->", "=>", ",", ":="],
+           P.opLetter        = oneOf ",->:="
          })
 
 parens :: Parser a -> CxtParser a

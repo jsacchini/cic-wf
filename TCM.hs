@@ -21,6 +21,7 @@ data TCErr
     | NotSort Term
     | InvalidProductRule Term Term
     | IdentifierNotFound Name
+    | ConstantError String
     deriving(Show)
 
 instance Error TCErr where
@@ -39,11 +40,17 @@ newtype TCM m a = TCM { unTCM :: StateT TCState
               MonadReader TCEnv,
               MonadError TCErr)
 
+instance MonadTrans TCM where
+    lift = TCM . lift . lift . lift
+
 -- newtype MonadTCM m a = MonadTCM { rrr :: ErrorT TCErr m a } -- result of type checking and type inference
 --                        deriving(Monad, MonadError TCErr) 
 -- type Result = MonadTCM Identity
 
-type Result = TCM Identity
+type Result = TCM IO
+
+instance MonadIO m => MonadIO (TCM m) where
+    liftIO = lift . liftIO
 
 instance (Show a) => Show (Identity a) where
     show (Identity x) = show x
@@ -58,10 +65,10 @@ initialTCState = emptyEnv
 initialTCEnv :: TCEnv
 initialTCEnv = []
 
-runTCM :: TCState -> TCEnv -> Result a -> Either TCErr a
-runTCM g l (TCM m) = runIdentity $ runErrorT $ runReaderT (mapReaderT (liftM fst) $ runStateT m g) l
+runTCM :: TCState -> TCEnv -> Result a -> IO (Either TCErr a)
+runTCM g l (TCM m) = runErrorT $ runReaderT (mapReaderT (liftM fst) $ runStateT m g) l
 
-runInitialTCM :: Result a -> Either TCErr a
+runInitialTCM :: Result a -> IO (Either TCErr a)
 runInitialTCM = runTCM initialTCState initialTCEnv
 
 lookupGlobal :: Name -> Result Global
