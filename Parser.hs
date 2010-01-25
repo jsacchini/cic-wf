@@ -47,7 +47,7 @@ pExpr = pPi <||>
         pLam <||> 
         do sPos <- lift getPosition
            e <- pExpr1 sPos
-           pRest sPos e
+           local (("",e):) $ pRest sPos e
 
 pExpr1 = pExpr1_
 
