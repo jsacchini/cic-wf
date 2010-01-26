@@ -26,12 +26,12 @@ checkSort A.Box = return (TSort Box)
 
 isSort :: Term -> Result ()
 isSort (TSort _) = return ()
-isSort t = throwError $ NotSort t
+isSort t = typeError $ NotSort t
 
 checkProd :: Term -> Term -> Result Term
 checkProd (TSort s1) (TSort Box) = return $ TSort Box
 checkProd (TSort s1) (TSort Star) = return $ TSort Star
-checkProd t1 t2 = throwError $ InvalidProductRule t1 t2
+checkProd t1 t2 = typeError $ InvalidProductRule t1 t2
 
 -- We assume that in the global environment, types are normalized
 
@@ -62,7 +62,7 @@ infer (A.App _ t1 t2) = do r1 <- infer t1
                            case r1 of
                              Pi _ u1 u2 -> do conversion r2 u1
                                               return $ subst (interp t2) u2
-                             otherwise -> throwError $ NotFunction r2
+                             otherwise -> typeError $ NotFunction r2
 
 mapp :: Term -> [Term] -> Term
 mapp = foldl App

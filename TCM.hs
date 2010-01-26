@@ -1,8 +1,14 @@
 {-# LANGUAGE PackageImports, FlexibleInstances, TypeSynonymInstances,
-  GeneralizedNewtypeDeriving, FlexibleContexts 
+  GeneralizedNewtypeDeriving, FlexibleContexts, MultiParamTypeClasses,
+  DeriveDataTypeable, RankNTypes
   #-}
 
 module TCM where
+
+import Control.Applicative
+import qualified Control.Exception as E
+
+import Data.Typeable
 
 import "mtl" Control.Monad.Error
 import "mtl" Control.Monad.Identity
@@ -11,21 +17,33 @@ import "mtl" Control.Monad.State
 
 import Internal hiding (lift)
 import Environment
+import Parser --- REMOVE
+
+import Text.ParserCombinators.Parsec.Prim
+import Text.ParserCombinators.Parsec
 
 -- Type checking
 
-data TCErr 
-    = InternalError
-    | NotConvertible Term Term
+data TypeError 
+    = NotConvertible Term Term
     | NotFunction Term
     | NotSort Term
     | InvalidProductRule Term Term
     | IdentifierNotFound Name
     | ConstantError String
-    deriving(Show)
+    deriving(Typeable,Show)
+
+data TCErr = TypeError TypeError
+           | IOException
+           | InternalError String
+           deriving(Typeable,Show)
 
 instance Error TCErr where
-    noMsg = InternalError
+    strMsg = InternalError
+
+instance E.Exception TypeError
+
+instance E.Exception TCErr
 
 -- type Result a = Either TCErr a -- result of type checking and type inference
 
@@ -33,31 +51,73 @@ type TCState = GlobalEnv
 type TCEnv = [Type]
 
 newtype TCM m a = TCM { unTCM :: StateT TCState
-                                 (ReaderT TCEnv
-                                  (ErrorT TCErr m)) a }
-    deriving (Monad,
-              MonadState TCState,
-              MonadReader TCEnv,
-              MonadError TCErr)
-
-instance MonadTrans TCM where
-    lift = TCM . lift . lift . lift
-
--- newtype MonadTCM m a = MonadTCM { rrr :: ErrorT TCErr m a } -- result of type checking and type inference
---                        deriving(Monad, MonadError TCErr) 
--- type Result = MonadTCM Identity
+                                 (ReaderT TCEnv m) a }
+    deriving (MonadState TCState,
+              MonadReader TCEnv)
 
 type Result = TCM IO
 
+instance MonadTrans TCM where
+    lift = TCM . lift . lift 
+
+instance MonadIO m => Functor (TCM m) where
+    fmap = liftM
+
+instance MonadIO m => Applicative (TCM m) where
+    pure = return
+    (<*>) = ap
+
+instance MonadError TCErr (TCM IO) where
+  throwError = liftIO . E.throwIO
+  catchError m h = TCM $ StateT $ \s -> ReaderT $ \e ->
+    runReaderT (runStateT (unTCM m) s) e
+    `E.catch` \err -> runReaderT (runStateT (unTCM (h err)) s) e
+
+
+class ( MonadIO tcm
+      , MonadReader TCEnv tcm
+      , MonadState TCState tcm
+      ) => MonadTCM tcm where
+    liftTCM :: Result a -> tcm a
+
+
+runrun2 :: GenParser Char () a 
+        -> String -> Result a
+runrun2 p s = lift $ runrun p s `E.catch` f
+              where f :: ParseError -> IO a
+                    f _ = E.throwIO $ InternalError ""
+
+mapTCMT :: (forall a. m a -> n a) -> TCM m a -> TCM n a
+mapTCMT f = TCM . mapStateT (mapReaderT f) . unTCM
+
+-- pureTCM :: Monad m => (TCState -> TCEnv -> a) -> TCM m a
+-- pureTCM f = TCM $ StateT $ \s -> ReaderT $ \e -> return (f s e, s)
+
+instance MonadIO m => MonadTCM (TCM m) where
+    liftTCM = mapTCMT liftIO
+
+instance (Error err, MonadTCM tcm) => MonadTCM (ErrorT err tcm) where
+    liftTCM = lift . liftTCM
+
+-- We want a special monad implementation of fail.
+instance MonadIO m => Monad (TCM m) where
+    return  = TCM . return
+    m >>= k = TCM $ unTCM m >>= unTCM . k
+    fail    = liftTCM . throwError . InternalError
+
 instance MonadIO m => MonadIO (TCM m) where
-    liftIO = lift . liftIO
+  liftIO m = TCM $ liftIO $ m `E.catch` f
+             where f :: ParseError -> IO a
+                   f _ = E.throwIO $ InternalError ""
 
-instance (Show a) => Show (Identity a) where
-    show (Identity x) = show x
+-- | Running the type checking monad
+runTCM :: Result a -> IO (Either TCErr a)
+runTCM m = (Right <$> runTCM' m) `E.catch` (return . Left)
 
-instance (Show a, Show b) => Show (ErrorT a Identity b) where
-    show (ErrorT (Identity (Left e))) = "Error: " ++ show e
-    show (ErrorT (Identity (Right t))) = show t
+runTCM' :: Monad m => TCM m a -> m a
+runTCM' = flip runReaderT initialTCEnv .
+          flip evalStateT initialTCState .
+          unTCM
 
 initialTCState :: TCState
 initialTCState = emptyEnv
@@ -65,21 +125,15 @@ initialTCState = emptyEnv
 initialTCEnv :: TCEnv
 initialTCEnv = []
 
-runTCM :: TCState -> TCEnv -> Result a -> IO (Either TCErr a)
-runTCM g l (TCM m) = runErrorT $ runReaderT (mapReaderT (liftM fst) $ runStateT m g) l
+typeError :: (MonadTCM tcm) => TypeError -> tcm a
+typeError t = liftTCM $ throwError $ TypeError t
 
-runInitialTCM :: Result a -> IO (Either TCErr a)
-runInitialTCM = runTCM initialTCState initialTCEnv
 
 lookupGlobal :: Name -> Result Global
 lookupGlobal x = do g <- get
                     case lookupEnv x g of
                       Just t -> return t
-                      Nothing -> throwError $ IdentifierNotFound x
+                      Nothing -> typeError $ IdentifierNotFound x
 
--- instance (Show a) => Show (Result a) where
---     show (MonadTCM x) = show x
 
---    show (Res (ErrorT (Identity (Left e)))) = "Error: " ++ show e
---    show (Res (ErrorT (Identity (Right t)))) = show t
 

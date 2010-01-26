@@ -1,6 +1,11 @@
-{-# LANGUAGE PackageImports, FlexibleContexts, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PackageImports, FlexibleContexts, GeneralizedNewtypeDeriving,
+  StandaloneDeriving, DeriveDataTypeable
+ #-}
 module Parser where
 
+import Control.Exception
+import "mtl" Control.Monad.Error
+import Data.Typeable
 import Data.List
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Pos
@@ -14,8 +19,10 @@ import Position
 
 tempParse = (runParser $ (runReaderT $ cxtParser parseExpr) []) () ""
 
-tempParse' p = (runParser $ runCxtParser p) () ""
+-- tempParse' p = (runParser $ runCxtParser p) () ""
 
+deriving instance Typeable ParseError
+instance Exception ParseError
 
 type ExprPos = (Expr, SourcePos)
 type TypeDecl = (Name, ExprPos)
@@ -26,24 +33,33 @@ newtype CxtParserM m a = CxtParserM { cxtParser :: ReaderT [TypeDecl] m a }
 type CxtParser a = CxtParserM (GenParser Char ()) a
 
 
+runrun :: GenParser tok () a -> [tok] -> IO a
+runrun p s = case runParser p () "" s of
+               Left e -> throwIO e
+               Right t -> return t
+
+runrunExpr = fmap fst . runrun pExpr
+
 runCxtParser :: CxtParserM m a -> m a
 runCxtParser = flip runReaderT [] . cxtParser
 
+pExpr :: CharParser () ExprPos
+pExpr = runCxtParser pExpr_
 
 parseLet = do whiteSpace
 	      symbol "let"
 	      x <- identifier
 	      symbol ":="
-	      (t, _) <- pExpr
+	      (t, _) <- pExpr_
 	      return (x, t)
 			 
 
 parseExpr = do whiteSpace
-               (t,_) <- pExpr
+               (t,_) <- pExpr_
                return t
 
-pExpr :: CxtParser ExprPos
-pExpr = pPi <||> 
+pExpr_ :: CxtParser ExprPos
+pExpr_ = pPi <||> 
         pLam <||> 
         do sPos <- lift getPosition
            e <- pExpr1 sPos
@@ -70,13 +86,13 @@ pExpr2_ = pIdent <||> pSort <||> pparenExpr
 
 pparenExpr :: CxtParser ExprPos
 pparenExpr = do symbol "("
-                e <- pExpr
+                e <- pExpr_
                 symbol ")"
                 return e
 
 pRest :: SourcePos -> ExprPos -> CxtParser ExprPos
 pRest sPos e = do symbol "->"
-                  (e2, sEnd) <- pExpr
+                  (e2, sEnd) <- pExpr_
                   return (Pi (mkPos sPos sEnd) "" (fst e) e2, sEnd)
                <||> return e
 
@@ -87,7 +103,7 @@ pPi = do sPos <- lift getPosition
 
 pBuildPi :: SourcePos -> String -> (Position -> Name -> Expr -> Expr -> Expr) -> CxtParser ExprPos
 pBuildPi sPos s f = do symbol s
-                       (u, sEnd) <- pExpr
+                       (u, sEnd) <- pExpr_
                        ((x1,(t1,_)):bs) <- ask
                        return (foldl (\r (x,(e,p)) -> f (mkPos p sEnd) x e r) u ((x1,(t1,sPos)):bs), sEnd)
 
@@ -108,7 +124,7 @@ pBind :: CxtParser ExprPos -> CxtParser ExprPos
 pBind p = do sPos <- lift getPosition
              x <- identifier
              symbol ":"
-             (t,_) <- pExpr
+             (t,_) <- pExpr_
              local ((x,(t,sPos)):) p
 
 pparenBind :: CxtParser ExprPos -> CxtParser ExprPos

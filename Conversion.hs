@@ -62,10 +62,10 @@ norm (App t1 t2) = do u1 <- norm t1
                         VLam t v -> norm $ subst t2 (valterm v)
                         VNe n -> do u2 <- norm t2
                                     return $ VNe (NApp n u2)
-                        otherwise -> throwError InternalError
+                        otherwise -> throwError $ InternalError "algo"
 
 conversion :: Term -> Term -> Result ()
 conversion t1 t2 = do v1 <- norm t1
                       v2 <- norm t2
-                      unless (v1 == v2) $ throwError $ NotConvertible t1 t2
+                      unless (v1 == v2) $ typeError $ NotConvertible t1 t2
 

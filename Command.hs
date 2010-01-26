@@ -41,7 +41,7 @@ processDef x Nothing u = do r <- infer u
 
 
 pExpr :: CharParser () Expr
-pExpr = fmap fst $ P.runCxtParser P.pExpr
+pExpr = fmap fst $ P.pExpr
                     
 pCommand :: CharParser () Command
 pCommand = pDef
