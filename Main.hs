@@ -57,8 +57,14 @@ parseAndExec :: String -> Result ()
 parseAndExec s = do c <- runrun2 pCommand s
                     processCommand c
 
+rvp :: Result () -> IM ()
+rvp tc = liftTCM tt
+         where tt = tc `catchError` \e -> liftIO (putStrLn (show e))
+            
+            
+
 -- readEvalPrint :: Result ()
-readEvalPrint :: IM ()
+-- readEvalPrint :: IM ()
 readEvalPrint = loop
     where loop :: IM ()
           loop =
@@ -71,9 +77,10 @@ readEvalPrint = loop
                                         lift $ outputStr $ showEnv (E.listEnv g)
                                         readEvalPrint
                      Just inp -> do -- liftIO $ addHistory inp
-                                    liftTCM $ parseAndExec inp
+                                    -- liftTCM $ parseAndExec inp
+                                    rvp $ parseAndExec inp
                                     readEvalPrint
-                `catchError` \e -> (lift $ outputStr (show e)) >> loop
+--                `catchError` \e -> ( lift $ outputStr (show e)) >> loop
                 where showEnv :: [(Name, E.Global)] -> String
                       showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
                       showG (x, E.Def u t) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
