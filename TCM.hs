@@ -17,7 +17,7 @@ import "mtl" Control.Monad.State
 
 import Internal hiding (lift)
 import Environment
-import Parser --- REMOVE
+import Parser --- REMOVE ??
 
 import Text.ParserCombinators.Parsec.Prim
 import Text.ParserCombinators.Parsec
@@ -34,7 +34,8 @@ data TypeError
     deriving(Typeable,Show)
 
 data TCErr = TypeError TypeError
-           | IOException
+           | IOException E.IOException
+           | ParsingError ParseError
            | InternalError String
            deriving(Typeable,Show)
 
@@ -81,11 +82,11 @@ class ( MonadIO tcm
     liftTCM :: Result a -> tcm a
 
 
-runrun2 :: GenParser Char () a 
-        -> String -> Result a
-runrun2 p s = lift $ runrun p s `E.catch` f
-              where f :: ParseError -> IO a
-                    f _ = E.throwIO $ InternalError ""
+-- runrun2 :: GenParser Char () a 
+--         -> String -> Result a
+-- runrun2 p s = lift $ runrun p s `E.catch` f
+--               where f :: ParseError -> IO a
+--                     f _ = E.throwIO $ InternalError ""
 
 mapTCMT :: (forall a. m a -> n a) -> TCM m a -> TCM n a
 mapTCMT f = TCM . mapStateT (mapReaderT f) . unTCM
@@ -106,9 +107,11 @@ instance MonadIO m => Monad (TCM m) where
     fail    = liftTCM . throwError . InternalError
 
 instance MonadIO m => MonadIO (TCM m) where
-  liftIO m = TCM $ liftIO $ m `E.catch` f
-             where f :: ParseError -> IO a
-                   f _ = E.throwIO $ InternalError ""
+  liftIO m = TCM $ liftIO $ m `E.catch` catchP `E.catch` catchIO
+             where catchP :: ParseError -> IO a
+                   catchP = E.throwIO . ParsingError
+                   catchIO :: E.IOException -> IO a
+                   catchIO = E.throwIO . IOException
 
 -- | Running the type checking monad
 runTCM :: Result a -> IO (Either TCErr a)

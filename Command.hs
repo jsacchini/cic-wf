@@ -13,10 +13,10 @@ import Text.ParserCombinators.Parsec.Language(emptyDef)
 
 import Environment
 import Abstract
-import qualified Parser as P
-import qualified Internal as I
-import TCM
-import Typing
+-- import qualified Parser as P
+-- import qualified Internal as I
+-- import TCM
+-- import Typing
 
 
 data Command = Definition Name (Maybe Expr) Expr
@@ -24,7 +24,7 @@ data Command = Definition Name (Maybe Expr) Expr
              | Check Expr
              | Load FilePath
 
-
+{-
 inferCatch :: Result () -> Result ()
 inferCatch p = p `catchError` \err -> liftIO $ putStrLn $ "Typing Error:\n" ++ show err
 
@@ -77,3 +77,4 @@ reservedOp = Tok.reservedOp lexer
 symbol     = Tok.symbol lexer
 identifier = Tok.identifier lexer
 reserved   = Tok.reserved lexer
+-}

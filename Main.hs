@@ -21,7 +21,7 @@ import Parser
 import Typing
 import qualified Environment as E
 import Command
-
+import Environment
 
 -- | Interaction monad.
 
@@ -40,8 +40,8 @@ readline = lift . getInputLine
 runIM :: IM a -> Result a
 runIM = mapTCMT (runInputT defaultSettings)
 
-runCommParser :: String -> Either ParseError Command
-runCommParser = runParser pCommand () "<interactive>"
+-- runCommParser :: String -> Either ParseError Command
+-- runCommParser = runParser parseFile () "<interactive>"
 
 -- parseAndExec :: String -> Result ()
 -- parseAndExec s = case runCommParser s of
@@ -50,11 +50,22 @@ runCommParser = runParser pCommand () "<interactive>"
 
 -- runrun3 :: String -> IO (Either TCErr ())
 -- runrun3 s = (runTCM $ parseAndExec s) --`E.catch` (\x -> putStrLn (show x))
-runrun3 :: String -> Result Command
-runrun3 = liftIO . runrun pCommand
+-- runrun3 :: String -> Result Command
+-- runrun3 = liftIO . runrun pCommand
+
+processCommand :: Command -> Result ()
+processCommand (Definition x t u) = processDef x t u
+
+processDef :: Name -> Maybe Expr -> Expr -> Result ()
+processDef x (Just t) u = do check u (I.interp t)
+                             g <- get
+                             put (extendEnv x (Def (I.interp u) (I.interp t)) g)
+processDef x Nothing u = do r <- infer u
+                            g <- get
+                            put (extendEnv x (Def (I.interp u) r) g)
 
 parseAndExec :: String -> Result ()
-parseAndExec s = do c <- runrun2 pCommand s
+parseAndExec s = do c <-liftIO $ runParserIO parseCommand s
                     processCommand c
 
 rvp :: Result () -> IM ()
