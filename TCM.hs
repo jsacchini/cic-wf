@@ -36,6 +36,7 @@ data TypeError
 data TCErr = TypeError TypeError
            | IOException E.IOException
            | ParsingError ParseError
+           | AlreadyDefined String
            | InternalError String
            deriving(Typeable,Show)
 
@@ -129,8 +130,18 @@ initialTCEnv :: TCEnv
 initialTCEnv = []
 
 typeError :: (MonadTCM tcm) => TypeError -> tcm a
-typeError t = liftTCM $ throwError $ TypeError t
+typeError = liftTCM . throwError . TypeError
 
+
+addGlobal :: (MonadTCM tcm) => Name -> Type -> Term -> tcm ()
+addGlobal x t u = do g <- get
+                     liftTCM $ when (bindedEnv x g) (throwError $ AlreadyDefined x)
+                     put (extendEnv x (Def t u) g)
+
+addAxiom :: (MonadTCM tcm) => Name -> Type -> tcm ()
+addAxiom x t = do g <- get
+                  liftTCM $ when (bindedEnv x g) (throwError $ AlreadyDefined x)
+                  put (extendEnv x (Axiom t) g)
 
 lookupGlobal :: Name -> Result Global
 lookupGlobal x = do g <- get

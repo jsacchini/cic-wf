@@ -18,9 +18,9 @@ class Env v e | e -> v where
     listEnv :: e -> [(Name, v)]
 
 data Global
-    = Def Term Term -- body, type
+    = Def Term Type -- body, type
 --    | Ind NamedCxt NamedCxt Sort [ConstrType]
-    | Axiom Term -- type
+    | Axiom Type -- type
 --    deriving(Show)
 
 -- type ConstrType = (Name, NamedCxt, [Term])

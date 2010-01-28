@@ -28,6 +28,12 @@ data Expr
     | App Pos Expr Expr
 --    deriving(Show)
 
+
+data Command = Definition Name (Maybe Expr) Expr
+             | Axiom Name Expr
+             | Load FilePath
+
+
 instance Show Expr where
     show = show . tprint 0 []
 

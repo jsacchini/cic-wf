@@ -16,7 +16,6 @@ import "mtl" Control.Monad.Reader
 
 import Abstract
 import Position
-import Command
 
 deriving instance Typeable ParseError
 instance Exception ParseError
@@ -33,30 +32,44 @@ type CxtParser a = CxtParserM (GenParser Char ()) a
 runCxtParser :: CxtParserM m a -> m a
 runCxtParser = flip runReaderT [] . cxtParser
 
-runParserIO :: GenParser tok () a -> [tok] -> IO a
-runParserIO p s = case runParser p () "" s of
-                    Left e -> throwIO e
-                    Right t -> return t
+runParserIO :: FilePath -> GenParser tok () a -> [tok] -> IO a
+runParserIO f p s = case runParser p () f s of
+                      Left e -> throwIO e
+                      Right t -> return t
 
 parseFile :: CharParser () [Command]
-parseFile = lwhiteSpace >> many parseCommand
+parseFile = fmap reverse $ whiteSpace >> many parseCommand
                
 
 parseCommand :: CharParser () Command
-parseCommand = parseLet
+parseCommand = whiteSpace >> (parseLet <|> parseLoad <|> parseAxiom)
+
+parseAxiom = do reserved "axiom"
+                x <- identifier
+                symbol ":"
+                t <- parseExpr
+                symbol "."
+                return $ Axiom x t
+
+parseLoad :: CharParser () Command
+parseLoad = do reserved "load"
+               symbol "\""
+               xs <- many $ alphaNum <|> oneOf "."
+               symbol "\""
+               symbol "."
+               return $ Load xs
 
 parseLet :: CharParser () Command
-parseLet = do lwhiteSpace
-              lreserved "let"
-              x <- lidentifier
+parseLet = do reserved "let"
+              x <- identifier
               t <- pMaybeExpr
-              lsymbol ":="
+              symbol ":="
               e <- parseExpr
-              lsymbol "."
+              symbol "."
               return $ Definition x t e
 
 pMaybeExpr :: CharParser () (Maybe Expr)
-pMaybeExpr = do lreservedOp ":"
+pMaybeExpr = do reservedOp ":"
                 e <- parseExpr
                 return $ Just e
              <|> return Nothing
@@ -87,31 +100,31 @@ pExpr2 :: CxtParser ExprPos
 pExpr2 = pIdent <||> pSort <||> pparenExpr
 
 pparenExpr :: CxtParser ExprPos
-pparenExpr = do symbol "("
+pparenExpr = do liftSymbol "("
                 e <- pExpr_
-                symbol ")"
+                liftSymbol ")"
                 return e
 
 pRest :: SourcePos -> ExprPos -> CxtParser ExprPos
-pRest sPos e = do reservedOp "->"
+pRest sPos e = do liftReservedOp "->"
                   (e2, sEnd) <- pExpr_
                   return (Pi (mkPos sPos sEnd) "" (fst e) e2, sEnd)
                <||> return e
 
 pPi :: CxtParser ExprPos
 pPi = do sPos <- lift getPosition
-         reserved "forall"
+         liftReserved "forall"
          pBinds (pBuildPi sPos "," Pi)
 
 pBuildPi :: SourcePos -> String -> (Position -> Name -> Expr -> Expr -> Expr) -> CxtParser ExprPos
-pBuildPi sPos s f = do reserved s
+pBuildPi sPos s f = do liftReservedOp s
                        (u, sEnd) <- pExpr_
                        ((x1,(t1,_)):bs) <- ask
                        return (foldl (\r (x,(e,p)) -> f (mkPos p sEnd) x e r) u ((x1,(t1,sPos)):bs), sEnd)
 
 pLam :: CxtParser ExprPos
 pLam = do sPos <- lift getPosition
-          reserved "fun"
+          liftReserved "fun"
           pBinds (pBuildPi sPos "=>" Lam)
 
 liftedMany1 :: CxtParser a -> CxtParser [a]
@@ -124,15 +137,15 @@ pBinds p = pBind p <||> pparenBind p
 
 pBind :: CxtParser ExprPos -> CxtParser ExprPos
 pBind p = do sPos <- lift getPosition
-             x <- identifier
-             symbol ":"
+             x <- liftIdentifier
+             liftSymbol ":"
              (t,_) <- pExpr_
              local ((x,(t,sPos)):) p
 
 pparenBind :: CxtParser ExprPos -> CxtParser ExprPos
 pparenBind p = do sPos <- lift getPosition
-                  symbol "("
-                  pBind (symbol ")" >> pparenBind p)
+                  liftSymbol "("
+                  pBind (liftSymbol ")" >> pparenBind p)
                <||> p   
 
 
@@ -142,14 +155,14 @@ pparenBind p = do sPos <- lift getPosition
 pSort :: CxtParser ExprPos
 pSort = foldl1 (<||>) $ map pReserved [("Type",Box), ("Prop",Star)]
         where pReserved (s,r) = do sPos <- lift getPosition
-                                   symbol s
+                                   liftSymbol s
                                    let sEnd = updatePosString sPos s in
                                     return (TSort (mkPos sPos sEnd) r, sEnd)
 
 
 pIdent :: CxtParser ExprPos
 pIdent = do sPos <- lift getPosition
-            x <- identifier
+            x <- liftIdentifier
             st <- ask
             let sEnd = updatePosString sPos x in
              case elemIndex x (map fst st) of
@@ -196,16 +209,13 @@ lexer  = P.makeTokenParser
            P.opLetter        = oneOf ",->:=."
          })
 
-whiteSpace :: CxtParser ()
-whiteSpace      = lift $ P.whiteSpace lexer
-symbol          = lift . P.symbol lexer
-identifier      = lift $ P.identifier lexer
-reserved        = lift . P.reserved lexer
-reservedOp      = lift . P.reservedOp lexer
+liftSymbol          = lift . P.symbol lexer
+liftIdentifier      = lift $ P.identifier lexer
+liftReserved        = lift . P.reserved lexer
+liftReservedOp      = lift . P.reservedOp lexer
 
-lparens          = P.parens lexer
-lwhiteSpace      = P.whiteSpace lexer
-lsymbol          = P.symbol lexer
-lidentifier      = P.identifier lexer
-lreserved        = P.reserved lexer
-lreservedOp      = P.reservedOp lexer
+whiteSpace      = P.whiteSpace lexer
+symbol          = P.symbol lexer
+identifier      = P.identifier lexer
+reserved        = P.reserved lexer
+reservedOp      = P.reservedOp lexer
