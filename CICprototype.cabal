@@ -1,0 +1,13 @@
+Name:                CICprototype
+Version:             0.1
+Description:         
+License:             GPL
+License-file:        LICENSE
+Author:              yo
+Maintainer:          yo
+Build-Type:          Simple
+Cabal-Version:       >=1.2
+
+Executable cic
+  Main-is:           Main.hs
+  Build-Depends:     base -any, parsec >= 2, pretty -any, haskeline -any, mtl -any
