@@ -18,6 +18,7 @@ import "mtl" Control.Monad.State
 import Internal hiding (lift)
 import Environment
 import Parser --- REMOVE ??
+import MonadUndo
 
 import Text.ParserCombinators.Parsec.Prim
 import Text.ParserCombinators.Parsec
@@ -52,9 +53,10 @@ instance E.Exception TCErr
 type TCState = GlobalEnv
 type TCEnv = [Type]
 
-newtype TCM m a = TCM { unTCM :: StateT TCState
+newtype TCM m a = TCM { unTCM :: UndoT TCState
                                  (ReaderT TCEnv m) a }
     deriving (MonadState TCState,
+              MonadUndo TCState,
               MonadReader TCEnv)
 
 type Result = TCM IO
@@ -71,9 +73,9 @@ instance MonadIO m => Applicative (TCM m) where
 
 instance MonadError TCErr (TCM IO) where
   throwError = liftIO . E.throwIO
-  catchError m h = TCM $ StateT $ \s -> ReaderT $ \e ->
-    runReaderT (runStateT (unTCM m) s) e
-    `E.catch` \err -> runReaderT (runStateT (unTCM (h err)) s) e
+  catchError m h = TCM $ UndoT $ StateT $ \s -> ReaderT $ \e ->
+    runReaderT (runUndoT (unTCM m) (current s)) e
+    `E.catch` \err -> runReaderT (runUndoT (unTCM (h err)) (current s)) e
 
 
 class ( MonadIO tcm
@@ -89,8 +91,8 @@ class ( MonadIO tcm
 --               where f :: ParseError -> IO a
 --                     f _ = E.throwIO $ InternalError ""
 
-mapTCMT :: (forall a. m a -> n a) -> TCM m a -> TCM n a
-mapTCMT f = TCM . mapStateT (mapReaderT f) . unTCM
+mapTCMT :: (Monad m, Monad n) => (forall a. m a -> n a) -> TCM m a -> TCM n a
+mapTCMT f = TCM . mapUndoT (mapReaderT f) . unTCM
 
 -- pureTCM :: Monad m => (TCState -> TCEnv -> a) -> TCM m a
 -- pureTCM f = TCM $ StateT $ \s -> ReaderT $ \e -> return (f s e, s)
@@ -120,7 +122,7 @@ runTCM m = (Right <$> runTCM' m) `E.catch` (return . Left)
 
 runTCM' :: Monad m => TCM m a -> m a
 runTCM' = flip runReaderT initialTCEnv .
-          flip evalStateT initialTCState .
+          flip evalUndoT initialTCState .
           unTCM
 
 initialTCState :: TCState

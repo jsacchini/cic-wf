@@ -17,6 +17,7 @@ import System.IO
 
 import Position
 import Abstract
+import MonadUndo
 import TCM
 import qualified Internal as I
 import Parser
@@ -48,6 +49,8 @@ data TLCommand = LoadFile String
                | Check String
                | Eval String
                | Print
+               | Undo
+               | Redo
                | Quit
                | Help
                | NoOp
@@ -62,6 +65,8 @@ commands
          Cmd [":load"]        "<file>"  LoadFile       "load program from file",
          Cmd [":eval"]        "<expr>"  Eval           "evaluates an expression to normal form",
          Cmd [":print"]       ""        (const Print)  "print all global definitions",
+         Cmd [":undo"]        ""        (const Undo)   "undo last action",
+         Cmd [":redo"]        ""        (const Redo)   "redo last action",
          Cmd [":quit"]        ""        (const Quit)   "exit interpreter",
          Cmd [":help",":?"]   ""        (const Help)   "display this list of commands" ]
 
@@ -112,6 +117,10 @@ processTLCommand Print = do g <- get
                       showG (x, E.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
                       showG (x, E.Axiom t) = "axiom " ++ x ++ " : " ++ show t
 processTLCommand (LoadFile xs) = catchIM $ processLoad (takeWhile (not . isSpace) xs)
+processTLCommand Undo = do b <- undo
+                           lift $ if b then outputStrLn "si" else outputStrLn "no"
+processTLCommand Redo = do b <- redo
+                           lift $ if b then outputStrLn "si" else outputStrLn "no"
 processTLCommand NoOp = return ()
 processTLCommand Quit = return ()
 processTLCommand (NoCommand xs) = catchIM $ do c <- liftIO $ runParserIO "<interactive>" (parseEOF parseCommand) xs
