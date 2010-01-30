@@ -22,6 +22,7 @@ import qualified Internal as I
 import Parser
 import Typing
 import qualified Environment as E
+import Conversion
 
 -- | Interaction monad.
 
@@ -40,9 +41,12 @@ readline = lift . getInputLine
 runIM :: IM a -> Result a
 runIM = mapTCMT (runInputT defaultSettings)
 
+catchIM :: Result () -> IM ()
+catchIM = liftTCM . (`catchError` \e -> liftIO $ print e)
 
 data TLCommand = LoadFile String
                | Check String
+               | Eval String
                | Print
                | Quit
                | Help
@@ -56,6 +60,7 @@ commands :: [InteractiveCommand]
 commands
     =  [ Cmd [":type"]        "<expr>"  Check          "print type of expression",
          Cmd [":load"]        "<file>"  LoadFile       "load program from file",
+         Cmd [":eval"]        "<expr>"  Eval           "evaluates an expression to normal form",
          Cmd [":print"]       ""        (const Print)  "print all global definitions",
          Cmd [":quit"]        ""        (const Quit)   "exit interpreter",
          Cmd [":help",":?"]   ""        (const Help)   "display this list of commands" ]
@@ -84,28 +89,34 @@ interactiveLoop = do xs <- readline "> "
                        Nothing -> return ()
                        Just xs -> do c <- interpretCommand xs
                                      processTLCommand c
-                                     interactiveLoop
-
-parseEOF p = do e <- p
-                eof
-                return e
+                                     case c of
+                                       Quit -> return ()
+                                       _ -> interactiveLoop
 
 parseExprEOF = do e <- parseExpr
                   eof
                   return e
 
 processTLCommand :: TLCommand -> IM ()
-processTLCommand (Check s) = liftIM $ do e <- liftIO $ runParserIO "<interactive>" parseExprEOF s
-                                         infer e >>= lift . print
+processTLCommand (Check s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
+                                          infer e >>= lift . print
+-- processTLCommand (Eval s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
+--                                          _ <- infer e
+--                                          v <- norm (I.interp e)
+--                                          lift $ print (valterm v)
 processTLCommand Help = lift $ outputStrLn "help coming"
 processTLCommand Print = do g <- get
-                            lift $ outputStr $ showEnv (E.listEnv g)
+                            lift $ outputStr $ showEnv $ reverse $ E.listEnv g
                 where showEnv :: [(Name, E.Global)] -> String
                       showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
-                      showG (x, E.Def u t) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
+                      showG (x, E.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
                       showG (x, E.Axiom t) = "axiom " ++ x ++ " : " ++ show t
-processTLCommand (LoadFile xs) = liftIM $ processLoad (takeWhile (not . isSpace) xs)
+processTLCommand (LoadFile xs) = catchIM $ processLoad (takeWhile (not . isSpace) xs)
 processTLCommand NoOp = return ()
+processTLCommand Quit = return ()
+processTLCommand (NoCommand xs) = catchIM $ do c <- liftIO $ runParserIO "<interactive>" (parseEOF parseCommand) xs
+                                               processCommand c
+
 
 processCommand :: Command -> Result ()
 processCommand (Definition x t u) = processDef x t u
@@ -126,16 +137,8 @@ processAxiom x t = do r <- infer t
 
 processDef :: Name -> Maybe Expr -> Expr -> Result ()
 processDef x (Just t) u = do check u (I.interp t)
-                             addGlobal x (I.interp u) (I.interp t)
-processDef x Nothing u = infer u >>= addGlobal x (I.interp u)
+                             addGlobal x (I.interp t) (I.interp u)
+processDef x Nothing u = do t <- infer u
+                            addGlobal x t (I.interp u)
 
-parseAndExec' :: FilePath -> String -> Result ()
-parseAndExec' f s = do c <-liftIO $ runParserIO f parseCommand s
-                       processCommand c
-
-parseAndExec :: String -> Result ()
-parseAndExec = parseAndExec' "<interactive>"
-
-liftIM :: Result () -> IM ()
-liftIM = liftTCM . (`catchError` \e -> liftIO $ print e)
 

@@ -49,7 +49,7 @@ infer (A.Bound _ n) = do l <- ask
                          return $ I.lift (n+1) 0 $ l !! n
 infer (A.Free _ x) = do t <- lookupGlobal x 
                         case t of
-                          Def _ t -> return t
+                          Def t _ -> return t
                           Axiom t -> return t
 infer (A.Lam _ x t u) = do r1 <- infer t
                            isSort r1

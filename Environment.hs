@@ -18,14 +18,14 @@ class Env v e | e -> v where
     listEnv :: e -> [(Name, v)]
 
 data Global
-    = Def Term Type -- body, type
+    = Def Type Term -- body, type
 --    | Ind NamedCxt NamedCxt Sort [ConstrType]
     | Axiom Type -- type
 --    deriving(Show)
 
 -- type ConstrType = (Name, NamedCxt, [Term])
 
-type NamedCxt = [(Name, Term)]
+-- type NamedCxt = [(Name, Term)]
 
 -- Inductive I Gamma_I : Gamma_a . s := C_i Gamma_i. I ts_i
 -- is represented as
@@ -47,33 +47,4 @@ instance Env a (EnvT a) where
     lookupEnv n = lookup n . unEnvT
     listEnv = unEnvT
 
-newtype GEnv = MkGE [(Name, Global)] -- id, type, body
-
-emptyGlobal = MkGE []
-
-genvAdd :: GEnv -> Name -> Global -> GEnv
-genvAdd (MkGE es) n d = MkGE $ (n,d):es
-
-genvGet :: GEnv -> Name -> Global
-genvGet (MkGE []) x = error $ x ++ ": not found"
-genvGet (MkGE ((n,d):es)) x = if x == n then d else genvGet (MkGE es) x
-
--- lookupGlobal :: Name -> GEnv -> Maybe Global
--- lookupGlobal x (MkGE es) = lookup x es
-
--- lookup_ind :: Name -> GEnv -> Maybe (NamedCxt, NamedCxt, Sort, [ConstrType])
--- lookup_ind x g = case lookup_global x g of
---                    Just (Ind gs as s cs) -> return (gs,as,s,cs)
---                    otherwise -> Nothing
-
--- lookup_constr :: Name -> GEnv -> Maybe (Name, NamedCxt, NamedCxt, Sort, NamedCxt, [Term])
--- lookup_constr x (MkGE es) = lookup x (concat $ map mapI $ filter (isInd . snd) es)
---                             where mapI (n, Ind gs as s cs) = map (\(a,b,c) -> (a,(n,gs,as,s,b,c))) cs
-
-
--- Local environments (for bound variables)
-
-type LEnv = [(Name, Term)] -- types for bound variables
-
-emptyLocal = []
 

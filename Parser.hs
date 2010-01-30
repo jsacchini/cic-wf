@@ -37,8 +37,12 @@ runParserIO f p s = case runParser p () f s of
                       Left e -> throwIO e
                       Right t -> return t
 
+parseEOF p = do e <- p
+                eof
+                return e
+
 parseFile :: CharParser () [Command]
-parseFile = fmap reverse $ whiteSpace >> many parseCommand
+parseFile = whiteSpace >> many parseCommand
                
 
 parseCommand :: CharParser () Command
