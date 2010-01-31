@@ -54,14 +54,8 @@ parensIf :: Bool -> Doc -> Doc
 parensIf True = parens
 parensIf False = id
 
--- class ShowBound a where
---     showbound :: [Name] -> a -> String
-
 showboundInt :: [Name] -> Int -> String
 showboundInt = (!!)
-
--- instance ShowBound Int where
---     showbound = showboundInt
 
 instance Show Sort where
     show Star = "Prop"
@@ -75,7 +69,6 @@ isLam :: Expr -> Bool
 isLam (Lam _ _ _ _) = True
 isLam _ = False
 
--- tprint :: ShowBound a => Int -> [Name] -> Expr a -> Doc
 tprint :: Int -> [Name] -> Expr -> Doc
 tprint p l (Ann _ t u) = parensIf (p > 1) $ tprint 2 l t <> text " :: " <> tprint 0 l u
 tprint p l (TSort _ s) = text $ show s
@@ -97,6 +90,3 @@ nestedLam l t@(Lam _ x ty u) | isLam u = text " " <> printTyDef l x ty <> nested
 
 printTyDef :: [Name] -> Name -> Expr -> Doc
 printTyDef l x t = parens $ text (x ++ " : ") <> tprint 0 l t
-
-
-

@@ -56,7 +56,7 @@ parseAxiom = do reserved "axiom"
                 return $ Axiom x t
 
 parseLoad :: CharParser () Command
-parseLoad = do reserved "load"
+parseLoad = do reserved "import"
                symbol "\""
                xs <- many $ alphaNum <|> oneOf "."
                symbol "\""
@@ -174,12 +174,16 @@ pIdent = do sPos <- lift getPosition
                Nothing -> return (Free (mkPos sPos sEnd) x, sEnd)
 {-----
 
-decl ::= "load" filename "."
+decl ::= "import" filename "."
        | "let" ident [: expr] ":=" expr "."
 
 expr ::= "forall" bind "," expr
        | "fun" bind "=>" expr
+       | "match" expr "as" ident in ... "return" expr "with" branch* "end"
+       | "fix" ident ":" expr ":=" expr
        | expr1 rest
+
+branch ::= "|" ident+ "=>" expr
 
 rest ::= "->" expr
        | empty
@@ -199,6 +203,24 @@ parenbind ::= "(" var ":" expr ")"
 dec ::= "Definition" var parenbind1 ":" expr ":=" expr "."
       | "Check" expr "."
 
+ind ::= "data" ident bind ":" indsort ":=" constr
+
+constr ::= "|" ident ":" constrtype
+
+constrtype ::= "forall" bind "," constrtype1
+             | constrtype1
+
+constrtype1 ::= ident expr*
+              | expr -> constrtype1
+             
+types for inductive types
+
+indsort ::= "forall" bind "," indsort1
+          | indsort1
+
+indsort1 ::= sort
+           | expr -> indsort1
+
 -----}
 
 
@@ -208,7 +230,7 @@ lexer  = P.makeTokenParser
          { P.commentStart    = "(*",
            P.commentEnd      = "*)",
            P.commentLine     = "--",
-           P.reservedNames   = ["forall", "fun", "Type", "Prop", "let"],
+           P.reservedNames   = ["forall", "fun", "Type", "Prop", "let", "import"],
            P.reservedOpNames = ["->", "=>", ",", ":=", ":", "."],
            P.opLetter        = oneOf ",->:=."
          })

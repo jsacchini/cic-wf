@@ -48,8 +48,6 @@ instance E.Exception TypeError
 
 instance E.Exception TCErr
 
--- type Result a = Either TCErr a -- result of type checking and type inference
-
 type TCState = GlobalEnv
 type TCEnv = [Type]
 
@@ -84,12 +82,6 @@ class ( MonadIO tcm
       ) => MonadTCM tcm where
     liftTCM :: Result a -> tcm a
 
-
--- runrun2 :: GenParser Char () a 
---         -> String -> Result a
--- runrun2 p s = lift $ runrun p s `E.catch` f
---               where f :: ParseError -> IO a
---                     f _ = E.throwIO $ InternalError ""
 
 mapTCMT :: (Monad m, Monad n) => (forall a. m a -> n a) -> TCM m a -> TCM n a
 mapTCMT f = TCM . mapUndoT (mapReaderT f) . unTCM

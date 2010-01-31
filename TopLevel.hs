@@ -98,10 +98,6 @@ interactiveLoop = do xs <- readline "> "
                                        Quit -> return ()
                                        _ -> interactiveLoop
 
-parseExprEOF = do e <- parseExpr
-                  eof
-                  return e
-
 processTLCommand :: TLCommand -> IM ()
 processTLCommand (Check s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
                                           infer e >>= lift . print
