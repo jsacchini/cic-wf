@@ -1,0 +1,7 @@
+import "prelude.cic".
+
+let K : forall (X:Type)(Y:Type), X -> Y -> X := fun (X:Type)(Y:Type)(x:X)(y:Y) => x.
+
+let K2 := fun (X:Type)(Y:Type)(x:X)(y:Y) => K Y X y x.
+
+let A := Type.
