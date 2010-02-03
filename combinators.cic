@@ -5,3 +5,7 @@ let K : forall (X:Type)(Y:Type), X -> Y -> X := fun (X:Type)(Y:Type)(x:X)(y:Y) =
 let K2 := fun (X:Type)(Y:Type)(x:X)(y:Y) => K Y X y x.
 
 let A := Type.
+
+axiom F : (Type -> Type) -> Type.
+axiom X : Type -> Type.
+axiom G : forall Z : Type, F (fun X : Type => Z).
