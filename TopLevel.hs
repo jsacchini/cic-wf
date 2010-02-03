@@ -40,7 +40,10 @@ readline :: String -> IM (Maybe String)
 readline = lift . getInputLine
 
 runIM :: IM a -> Result a
-runIM = mapTCMT (runInputT defaultSettings)
+runIM = mapTCMT (runInputT settings)
+        where settings = defSettings { complete = completion }
+              defSettings :: Settings IO
+              defSettings = defaultSettings
 
 catchIM :: Result () -> IM ()
 catchIM = liftTCM . (`catchError` \e -> liftIO $ print e)
@@ -58,6 +61,8 @@ data TLCommand = LoadFile String
                deriving(Show)
 
 data InteractiveCommand = Cmd [String] String (String -> TLCommand) String
+
+cmdName (Cmd xs _ _ _) = xs
 
 commands :: [InteractiveCommand]
 commands
@@ -147,3 +152,25 @@ processDef x Nothing u = do t <- infer u
                             addGlobal x t (I.interp u)
 
 
+--------- Completion
+completion :: CompletionFunc IO
+completion line@(left,_) = case firstWord of
+    ':':cmd     | null rest     -> completeCmd line
+                | otherwise     -> completeFilename line
+    xs          | null rest     -> completeDecl line
+                | otherwise     -> completeFilename line
+  where
+    (firstWord,rest) = break isSpace $ dropWhile isSpace $ reverse left
+
+completeCmd :: (String, String) -> IO (String, [Completion])
+completeCmd = wrapCompleter " " $ \w -> do
+                return (filter (w `isPrefixOf`) (concat (map cmdName commands)))
+
+completeDecl :: (String, String) -> IO (String, [Completion])
+completeDecl = wrapCompleter " " $ \w -> do
+                 return (filter (w `isPrefixOf`) ["let", "axiom"])
+
+
+wrapCompleter :: String -> (String -> IO [String]) -> CompletionFunc IO
+wrapCompleter breakChars fun = completeWord Nothing breakChars
+    $ fmap (map simpleCompletion) . fmap sort . fun
