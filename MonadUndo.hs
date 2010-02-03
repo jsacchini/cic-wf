@@ -4,7 +4,7 @@
 module MonadUndo (
         UndoT(..), evalUndoT, execUndoT, runUndoT, mapUndoT,
         Undo, evalUndo, execUndo,
-        MonadUndo, undo, redo, history, checkpoint,
+        MonadUndo, undo, redo, history, checkpoint, noUndo, oneStep,
         History, current, undos, redos,
         module Control.Monad.State
     ) where
@@ -25,6 +25,8 @@ class (MonadState s m) => MonadUndo s m | m -> s where
     redo :: m Bool -- redo the last undo
     history :: m (History s) -- gets the current undo/redo history
     checkpoint :: m () -- kill the history, leaving only the current state
+    noUndo :: m a -> m a -- executes an action, without recording in the history
+    oneStep :: m a -> m a -- executes an action, removing intermediate states from the history
 
 instance (MonadReader r m) => MonadReader r (UndoT s m) where
     ask = lift ask
@@ -58,7 +60,18 @@ instance (Monad m) => MonadUndo s (UndoT s m) where
     checkpoint = UndoT $ do
         s <- liftM current get
         put $ blankHistory s
-
+    noUndo (UndoT x) = UndoT $ do old <- get
+                                  a <- x
+                                  new <- get
+                                  put $ History { current = current new, undos = undos old,
+                                                  redos = [] }
+                                  return a
+    oneStep (UndoT x) = UndoT $ do old <- get
+                                   a <- x
+                                   new <- get
+                                   put $ History { current = current new, undos = current old : undos old,
+                                                   redos = [] }
+                                   return a
 
 evalUndoT :: (Monad m) => UndoT s m a -> s -> m a
 evalUndoT (UndoT x) s = evalStateT x (blankHistory s)

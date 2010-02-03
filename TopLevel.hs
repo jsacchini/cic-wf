@@ -112,7 +112,7 @@ processTLCommand Print = do g <- get
                       showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
                       showG (x, E.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
                       showG (x, E.Axiom t) = "axiom " ++ x ++ " : " ++ show t
-processTLCommand (LoadFile xs) = catchIM $ processLoad (takeWhile (not . isSpace) xs)
+processTLCommand (LoadFile xs) = catchIM $ oneStep $ processLoad (takeWhile (not . isSpace) xs)
 processTLCommand Undo = do b <- undo
                            lift $ if b then outputStrLn "si" else outputStrLn "no"
 processTLCommand Redo = do b <- redo
