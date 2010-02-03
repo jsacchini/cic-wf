@@ -1,6 +1,6 @@
 {-# LANGUAGE PackageImports, FlexibleInstances, TypeSynonymInstances,
   GeneralizedNewtypeDeriving, FlexibleContexts, MultiParamTypeClasses,
-  DeriveDataTypeable, RankNTypes
+  DeriveDataTypeable, RankNTypes, StandaloneDeriving
   #-}
 
 module TCM where
@@ -17,7 +17,6 @@ import "mtl" Control.Monad.State
 
 import Internal hiding (lift)
 import Environment
-import Parser --- REMOVE ??
 import MonadUndo
 
 import Text.ParserCombinators.Parsec.Prim
@@ -44,64 +43,45 @@ data TCErr = TypeError TypeError
 instance Error TCErr where
     strMsg = InternalError
 
+deriving instance Typeable ParseError
+instance E.Exception ParseError
+
 instance E.Exception TypeError
 
 instance E.Exception TCErr
 
+{-
+data TCState' = TCState' { global :: GlobalEnv, 
+                           goal :: ETerm,
+                           subgoals :: Local
+                           }
+
+-}
+
 type TCState = GlobalEnv
 type TCEnv = [Type]
 
-newtype TCM m a = TCM { unTCM :: UndoT TCState
-                                 (ReaderT TCEnv m) a }
-    deriving (MonadState TCState,
+newtype TCM a = TCM { unTCM :: UndoT TCState
+                               (ReaderT TCEnv IO) a }
+    deriving (Functor,
+              MonadState TCState,
               MonadUndo TCState,
               MonadReader TCEnv)
 
-type Result = TCM IO
-
-instance MonadTrans TCM where
-    lift = TCM . lift . lift 
-
-instance MonadIO m => Functor (TCM m) where
-    fmap = liftM
-
-instance MonadIO m => Applicative (TCM m) where
-    pure = return
-    (<*>) = ap
-
-instance MonadError TCErr (TCM IO) where
+instance MonadError TCErr TCM where
   throwError = liftIO . E.throwIO
   catchError m h = TCM $ UndoT $ StateT $ \s -> ReaderT $ \e ->
     runReaderT (runUndoT (unTCM m) (current s)) e
     `E.catch` \err -> runReaderT (runUndoT (unTCM (h err)) (current s)) e
 
 
-class ( MonadIO tcm
-      , MonadReader TCEnv tcm
-      , MonadState TCState tcm
-      ) => MonadTCM tcm where
-    liftTCM :: Result a -> tcm a
-
-
-mapTCMT :: (Monad m, Monad n) => (forall a. m a -> n a) -> TCM m a -> TCM n a
-mapTCMT f = TCM . mapUndoT (mapReaderT f) . unTCM
-
--- pureTCM :: Monad m => (TCState -> TCEnv -> a) -> TCM m a
--- pureTCM f = TCM $ StateT $ \s -> ReaderT $ \e -> return (f s e, s)
-
-instance MonadIO m => MonadTCM (TCM m) where
-    liftTCM = mapTCMT liftIO
-
-instance (Error err, MonadTCM tcm) => MonadTCM (ErrorT err tcm) where
-    liftTCM = lift . liftTCM
-
 -- We want a special monad implementation of fail.
-instance MonadIO m => Monad (TCM m) where
+instance Monad TCM where
     return  = TCM . return
     m >>= k = TCM $ unTCM m >>= unTCM . k
-    fail    = liftTCM . throwError . InternalError
+    fail    = throwError . InternalError
 
-instance MonadIO m => MonadIO (TCM m) where
+instance MonadIO TCM where
   liftIO m = TCM $ liftIO $ m `E.catch` catchP `E.catch` catchIO
              where catchP :: ParseError -> IO a
                    catchP = E.throwIO . ParsingError
@@ -109,10 +89,10 @@ instance MonadIO m => MonadIO (TCM m) where
                    catchIO = E.throwIO . IOException
 
 -- | Running the type checking monad
-runTCM :: Result a -> IO (Either TCErr a)
+runTCM :: TCM a -> IO (Either TCErr a)
 runTCM m = (Right <$> runTCM' m) `E.catch` (return . Left)
 
-runTCM' :: Monad m => TCM m a -> m a
+runTCM' :: TCM a -> IO a
 runTCM' = flip runReaderT initialTCEnv .
           flip evalUndoT initialTCState .
           unTCM
@@ -123,21 +103,21 @@ initialTCState = emptyEnv
 initialTCEnv :: TCEnv
 initialTCEnv = []
 
-typeError :: (MonadTCM tcm) => TypeError -> tcm a
-typeError = liftTCM . throwError . TypeError
+typeError :: TypeError -> TCM a
+typeError = throwError . TypeError
 
 
-addGlobal :: (MonadTCM tcm) => Name -> Type -> Term -> tcm ()
+addGlobal :: Name -> Type -> Term -> TCM ()
 addGlobal x t u = do g <- get
-                     liftTCM $ when (bindedEnv x g) (throwError $ AlreadyDefined x)
+                     when (bindedEnv x g) (throwError $ AlreadyDefined x)
                      put (extendEnv x (Def t u) g)
 
-addAxiom :: (MonadTCM tcm) => Name -> Type -> tcm ()
+addAxiom :: Name -> Type -> TCM ()
 addAxiom x t = do g <- get
-                  liftTCM $ when (bindedEnv x g) (throwError $ AlreadyDefined x)
+                  when (bindedEnv x g) (throwError $ AlreadyDefined x)
                   put (extendEnv x (Axiom t) g)
 
-lookupGlobal :: Name -> Result Global
+lookupGlobal :: Name -> TCM Global
 lookupGlobal x = do g <- get
                     case lookupEnv x g of
                       Just t -> return t

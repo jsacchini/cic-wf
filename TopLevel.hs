@@ -1,7 +1,9 @@
-{-# LANGUAGE PackageImports, TypeSynonymInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving, GeneralizedNewtypeDeriving,
+  PackageImports, TypeSynonymInstances, MultiParamTypeClasses #-}
 
 module TopLevel where
 
+import Prelude hiding (catch)
 import Data.Char
 import Data.List
 
@@ -27,26 +29,27 @@ import Conversion
 
 -- | Interaction monad.
 
-type IM = TCM (InputT IO)
+type IM = InputT TCM
 
-instance MonadError TCErr IM where
-  throwError = liftIO . throwIO
-  catchError m h = mapTCMT liftIO $ runIM m `catchError` (runIM . h)
+deriving instance MonadException TCM
 
 -- | Line reader. The line reader history is not stored between
 -- sessions.
 
 readline :: String -> IM (Maybe String)
-readline = lift . getInputLine
+readline = getInputLine
 
-runIM :: IM a -> Result a
-runIM = mapTCMT (runInputT settings)
-        where settings = defSettings { complete = completion }
-              defSettings :: Settings IO
+runIM :: IM a -> TCM a
+runIM = runInputT settings
+        where settings :: Settings TCM
+              settings = defSettings { complete = completion }
+              defSettings :: Settings TCM
               defSettings = defaultSettings
 
-catchIM :: Result () -> IM ()
-catchIM = liftTCM . (`catchError` \e -> liftIO $ print e)
+catchIM :: TCM () -> IM ()
+catchIM m = lift m `catch` f
+            where f :: TCErr -> IM ()
+                  f e = outputStrLn (show e)
 
 data TLCommand = LoadFile String
                | Check String
@@ -84,10 +87,10 @@ interpretCommand x
              --  find matching commands
              let  matching  =  filter (\ (Cmd cs _ _ _) -> any (isPrefixOf cmd) cs) commands
              case matching of
-               [] -> do lift $ outputStrLn ("Unknown command `" ++ cmd ++ "'. Type :? for help.")
+               [] -> do outputStrLn ("Unknown command `" ++ cmd ++ "'. Type :? for help.")
                         return NoOp
                [Cmd _ _ f _] ->  return (f t)
-               x -> do lift $ outputStrLn ("Ambiguous command, could be " ++ concat (intersperse ", " [ head cs | Cmd cs _ _ _ <- matching ]) ++ ".")
+               x -> do outputStrLn ("Ambiguous command, could be " ++ concat (intersperse ", " [ head cs | Cmd cs _ _ _ <- matching ]) ++ ".")
                        return NoOp
        else
          return $ NoCommand x
@@ -105,47 +108,47 @@ interactiveLoop = do xs <- readline "> "
 
 processTLCommand :: TLCommand -> IM ()
 processTLCommand (Check s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
-                                          infer e >>= lift . print
+                                          infer e >>= liftIO . print
 -- processTLCommand (Eval s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
 --                                          _ <- infer e
 --                                          v <- norm (I.interp e)
 --                                          lift $ print (valterm v)
-processTLCommand Help = lift $ outputStrLn "help coming"
-processTLCommand Print = do g <- get
-                            lift $ outputStr $ showEnv $ reverse $ E.listEnv g
+processTLCommand Help = outputStrLn "help coming"
+processTLCommand Print = do g <- lift get
+                            outputStr $ showEnv $ reverse $ E.listEnv g
                 where showEnv :: [(Name, E.Global)] -> String
                       showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
                       showG (x, E.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
                       showG (x, E.Axiom t) = "axiom " ++ x ++ " : " ++ show t
 processTLCommand (LoadFile xs) = catchIM $ oneStep $ processLoad (takeWhile (not . isSpace) xs)
-processTLCommand Undo = do b <- undo
-                           lift $ if b then outputStrLn "si" else outputStrLn "no"
-processTLCommand Redo = do b <- redo
-                           lift $ if b then outputStrLn "si" else outputStrLn "no"
+processTLCommand Undo = do b <- lift undo
+                           if b then outputStrLn "si" else outputStrLn "no"
+processTLCommand Redo = do b <- lift redo
+                           if b then outputStrLn "si" else outputStrLn "no"
 processTLCommand NoOp = return ()
 processTLCommand Quit = return ()
 processTLCommand (NoCommand xs) = catchIM $ do c <- liftIO $ runParserIO "<interactive>" (parseEOF parseCommand) xs
                                                processCommand c
 
 
-processCommand :: Command -> Result ()
+processCommand :: Command -> TCM ()
 processCommand (Definition x t u) = processDef x t u
 processCommand (Axiom x t) = processAxiom x t
 processCommand (Load xs) = processLoad xs
 
-processLoad :: FilePath -> Result ()
+processLoad :: FilePath -> TCM ()
 processLoad xs = do h <- liftIO $ openFile xs ReadMode
                     ss <- liftIO $ hGetContents h
                     cs <- liftIO $ runParserIO xs (parseEOF parseFile) ss
                     liftIO $ hClose h
-                    forM_ cs (liftTCM . processCommand)
+                    forM_ cs processCommand
 
-processAxiom :: Name -> Expr -> Result ()
+processAxiom :: Name -> Expr -> TCM ()
 processAxiom x t = do r <- infer t
                       isSort r
                       addAxiom x (I.interp t)
 
-processDef :: Name -> Maybe Expr -> Expr -> Result ()
+processDef :: Name -> Maybe Expr -> Expr -> TCM ()
 processDef x (Just t) u = do check u (I.interp t)
                              addGlobal x (I.interp t) (I.interp u)
 processDef x Nothing u = do t <- infer u
@@ -153,24 +156,28 @@ processDef x Nothing u = do t <- infer u
 
 
 --------- Completion
-completion :: CompletionFunc IO
+completion :: CompletionFunc TCM
 completion line@(left,_) = case firstWord of
     ':':cmd     | null rest     -> completeCmd line
                 | otherwise     -> completeFilename line
     xs          | null rest     -> completeDecl line
-                | otherwise     -> completeFilename line
+                | otherwise     -> completeGlobal line
   where
     (firstWord,rest) = break isSpace $ dropWhile isSpace $ reverse left
 
-completeCmd :: (String, String) -> IO (String, [Completion])
+completeCmd :: (String, String) -> TCM (String, [Completion])
 completeCmd = wrapCompleter " " $ \w -> do
                 return (filter (w `isPrefixOf`) (concat (map cmdName commands)))
 
-completeDecl :: (String, String) -> IO (String, [Completion])
+completeDecl :: (String, String) -> TCM (String, [Completion])
 completeDecl = wrapCompleter " " $ \w -> do
                  return (filter (w `isPrefixOf`) ["let", "axiom"])
 
+completeGlobal :: (String, String) -> TCM (String, [Completion])
+completeGlobal = wrapCompleter " " $ \w -> do g <- get
+                                              return (filter (w `isPrefixOf`) (map fst (E.listEnv g)))
 
-wrapCompleter :: String -> (String -> IO [String]) -> CompletionFunc IO
+
+wrapCompleter :: String -> (String -> TCM [String]) -> CompletionFunc TCM
 wrapCompleter breakChars fun = completeWord Nothing breakChars
     $ fmap (map simpleCompletion) . fmap sort . fun

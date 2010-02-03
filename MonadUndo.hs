@@ -8,9 +8,12 @@ module MonadUndo (
         History, current, undos, redos,
         module Control.Monad.State
     ) where
+import Prelude hiding (catch)
 import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.State
 import "mtl" Control.Monad.Identity
+
+import System.Console.Haskeline
  
 data History s = History { current :: s, undos :: [s], redos :: [s] }
     deriving (Eq, Show, Read)
@@ -31,6 +34,11 @@ class (MonadState s m) => MonadUndo s m | m -> s where
 instance (MonadReader r m) => MonadReader r (UndoT s m) where
     ask = lift ask
     local f (UndoT m) = UndoT $ local f m
+
+instance (MonadException m) => MonadException (UndoT s m) where
+    catch f h = UndoT $ StateT $ \ur -> runUndoT f (current ur) `catch` \e -> runUndoT (h e) (current ur)
+    block = mapUndoT block
+    unblock = mapUndoT unblock
 
 instance (Monad m) => MonadState s (UndoT s m) where
     get = UndoT $ do
