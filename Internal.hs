@@ -92,13 +92,30 @@ instance Reify Sort where
     reify Star = A.TSort noPos A.Star
 
 
--- TODO: change names of bound variables if they clash (needs environment)
 instance Reify Term where
-    reify (TSort s) = reify s
-    reify (Pi x t1 t2) = A.Pi noPos x (reify t1) (reify t2)
-    reify (Bound n) = A.Bound noPos n
-    reify (Free x) = A.Free noPos x
-    reify (Lam x t u) = A.Lam noPos x (reify t) (reify u)
-    reify (App t1 t2) = A.App noPos (reify t1) (reify t2)
+    reify t = reify_ (collectFree t) t
 
+freshName :: [Name] -> Name -> Name
+freshName xs y | not (elem y xs) = y
+               | otherwise = addSuffix 0
+                             where addSuffix n | not (elem (y++show n) xs) = y++show n
+                                               | otherwise = addSuffix (n+1)
+
+collectFree :: Term -> [Name]
+collectFree (TSort _) = []
+collectFree (Pi _ t1 t2) = collectFree t1 ++ collectFree t2
+collectFree (Bound _) = []
+collectFree (Free x) = [x]
+collectFree (Lam _ t1 t2) = collectFree t1 ++ collectFree t2
+collectFree (App t1 t2) = collectFree t1 ++ collectFree t2
+
+reify_ :: [Name] -> Term -> A.Expr
+reify_ xs (TSort s) = reify s
+reify_ xs (Pi x t1 t2) = A.Pi noPos x' (reify_ xs t1) (reify_ (x:xs) t2)
+                         where x' = freshName xs x
+reify_ xs (Bound n) = A.Bound noPos n
+reify_ xs (Free x) = A.Free noPos x
+reify_ xs (Lam x t u) = A.Lam noPos x' (reify_ xs t) (reify_ (x:xs) u)
+                        where x' = freshName xs x
+reify_ xs (App t1 t2) = A.App noPos (reify_ xs t1) (reify_ xs t2)
 
