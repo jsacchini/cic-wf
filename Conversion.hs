@@ -44,7 +44,7 @@ valterm (VNe v) = neterm v
 
 
 -- norm takes the global environment and a term to normalize
-norm :: Term -> TCM Value
+norm :: (MonadTCM tcm) => Term -> tcm Value
 norm (TSort s) = return $ VSort s
 norm (Pi _ t1 t2) = do u1 <- norm t1
                        u2 <- norm t2
@@ -62,9 +62,9 @@ norm (App t1 t2) = do u1 <- norm t1
                         VLam t v -> norm $ subst t2 (valterm v)
                         VNe n -> do u2 <- norm t2
                                     return $ VNe (NApp n u2)
-                        otherwise -> throwError $ InternalError "algo"
+                        otherwise -> internalError "algo"
 
-conversion :: Term -> Term -> TCM ()
+conversion :: (MonadTCM tcm) => Term -> Term -> tcm ()
 conversion t1 t2 = do v1 <- norm t1
                       v2 <- norm t2
                       unless (v1 == v2) $ typeError $ NotConvertible t1 t2

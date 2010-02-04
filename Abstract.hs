@@ -24,6 +24,7 @@ data Expr
     | Pi Pos Name Expr Expr -- var name, type, term
     | Bound Pos Int
     | Free Pos Name
+    | Meta Pos
     | Lam Pos Name Expr Expr -- var name, type, body
     | App Pos Expr Expr
 --    deriving(Show)
@@ -32,6 +33,7 @@ data Expr
 data Command = Definition Name (Maybe Expr) Expr
              | Axiom Name Expr
              | Load FilePath
+             | Refine Name Expr Expr
 
 
 instance Show Expr where

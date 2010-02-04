@@ -8,6 +8,7 @@ import Data.Char
 import Data.List
 
 import "mtl" Control.Monad.Trans
+import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.State
 import "mtl" Control.Monad.Error
 
@@ -28,6 +29,15 @@ import qualified Environment as E
 import Conversion
 
 -- | Interaction monad.
+
+data TLState = TLState { global :: E.GlobalEnv }
+newtype TLM a = TLM { unTLM :: StateT TLState IO a }
+                deriving (Monad, MonadState TLState)
+
+liftTCMM :: TCM a -> TLM a
+liftTCMM m = TLM $ StateT $ \(TLState s) -> (fmap (\(x,y) -> (x, TLState $ current y))) (runReaderT (runUndoT (unTCM m) s) initialTCEnv)
+                
+
 
 type IM = InputT TCM
 
@@ -107,7 +117,7 @@ interactiveLoop = do xs <- readline "> "
                                        _ -> interactiveLoop
 
 processTLCommand :: TLCommand -> IM ()
-processTLCommand (Check s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
+processTLCommand (Check s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF (parseExpr False)) s
                                           infer e >>= liftIO . print
 -- processTLCommand (Eval s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
 --                                          _ <- infer e

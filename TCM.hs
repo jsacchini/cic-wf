@@ -74,6 +74,23 @@ instance MonadError TCErr TCM where
     runReaderT (runUndoT (unTCM m) (current s)) e
     `E.catch` \err -> runReaderT (runUndoT (unTCM (h err)) (current s)) e
 
+-- mapTCMT :: (forall a. m a -> n a) -> TCM a -> TCMT n a
+-- mapTCMT f = TCM . mapUndoT (mapReaderT f) . unTCM
+
+class ( MonadIO tcm
+      , MonadReader TCEnv tcm
+      , MonadState TCState tcm
+      ) => MonadTCM tcm where
+    liftTCM :: TCM a -> tcm a
+
+instance MonadTCM TCM where
+    liftTCM = id -- mapTCMT liftIO
+
+instance (Error err, MonadTCM tcm) => MonadTCM (ErrorT err tcm) where
+    liftTCM = lift . liftTCM
+
+-- instance MonadTrans TCM where
+--     lift = TCM . lift . lift
 
 -- We want a special monad implementation of fail.
 instance Monad TCM where
@@ -103,21 +120,23 @@ initialTCState = emptyEnv
 initialTCEnv :: TCEnv
 initialTCEnv = []
 
-typeError :: TypeError -> TCM a
-typeError = throwError . TypeError
+typeError :: (MonadTCM tcm) => TypeError -> tcm a
+typeError = liftTCM . throwError . TypeError
 
+internalError :: (MonadTCM tcm) => String -> tcm a
+internalError = liftTCM . throwError . InternalError
 
-addGlobal :: Name -> Type -> Term -> TCM ()
+addGlobal :: (MonadTCM tcm) => Name -> Type -> Term -> tcm ()
 addGlobal x t u = do g <- get
-                     when (bindedEnv x g) (throwError $ AlreadyDefined x)
+                     when (bindedEnv x g) (liftTCM $ throwError $ AlreadyDefined x)
                      put (extendEnv x (Def t u) g)
 
-addAxiom :: Name -> Type -> TCM ()
+addAxiom :: (MonadTCM tcm) => Name -> Type -> tcm ()
 addAxiom x t = do g <- get
-                  when (bindedEnv x g) (throwError $ AlreadyDefined x)
+                  when (bindedEnv x g) (liftTCM $ throwError $ AlreadyDefined x)
                   put (extendEnv x (Axiom t) g)
 
-lookupGlobal :: Name -> TCM Global
+lookupGlobal :: (MonadTCM tcm) => Name -> tcm Global
 lookupGlobal x = do g <- get
                     case lookupEnv x g of
                       Just t -> return t

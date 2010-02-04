@@ -20,22 +20,22 @@ import TCM
 
 
 
-checkSort :: A.Sort -> TCM Term
+checkSort :: (MonadTCM tcm) => A.Sort -> tcm Term
 checkSort A.Star = return (TSort Box)
 checkSort A.Box = return (TSort Box)
 
-isSort :: Term -> TCM ()
+isSort :: (MonadTCM tcm) => Term -> tcm ()
 isSort (TSort _) = return ()
 isSort t = typeError $ NotSort t
 
-checkProd :: Term -> Term -> TCM Term
+checkProd :: (MonadTCM tcm) => Term -> Term -> tcm Term
 checkProd (TSort s1) (TSort Box) = return $ TSort Box
 checkProd (TSort s1) (TSort Star) = return $ TSort Star
 checkProd t1 t2 = typeError $ InvalidProductRule t1 t2
 
 -- We assume that in the global environment, types are normalized
 
-infer :: A.Expr -> TCM Term
+infer :: (MonadTCM tcm) => A.Expr -> tcm Term
 infer (A.Ann _ t u) = let clu = interp u in
                         do check t clu
                            return clu
@@ -64,11 +64,11 @@ infer (A.App _ t1 t2) = do r1 <- infer t1
                                               return $ subst (interp t2) u2
                              otherwise -> typeError $ NotFunction r2
 
-check :: A.Expr -> Term -> TCM ()
+check :: (MonadTCM tcm) => A.Expr -> Term -> tcm ()
 check t u = do r <- infer t
                conversion r u
 
-lcheck :: [A.Expr] -> [Term] -> TCM ()
+lcheck :: (MonadTCM tcm) => [A.Expr] -> [Term] -> tcm ()
 lcheck [] [] = return ()
 lcheck (t:ts) (u:us) = do check t u
 	                  lcheck ts (mapsubst 0 (interp t) us)
