@@ -47,8 +47,8 @@ data TCState' = TCState' { global :: GlobalEnv,
 type TCState = GlobalEnv
 type TCEnv = [Type]
 
-newtype TCM a = TCM { unTCM :: UndoT TCState
-                               (ReaderT TCEnv IO) a }
+newtype TCMT m a = TCM { unTCM :: UndoT TCState
+                                  (ReaderT TCEnv m) a }
     deriving (Monad,
               MonadIO,
               Functor,
@@ -56,20 +56,22 @@ newtype TCM a = TCM { unTCM :: UndoT TCState
               MonadUndo TCState,
               MonadReader TCEnv)
 
-instance MonadError TypeError TCM where
-  throwError = liftIO . E.throwIO
-  catchError m h = TCM $ UndoT $ StateT $ \s -> ReaderT $ \e ->
-    runReaderT (runUndoT (unTCM m) (current s)) e
-    `E.catch` \err -> runReaderT (runUndoT (unTCM (h err)) (current s)) e
+type TCM = TCMT IO
+
+-- instance MonadError TypeError TCM where
+--   throwError = liftIO . E.throwIO
+--   catchError m h = TCM $ UndoT $ StateT $ \s -> ReaderT $ \e ->
+--     runReaderT (runUndoT (unTCM m) (current s)) e
+--     `E.catch` \err -> runReaderT (runUndoT (unTCM (h err)) (current s)) e
 
 -- mapTCMT :: (forall a. m a -> n a) -> TCM a -> TCMT n a
 -- mapTCMT f = TCM . mapUndoT (mapReaderT f) . unTCM
 
-instance MonadGE TCM where
-    lookupGE x = do g <- get
-                    case lookupEnv x g of
-                      Just t -> return t
-                      Nothing -> typeError $ IdentifierNotFound x
+-- instance MonadGE TCM where
+--     lookupGE x = do g <- get
+--                     case lookupEnv x g of
+--                       Just t -> return t
+--                       Nothing -> typeError $ IdentifierNotFound x
 
 class ( MonadIO tcm
       , MonadReader TCEnv tcm
@@ -79,7 +81,7 @@ class ( MonadIO tcm
       ) => MonadTCM tcm where
 --    liftTCM :: TCM a -> tcm a
 
-instance MonadTCM TCM where
+-- instance MonadTCM TCM where
 --    liftTCM = id -- mapTCMT liftIO
 
 -- instance (Error err, MonadTCM tcm) => MonadTCM (ErrorT err tcm) where

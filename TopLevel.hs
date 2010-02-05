@@ -65,17 +65,19 @@ data TLState = TLState { global :: E.GlobalEnv,
 newtype TLM a = TLM { unTLM :: UndoT TLState (ReaderT TCEnv IO) a }
                 deriving (Monad, 
                           Functor,
+                          MonadUndo TLState,
                           MonadState TLState,
-                          MonadReader TCEnv,
-                          MonadUndo TLState
+                          MonadReader TCEnv
                           )
 
 instance MonadIO TLM where
-  liftIO m = TLM $ liftIO $ m `E.catch` catchP `E.catch` catchIO
+  liftIO m = TLM $ liftIO $ m `E.catch` catchP `E.catch` catchIO `E.catch` catchT
              where catchP :: ParseError -> IO a
                    catchP = E.throwIO . ParsingError
                    catchIO :: E.IOException -> IO a
                    catchIO = E.throwIO . MyIOException
+                   catchT :: TypeError -> IO a
+                   catchT = E.throwIO . TypeError
 
 
 instance MonadError TypeError TLM where
