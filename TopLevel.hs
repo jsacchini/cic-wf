@@ -1,11 +1,15 @@
 {-# LANGUAGE StandaloneDeriving, GeneralizedNewtypeDeriving,
-  PackageImports, TypeSynonymInstances, MultiParamTypeClasses #-}
+  PackageImports, TypeSynonymInstances, MultiParamTypeClasses,
+  FlexibleInstances, DeriveDataTypeable  #-}
 
 module TopLevel where
 
 import Prelude hiding (catch)
 import Data.Char
 import Data.List
+import Data.Typeable
+
+import Control.Applicative
 
 import "mtl" Control.Monad.Trans
 import "mtl" Control.Monad.Reader
@@ -28,20 +32,90 @@ import Typing
 import qualified Environment as E
 import Conversion
 
+
+addGlobal :: Name -> I.Type -> I.Term -> TLM ()
+addGlobal x t u = do g <- get
+                     let g' = global g
+                     when (E.bindedEnv x g') (throwIO $ AlreadyDefined x)
+                     put $ g { global = (E.extendEnv x (E.Def t u) g') }
+
+addAxiom :: Name -> I.Type -> TLM ()
+addAxiom x t = do g <- get
+                  let g' = global g
+                  when (E.bindedEnv x g') (throwIO $ AlreadyDefined x)
+                  put $ g { global = (E.extendEnv x (E.Axiom t) g') }
+
+data TCErr = TypeError TypeError
+           | MyIOException E.IOException
+           | ParsingError ParseError
+           | AlreadyDefined String
+           | InternalError String
+           deriving(Typeable,Show)
+
+instance Error TCErr where
+    strMsg = InternalError
+
+instance E.Exception TCErr
+
+
 -- | Interaction monad.
 
-data TLState = TLState { global :: E.GlobalEnv }
-newtype TLM a = TLM { unTLM :: StateT TLState IO a }
-                deriving (Monad, MonadState TLState)
+data TLState = TLState { global :: E.GlobalEnv,
+                         fresh :: Int }
+newtype TLM a = TLM { unTLM :: UndoT TLState (ReaderT TCEnv IO) a }
+                deriving (Monad, 
+                          Functor,
+                          MonadState TLState,
+                          MonadReader TCEnv,
+                          MonadUndo TLState
+                          )
 
-liftTCMM :: TCM a -> TLM a
-liftTCMM m = TLM $ StateT $ \(TLState s) -> (fmap (\(x,y) -> (x, TLState $ current y))) (runReaderT (runUndoT (unTCM m) s) initialTCEnv)
-                
+instance MonadIO TLM where
+  liftIO m = TLM $ liftIO $ m `E.catch` catchP `E.catch` catchIO
+             where catchP :: ParseError -> IO a
+                   catchP = E.throwIO . ParsingError
+                   catchIO :: E.IOException -> IO a
+                   catchIO = E.throwIO . MyIOException
 
 
-type IM = InputT TCM
+instance MonadError TypeError TLM where
+  throwError = liftIO . E.throwIO
+  catchError m h = TLM $ UndoT $ StateT $ \s -> ReaderT $ \r -> 
+    (runReaderT (runUndoT (unTLM m) (current s)) r)
+    `E.catch` \err -> runReaderT (runUndoT (unTLM (h err)) (current s)) r
 
-deriving instance MonadException TCM
+
+-- liftTCMM :: TCM a -> TLM a
+-- liftTCMM m = TLM $ StateT $ \(TLState s) -> (fmap (\(x,y) -> (x, TLState $ current y))) (runReaderT (runUndoT (unTCM m) s) initialTCEnv)
+
+-- instance MonadTCM (ReaderT TCEnv TLM) where
+--     liftTCM x = ReaderT $ \r -> TLM $ UndoT $ StateT $ \u -> u { global = (runTCM2 r (global (current u)) x) }
+
+instance MonadTCM TLM
+
+instance E.MonadGE TLM where
+    lookupGE = f
+               where f x = do g <- get
+                              let g' = global g
+                              case E.lookupEnv x g' of
+                                Just t -> return t
+                                Nothing -> throwIO $ IdentifierNotFound x
+
+runTLM :: TLM a -> IO (Either TCErr a)
+runTLM m = (Right <$> runTLM' m) `E.catch` (return . Left)
+
+runTLM' :: TLM a -> IO a
+runTLM' = flip runReaderT [] .
+          flip evalUndoT initialTLState .
+          unTLM
+
+initialTLState = TLState { global = E.emptyEnv, fresh = 0 }
+
+
+
+type IM = InputT TLM
+
+deriving instance MonadException TLM
 
 -- | Line reader. The line reader history is not stored between
 -- sessions.
@@ -49,14 +123,14 @@ deriving instance MonadException TCM
 readline :: String -> IM (Maybe String)
 readline = getInputLine
 
-runIM :: IM a -> TCM a
+runIM :: IM a -> TLM a
 runIM = runInputT settings
-        where settings :: Settings TCM
+        where settings :: Settings TLM
               settings = defSettings { complete = completion }
-              defSettings :: Settings TCM
+              defSettings :: Settings TLM
               defSettings = defaultSettings
 
-catchIM :: TCM () -> IM ()
+catchIM :: TLM () -> IM ()
 catchIM m = lift m `catch` f
             where f :: TCErr -> IM ()
                   f e = outputStrLn (show e)
@@ -118,14 +192,15 @@ interactiveLoop = do xs <- readline "> "
 
 processTLCommand :: TLCommand -> IM ()
 processTLCommand (Check s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF (parseExpr False)) s
-                                          infer e >>= liftIO . print
+                                          (infer e) >>= liftIO . print
 -- processTLCommand (Eval s) = catchIM $ do e <- liftIO $ runParserIO "<interactive>" (parseEOF parseExpr) s
 --                                          _ <- infer e
 --                                          v <- norm (I.interp e)
 --                                          lift $ print (valterm v)
 processTLCommand Help = outputStrLn "help coming"
 processTLCommand Print = do g <- lift get
-                            outputStr $ showEnv $ reverse $ E.listEnv g
+                            let g' = global g
+                            outputStr $ showEnv $ reverse $ E.listEnv g'
                 where showEnv :: [(Name, E.Global)] -> String
                       showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
                       showG (x, E.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
@@ -141,24 +216,24 @@ processTLCommand (NoCommand xs) = catchIM $ do c <- liftIO $ runParserIO "<inter
                                                processCommand c
 
 
-processCommand :: Command -> TCM ()
+processCommand :: Command -> TLM ()
 processCommand (Definition x t u) = processDef x t u
 processCommand (Axiom x t) = processAxiom x t
 processCommand (Load xs) = processLoad xs
 
-processLoad :: FilePath -> TCM ()
+processLoad :: FilePath -> TLM ()
 processLoad xs = do h <- liftIO $ openFile xs ReadMode
                     ss <- liftIO $ hGetContents h
                     cs <- liftIO $ runParserIO xs (parseEOF parseFile) ss
                     liftIO $ hClose h
                     forM_ cs processCommand
 
-processAxiom :: Name -> Expr -> TCM ()
+processAxiom :: Name -> Expr -> TLM ()
 processAxiom x t = do r <- infer t
                       isSort r
                       addAxiom x (I.interp t)
 
-processDef :: Name -> Maybe Expr -> Expr -> TCM ()
+processDef :: Name -> Maybe Expr -> Expr -> TLM ()
 processDef x (Just t) u = do check u (I.interp t)
                              addGlobal x (I.interp t) (I.interp u)
 processDef x Nothing u = do t <- infer u
@@ -166,7 +241,7 @@ processDef x Nothing u = do t <- infer u
 
 
 --------- Completion
-completion :: CompletionFunc TCM
+completion :: CompletionFunc TLM
 completion line@(left,_) = case firstWord of
     ':':cmd     | null rest     -> completeCmd line
                 | otherwise     -> completeFilename line
@@ -175,19 +250,20 @@ completion line@(left,_) = case firstWord of
   where
     (firstWord,rest) = break isSpace $ dropWhile isSpace $ reverse left
 
-completeCmd :: (String, String) -> TCM (String, [Completion])
+completeCmd :: (String, String) -> TLM (String, [Completion])
 completeCmd = wrapCompleter " " $ \w -> do
                 return (filter (w `isPrefixOf`) (concat (map cmdName commands)))
 
-completeDecl :: (String, String) -> TCM (String, [Completion])
+completeDecl :: (String, String) -> TLM (String, [Completion])
 completeDecl = wrapCompleter " " $ \w -> do
                  return (filter (w `isPrefixOf`) ["let", "axiom"])
 
-completeGlobal :: (String, String) -> TCM (String, [Completion])
+completeGlobal :: (String, String) -> TLM (String, [Completion])
 completeGlobal = wrapCompleter " " $ \w -> do g <- get
-                                              return (filter (w `isPrefixOf`) (map fst (E.listEnv g)))
+                                              let g' = global g 
+                                              return (filter (w `isPrefixOf`) (map fst (E.listEnv g')))
 
 
-wrapCompleter :: String -> (String -> TCM [String]) -> CompletionFunc TCM
+wrapCompleter :: String -> (String -> TLM [String]) -> CompletionFunc TLM
 wrapCompleter breakChars fun = completeWord Nothing breakChars
     $ fmap (map simpleCompletion) . fmap sort . fun

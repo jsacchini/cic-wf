@@ -1,8 +1,11 @@
 {-# LANGUAGE PackageImports, FlexibleInstances, TypeSynonymInstances,
-  GeneralizedNewtypeDeriving, FlexibleContexts 
+  GeneralizedNewtypeDeriving, FlexibleContexts, CPP
   #-}
 
 module Typing where
+
+#include "undefined.h"
+import Impossible
 
 import qualified "mtl" Control.Monad.Error as EE
 import "mtl" Control.Monad.Identity
@@ -47,7 +50,7 @@ infer (A.Pi _ x t1 t2) = do r1 <- infer t1
                             checkProd r1 r2
 infer (A.Bound _ n) = do l <- ask
                          return $ I.lift (n+1) 0 $ l !! n
-infer (A.Free _ x) = do t <- lookupGlobal x 
+infer (A.Free _ x) = do t <- lookupGE x 
                         case t of
                           Def t _ -> return t
                           Axiom t -> return t

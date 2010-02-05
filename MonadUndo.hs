@@ -36,7 +36,7 @@ instance (MonadReader r m) => MonadReader r (UndoT s m) where
     local f (UndoT m) = UndoT $ local f m
 
 instance (MonadException m) => MonadException (UndoT s m) where
-    catch f h = UndoT $ StateT $ \ur -> runUndoT f (current ur) `catch` \e -> runUndoT (h e) (current ur)
+    catch (UndoT f) h = UndoT $ StateT $ \ur -> runStateT f ur `catch` \e -> let UndoT h' = h e in runStateT h' ur
     block = mapUndoT block
     unblock = mapUndoT unblock
 

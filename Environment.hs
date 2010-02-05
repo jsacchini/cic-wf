@@ -35,6 +35,9 @@ data Global
 -- isInd (Ind _ _ _ _) = True
 -- isInd _ = False
 
+class (Monad m) => MonadGE m where
+    lookupGE :: Name -> m Global
+
 newtype EnvT a = EnvT { unEnvT :: [(Name, a)] }
 
 type GlobalEnv = EnvT Global

@@ -1,6 +1,9 @@
-{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE PackageImports, CPP #-}
 
 module Conversion where
+
+#include "undefined.h"
+import Impossible
 
 import "mtl" Control.Monad.Error
 import "mtl" Control.Monad.State
@@ -50,7 +53,7 @@ norm (Pi _ t1 t2) = do u1 <- norm t1
                        u2 <- norm t2
                        return $ VPi u1 u2
 norm (Bound n) = return $ vbound n
-norm (Free x) = do t <- lookupGlobal x 
+norm (Free x) = do t <- lookupGE x 
                    case t of
                      Def _ t -> norm t
                      Axiom _ -> return $ vfree x
@@ -62,7 +65,7 @@ norm (App t1 t2) = do u1 <- norm t1
                         VLam t v -> norm $ subst t2 (valterm v)
                         VNe n -> do u2 <- norm t2
                                     return $ VNe (NApp n u2)
-                        otherwise -> internalError "algo"
+                        otherwise -> __IMPOSSIBLE__
 
 conversion :: (MonadTCM tcm) => Term -> Term -> tcm ()
 conversion t1 t2 = do v1 <- norm t1

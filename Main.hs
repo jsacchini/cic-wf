@@ -26,7 +26,7 @@ import TopLevel
 
             
 main :: IO ()
-main = do r <- runTCM $ runIM interactiveLoop
+main = do r <- runTLM $ runIM interactiveLoop
           case r of
             Right _ -> exitSuccess
             Left _ -> exitFailure
