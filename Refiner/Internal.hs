@@ -1,9 +1,9 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE CPP #-}
 
--- Internal representation of Terms
+module Refiner.Internal where
 
-module Internal where
+-- Internal representation of Terms
 
 import Data.Function
 import Text.PrettyPrint.HughesPJ
@@ -19,6 +19,10 @@ data Sort
 
 type Name = String
 
+type MetaId = Int
+type Shift = Int
+type CxtSize = Int
+
 data Term
     = TSort Sort
     | Pi Name Type Term
@@ -26,6 +30,7 @@ data Term
     | Free Name
     | Lam Name Type Term
     | App Term Term
+    | Meta MetaId Shift CxtSize
     deriving(Eq)
 
 instance Show Term where
@@ -40,6 +45,7 @@ lift k n t@(Bound m) = if m < n then t else Bound $ m+k
 lift k n t@(Free _) = t
 lift k n (Lam x t u) = Lam x (lift k n t) (lift k (n+1) u)
 lift k n (App t1 t2) = App (lift k n t1) (lift k n t2)
+lift k n t@(Meta i m c) = if m < n then t else Meta i (m+k) c
 
 subst_ :: Int -> Term -> Term -> Term
 subst_ i r t@(TSort _) = t
@@ -50,9 +56,22 @@ subst_ i r t@(Bound n) | n < i = t
 subst_ i r t@(Free _) = t
 subst_ i r (Lam x t u) = Lam x (subst_ i r t) (subst_ (i+1) r u)
 subst_ i r (App t1 t2) = App (subst_ i r t1) (subst_ i r t2)
+subst_ i r t@(Meta _ _ _) = t
+
 
 subst :: Term -> Term -> Term
 subst = subst_ 0
+
+substMeta :: MetaId -> Term -> Term -> Term
+substMeta i r t@(TSort _) = t
+substMeta i r (Pi x t1 t2) = Pi x (substMeta i r t1) (substMeta i r t2)
+substMeta i r t@(Bound _) = t
+substMeta i r t@(Free _) = t
+substMeta i r (Lam x t u) = Lam x (substMeta i r t) (substMeta i r u)
+substMeta i r (App t1 t2) = App (substMeta i r t1) (substMeta i r t2)
+substMeta i r t@(Meta j _ _) | i == j = r
+                             | otherwise = t
+ 
 
 multisubst :: Int -> [Term] -> Term -> Term
 multisubst i ts u = snd $ foldl (\(i, t) r -> (i+1, subst_ i r t)) (i, u) ts
@@ -68,7 +87,7 @@ isFree n (Bound m) = n == m
 isFree _ (Free _) = False
 isFree n (Lam _ t u) = isFree n t || isFree (n+1) u
 isFree n (App t1 t2) = isFree n t1 || isFree n t2
-
+isFree n (Meta _ m _) = n == m
 
 class Interp a where
     interp :: a -> Term
@@ -85,6 +104,7 @@ instance Interp A.Expr where
     interp (A.Free _ x) = Free x
     interp (A.Lam _ x t u) = Lam x (interp t) (interp u)
     interp (A.App _ t1 t2) = App (interp t1) (interp t2)
+    interp (A.Meta _ n) = Meta n 0 0
 
 class Reify a where
     reify :: a -> A.Expr
@@ -110,6 +130,7 @@ collectFree (Bound _) = []
 collectFree (Free x) = [x]
 collectFree (Lam _ t1 t2) = collectFree t1 ++ collectFree t2
 collectFree (App t1 t2) = collectFree t1 ++ collectFree t2
+collectFree (Meta _ _ _) = []
 
 reify_ :: [Name] -> Term -> A.Expr
 reify_ xs (TSort s) = reify s
@@ -120,4 +141,16 @@ reify_ xs (Free x) = A.Free noPos x
 reify_ xs (Lam x t u) = A.Lam noPos x' (reify_ xs t) (reify_ (x:xs) u)
                         where x' = freshName xs x
 reify_ xs (App t1 t2) = A.App noPos (reify_ xs t1) (reify_ xs t2)
+reify_ xs (Meta x _ _) = A.Meta noPos x
+
+
+
+-- data Global
+--     = Def Type Term
+-- --    | Ind NamedCxt NamedCxt Sort [ConstrType]
+--     | Axiom Type
+--    deriving(Show)
+
+-- class (Monad m) => MonadGE m where
+--     lookupGE :: Name -> m Global
 

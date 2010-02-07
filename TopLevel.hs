@@ -28,10 +28,15 @@ import MonadUndo
 import TCM
 import qualified Internal as I
 import Parser
-import Typing
+import qualified Typing as T
 import qualified Environment as E
 import Conversion
+import Utils.Fresh
 
+import qualified Refiner.Refiner as R
+import qualified Refiner.RM as RM
+import qualified Refiner.Environment as RE
+import qualified Refiner.Internal as RI
 
 addGlobal :: Name -> I.Type -> I.Term -> TLM ()
 addGlobal x t u = do g <- get
@@ -46,6 +51,7 @@ addAxiom x t = do g <- get
                   put $ g { global = (E.extendEnv x (E.Axiom t) g') }
 
 data TCErr = TypeError TypeError
+           | RefinerError RM.RefinerError
            | MyIOException E.IOException
            | ParsingError ParseError
            | AlreadyDefined String
@@ -61,30 +67,36 @@ instance E.Exception TCErr
 -- | Interaction monad.
 
 data TLState = TLState { global :: E.GlobalEnv,
-                         fresh :: Int }
-newtype TLM a = TLM { unTLM :: UndoT TLState (ReaderT TCEnv IO) a }
+                         global2 :: RE.GlobalEnv,
+                         freshMeta :: RI.MetaId,
+                         goal :: Maybe RM.Goal,
+                         subgoals :: [(RI.MetaId, RM.Goal)]
+                       }
+
+newtype TLM a = TLM { unTLM :: UndoT TLState IO a }
                 deriving (Monad, 
                           Functor,
                           MonadUndo TLState,
-                          MonadState TLState,
-                          MonadReader TCEnv
+                          MonadState TLState
                           )
 
 instance MonadIO TLM where
-  liftIO m = TLM $ liftIO $ m `E.catch` catchP `E.catch` catchIO `E.catch` catchT
+  liftIO m = TLM $ liftIO $ m `E.catch` catchP `E.catch` catchIO `E.catch` catchT `E.catch` catchR
              where catchP :: ParseError -> IO a
                    catchP = E.throwIO . ParsingError
                    catchIO :: E.IOException -> IO a
                    catchIO = E.throwIO . MyIOException
                    catchT :: TypeError -> IO a
                    catchT = E.throwIO . TypeError
+                   catchR :: RM.RefinerError -> IO a
+                   catchR = E.throwIO . RefinerError
 
 
-instance MonadError TypeError TLM where
-  throwError = liftIO . E.throwIO
-  catchError m h = TLM $ UndoT $ StateT $ \s -> ReaderT $ \r -> 
-    (runReaderT (runUndoT (unTLM m) (current s)) r)
-    `E.catch` \err -> runReaderT (runUndoT (unTLM (h err)) (current s)) r
+-- instance MonadError TypeError TLM where
+--   throwError = liftIO . E.throwIO
+--   catchError m h = TLM $ UndoT $ StateT $ \s -> ReaderT $ \r -> 
+--     (runReaderT (runUndoT (unTLM m) (current s)) r)
+--     `E.catch` \err -> runReaderT (runUndoT (unTLM (h err)) (current s)) r
 
 
 -- liftTCMM :: TCM a -> TLM a
@@ -93,9 +105,9 @@ instance MonadError TypeError TLM where
 -- instance MonadTCM (ReaderT TCEnv TLM) where
 --     liftTCM x = ReaderT $ \r -> TLM $ UndoT $ StateT $ \u -> u { global = (runTCM2 r (global (current u)) x) }
 
-instance MonadTCM TLM
+instance MonadTCM (ReaderT TCEnv TLM)
 
-instance E.MonadGE TLM where
+instance E.MonadGE (ReaderT TCEnv TLM) where
     lookupGE = f
                where f x = do g <- get
                               let g' = global g
@@ -103,17 +115,49 @@ instance E.MonadGE TLM where
                                 Just t -> return t
                                 Nothing -> throwIO $ IdentifierNotFound x
 
+instance RE.MonadGE (ReaderT [RI.Term] TLM) where
+    lookupGE = f
+               where f x = do g <- get
+                              let g' = global2 g
+                              case RE.lookupEnv x g' of
+                                Just t -> return t
+                                Nothing -> throwIO $ IdentifierNotFound x
+
+instance HasFresh RI.MetaId TLState where
+    nextFresh s = (freshMeta s, s { freshMeta = freshMeta s + 1 })
+
+instance RM.HasGoal (ReaderT [RI.Term] TLM) where
+    getGoal = do s <- get
+                 return $ subgoals s
+    putGoal g = do s <- get
+                   put $ s { subgoals = g }
+
+instance RM.MonadRM TLState (ReaderT [RI.Term] TLM)
+
 runTLM :: TLM a -> IO (Either TCErr a)
 runTLM m = (Right <$> runTLM' m) `E.catch` (return . Left)
 
 runTLM' :: TLM a -> IO a
-runTLM' = flip runReaderT [] .
+runTLM' = -- flip runReaderT [] .
           flip evalUndoT initialTLState .
           unTLM
 
-initialTLState = TLState { global = E.emptyEnv, fresh = 0 }
+initialTLState = TLState { global = E.emptyEnv, 
+                           global2 = RE.emptyEnv,
+                           freshMeta = 0,
+                           goal = Nothing,
+                           subgoals = []
+                         }
 
 
+infer :: Expr -> TLM I.Term
+infer = flip runReaderT [] . T.infer
+
+check :: Expr -> I.Term -> TLM ()
+check e t = flip runReaderT [] $ T.check e t
+
+isSort :: I.Term -> TLM ()
+isSort = flip runReaderT [] . T.isSort
 
 type IM = InputT TLM
 

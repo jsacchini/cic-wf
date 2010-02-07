@@ -75,7 +75,7 @@ type TCM = TCMT IO
 
 class ( MonadIO tcm
       , MonadReader TCEnv tcm
-      , MonadError TypeError tcm
+--      , MonadError TypeError tcm
 --      , MonadState TCState tcm
       , MonadGE tcm
       ) => MonadTCM tcm where
@@ -127,7 +127,7 @@ initialTCEnv = []
 -- typeError = liftTCM . throwError . TypeError
 
 typeError :: (MonadTCM tcm) => TypeError -> tcm a
-typeError = throwError
+typeError = liftIO . E.throwIO
 
 -- internalError :: (MonadTCM tcm) => String -> tcm a
 -- internalError = liftTCM . throwError . InternalError

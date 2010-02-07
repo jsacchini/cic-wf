@@ -1,3 +1,6 @@
+{-# LANGUAGE GADTs, EmptyDataDecls, TypeOperators, TypeFamilies, RankNTypes,
+  ImpredicativeTypes
+ #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- Terms
 
@@ -18,16 +21,38 @@ type Name = String
 type IName = String -- inductive type names
 type CName = String -- constructor names
 
+
 data Expr
     = Ann Pos Expr Expr  -- annotated term and type
     | TSort Pos Sort
     | Pi Pos Name Expr Expr -- var name, type, term
     | Bound Pos Int
     | Free Pos Name
-    | Meta Pos
+    | Meta Pos Int
     | Lam Pos Name Expr Expr -- var name, type, body
     | App Pos Expr Expr
 --    deriving(Show)
+
+
+{-
+data NoMeta
+data WithMeta a
+data Unknown
+data EVar
+
+data FExpr a where
+    Ann :: Pos -> FExpr a -> FExpr a -> FExpr a -- annotated term and type
+    TSort :: Pos -> Sort -> FExpr a
+    Pi :: Pos -> Name -> FExpr a -> FExpr a -> FExpr a -- var name, type, term
+    Bound :: Pos -> Int -> FExpr a
+    Free :: Pos -> Name -> FExpr a
+    Meta :: Pos -> Int -> FExpr (WithMeta EVar)
+    EVar :: Pos -> FExpr (WithMeta Unknown)
+    Lam :: Pos -> Name -> FExpr a -> FExpr a -> FExpr a -- var name, type, body
+    App :: Pos -> FExpr a -> FExpr a -> FExpr a
+
+type Expr = forall a. FExpr a -- (WithMeta EVar)
+-}
 
 
 data Command = Definition Name (Maybe Expr) Expr
@@ -49,7 +74,7 @@ isFree n (Bound _ m) = n == m
 isFree _ (Free _ _) = False
 isFree n (Lam _ x t u) = isFree n t || isFree (n+1) u
 isFree n (App _ t1 t2) = isFree n t1 || isFree n t2
-
+isFree n (Meta _ _) = False
 -- Pretty printer
 
 parensIf :: Bool -> Doc -> Doc
@@ -80,6 +105,7 @@ tprint p l (Bound _ n) = text $ showboundInt l n
 tprint p l t@(Lam _ x t1 t2) = parensIf (p > 0) $ text "fun " <> nestedLam l t
 tprint p l (Free _ x) = text x
 tprint p l (App _ t1 t2) = parensIf (p > 2) $ sep [tprint 2 l t1, nest 2 $ tprint 3 l t2]
+tprint p l (Meta _ n) = text $ '?':show n
 
 nestedLamDef :: Expr -> ([(Name,Expr)], Expr)
 nestedLamDef (Lam _ x t1 t2) = ((x,t1):ds, e)

@@ -2,11 +2,11 @@
   FlexibleInstances
   #-}
 
-module Environment where
+module Refiner.Environment where
 
 import Data.List
 
-import Internal
+import Refiner.Internal
 
 -- Global environments
 

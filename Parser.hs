@@ -212,7 +212,7 @@ pIdent b = do sPos <- lift getPosition
               let sEnd = updatePosString sPos x in
                if x == "_" 
                 then if b 
-                      then return (Meta $ mkPos sPos sEnd, sEnd)
+                      then return (Meta (mkPos sPos sEnd) 0, sEnd)
                       else fail $ messageString (UnExpect "_")
                 else case elemIndex x st of
                        Just n -> return (Bound (mkPos sPos sEnd) n, sEnd)
