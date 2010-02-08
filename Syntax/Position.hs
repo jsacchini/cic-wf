@@ -1,4 +1,4 @@
-module Position where
+module Syntax.Position where
 
 import Text.ParserCombinators.Parsec.Pos
 

@@ -1,31 +1,25 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
-  FlexibleInstances
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, TypeFamilies
   #-}
 
 module Environment where
 
 import Data.List
 
-import Internal
+import Syntax.Internal
+import Syntax.ETag
 
 -- Global environments
 
-class Env v e | e -> v where
+class Env e where
+    type Elem e
     emptyEnv :: e
-    extendEnv :: Name -> v -> e -> e
+    extendEnv :: Name -> Elem e -> e -> e
     bindedEnv :: Name -> e -> Bool
-    lookupEnv :: Name -> e -> Maybe v
-    listEnv :: e -> [(Name, v)]
-
-data Global
-    = Def Type Term
---    | Ind NamedCxt NamedCxt Sort [ConstrType]
-    | Axiom Type
-    deriving(Show)
+    lookupEnv :: Name -> e -> Maybe (Elem e)
+    listEnv :: e -> [(Name, Elem e)]
 
 -- type ConstrType = (Name, NamedCxt, [Term])
 
--- type NamedCxt = [(Name, Term)]
 
 -- Inductive I Gamma_I : Gamma_a . s := C_i Gamma_i. I ts_i
 -- is represented as
@@ -36,15 +30,16 @@ data Global
 -- isInd _ = False
 
 class (Monad m) => MonadGE m where
-    lookupGE :: Name -> m Global
+    lookupGE :: Name -> m (Maybe (Global NM))
 
 newtype EnvT a = EnvT { unEnvT :: [(Name, a)] }
                  deriving(Show)
 
-type GlobalEnv = EnvT Global
-type LocalEnv = EnvT Type
+type GlobalEnv a = EnvT (Global a)
+type LocalEnv a = EnvT (Type a)
 
-instance Env a (EnvT a) where
+instance Env (EnvT a) where
+    type Elem (EnvT a) = a
     emptyEnv = EnvT []
     extendEnv n v e = EnvT $ (n,v) : unEnvT e
     bindedEnv n = elem n . map fst . unEnvT

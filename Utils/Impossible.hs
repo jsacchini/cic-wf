@@ -4,7 +4,7 @@
 
 {-# LANGUAGE DeriveDataTypeable #-}
 
-module Impossible where
+module Utils.Impossible where
 
 import Control.Exception as E
 import Data.Typeable

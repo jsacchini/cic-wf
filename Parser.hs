@@ -3,106 +3,129 @@
  #-}
 module Parser where
 
-import Control.Exception
-import "mtl" Control.Monad.Error
-import Data.Typeable
 import Data.List
+
+import "mtl" Control.Monad.Reader
+
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Pos
 import Text.ParserCombinators.Parsec.Prim
-import Text.ParserCombinators.Parsec.Error
 import qualified Text.ParserCombinators.Parsec.Token as P
 import Text.ParserCombinators.Parsec.Language(emptyDef)
-import "mtl" Control.Monad.Reader
 
-import Abstract
-import Position
-
-deriving instance Typeable ParseError
-instance Exception ParseError
+import Syntax.Abstract
+import Syntax.Position
 
 type ExprPos = (Expr, SourcePos) -- final position
 
 newtype CxtParserM m a = CxtParserM { cxtParser :: ReaderT [Name] m a }
                          deriving(Monad, MonadReader [Name], MonadTrans,
-                                 Functor)
+                                  Functor)
 
 type CxtParser a = CxtParserM (GenParser Char ()) a
 
 runCxtParser :: CxtParserM m a -> m a
 runCxtParser = flip runReaderT [] . cxtParser
 
-runParserIO :: FilePath -> GenParser tok () a -> [tok] -> IO a
-runParserIO f p s = case runParser p () f s of
-                      Left e -> throwIO e
-                      Right t -> return t
+
+(<||>) :: CxtParser a -> CxtParser a -> CxtParser a
+(<||>) m n = CxtParserM $ ReaderT $ \r -> runReaderT (cxtParser m) r <|> runReaderT (cxtParser n) r
+
+pVar :: CxtParser ExprPos
+pVar = do sPos <- lift getPosition
+          x <- liftIdentifier
+          st <- ask
+          let sEnd = updatePosString sPos x in
+           case elemIndex x st of
+             Just n -> return (Bound (mkPos sPos sEnd) n, sEnd)
+             Nothing -> return (Free (mkPos sPos sEnd) x, sEnd)
+
+pMeta :: CxtParser ExprPos
+pMeta = do sPos <- lift getPosition
+           liftSymbol "_"
+           let sEnd = updatePosString sPos "_" in
+            return (EVar (mkPos sPos sEnd) Nothing, sEnd)
+
+pEVar :: CxtParser ExprPos
+pEVar = do sPos <- lift getPosition
+           lift $ char '?'
+           ns <- lift $ many digit
+           let sEnd = updatePosString sPos ('?':ns) in
+            return (EVar (mkPos sPos sEnd) (Just $ read ns), sEnd)
+
+pIdent :: CxtParser ExprPos
+pIdent = pVar
+pIdentMeta :: CxtParser ExprPos
+pIdentMeta = pVar <||> pMeta <||> pEVar
+
 
 parseEOF p = do e <- p
                 eof
                 return e
 
+
 parseFile :: CharParser () [Command]
-parseFile = whiteSpace >> many parseCommand
+parseFile = whiteSpace >> many (parseCommand pIdent)
                
 
-parseCommand :: CharParser () Command
-parseCommand = whiteSpace >> (parseLet <|> parseLoad <|> parseAxiom)
+parseCommand :: CxtParser ExprPos -> CharParser () Command
+parseCommand p = whiteSpace >> (parseLet p <|> parseLoad p <|> parseAxiom p)
 
-parseAxiom :: CharParser () Command
-parseAxiom = do reserved "axiom"
-                x <- pIdentMeta
-                symbol ":"
-                t <- parseExpr False
+-- parseAxiom :: CxtParser ExprPos -> CharParser () (Command a)
+parseAxiom p = do reserved "axiom"
+                  x <- identifier
+                  symbol ":"
+                  t <- parseExpr p
+                  symbol "."
+                  return $ Axiom x t
+
+parseLoad :: CxtParser ExprPos -> CharParser () Command
+parseLoad p = do reserved "import"
+                 symbol "\""
+                 xs <- many $ alphaNum <|> oneOf "."
+                 symbol "\""
+                 symbol "."
+                 return $ Load xs
+
+parseLet :: CxtParser ExprPos -> CharParser () Command
+parseLet p = do reserved "let"
+                x <- identifier
+                t <- pMaybeExpr p
+                symbol ":="
+                e <- parseExpr p
                 symbol "."
-                return $ Axiom x t
-
-parseLoad :: CharParser () Command
-parseLoad = do reserved "import"
-               symbol "\""
-               xs <- many $ alphaNum <|> oneOf "."
-               symbol "\""
-               symbol "."
-               return $ Load xs
-
-parseLet :: CharParser () Command
-parseLet = do reserved "let"
-              x <- pIdentMeta
-              t <- pMaybeExpr
-              symbol ":="
-              e <- parseExpr False
-              symbol "."
-              return $ Definition x t e
+                return $ Definition x t e
 
 parseRefine :: CharParser () Command
 parseRefine = do reserved "refine"
-                 x <- pIdentMeta
-                 t <- parseExpr False
+                 x <- identifier
+                 t <- parseExpr pIdentMeta
                  symbol ":="
-                 e <- parseExpr True
+                 e <- parseExpr pIdentMeta
                  symbol "."
                  return $ Refine x t e
 
-pIdentMeta :: CharParser () String
-pIdentMeta = do x <- identifier
-                if x == "_"
-                 then fail $ messageString (UnExpect "_")
-                 else return x
+-- pIdentMeta :: CharParser () String
+-- pIdentMeta = do x <- identifier
+--                 if x == "_"
+--                  then fail $ messageString (UnExpect "_")
+--                  else return x
 
-pMaybeExpr :: CharParser () (Maybe Expr)
-pMaybeExpr = do reservedOp ":"
-                e <- parseExpr False
-                return $ Just e
-             <|> return Nothing
+pMaybeExpr :: CxtParser ExprPos -> CharParser () (Maybe Expr)
+pMaybeExpr p = do reservedOp ":"
+                  e <- parseExpr p
+                  return $ Just e
+               <|> return Nothing
 
-parseExpr :: Bool -> CharParser () Expr
+parseExpr :: CxtParser ExprPos -> CharParser () Expr
 parseExpr = fmap fst . runCxtParser . pExpr_
 
-pExpr_ :: Bool -> CxtParser ExprPos
-pExpr_ b = pPi b <||> 
-           pLam b <||> 
+pExpr_ :: CxtParser ExprPos -> CxtParser ExprPos
+pExpr_ p = pPi p <||> 
+           pLam p <||> 
            do sPos <- lift getPosition
-              e <- pExpr1 b sPos
-              rest <- local ("":) $ pRest b
+              e <- pExpr1 p sPos
+              rest <- local ("":) $ pRest p
               case rest of
                 Just (e1, ePos) -> return (Pi (mkPos sPos ePos) "" (fst e) e1, ePos)
                 Nothing -> return e
@@ -113,89 +136,93 @@ liftedMany p = do x <- p
                   return (x:xs)
                <||> return []
 
-pExpr1 :: Bool -> SourcePos -> CxtParser ExprPos
-pExpr1 b sPos = do f <- pExpr2 b
-                   args <- liftedMany (pExpr2 b)
+pExpr1 :: CxtParser ExprPos -> SourcePos -> CxtParser ExprPos
+pExpr1 p sPos = do f <- pExpr2 p
+                   args <- liftedMany (pExpr2 p)
                    let sEnd = snd $ last (f:args) in
                     return (foldl (\r (e,p) -> App (mkPos sPos p) r e) (fst f) args, sEnd)
 
-pExpr2 :: Bool -> CxtParser ExprPos
-pExpr2 b = pIdent b <||> pSort <||> pparenExpr b
+-- pExpr2 :: Bool -> CxtParser ExprPos
+pExpr2 p = p <||> pSort <||> pparenExpr p
 
-pparenExpr :: Bool -> CxtParser ExprPos
-pparenExpr b = do liftSymbol "("
-                  e <- pExpr_ b
-                  liftSymbol ")"
-                  return e
+pparenExpr :: CxtParser ExprPos -> CxtParser ExprPos
+pparenExpr p = do sPos <- lift getPosition
+                  liftSymbol "("
+                  e <- pExpr_ p
+                  (do liftSymbol ")"
+                      return e
+                   <||>
+                   do liftSymbol "::"
+                      (e2, _) <- pExpr_ p
+                      ePos <- lift getPosition
+                      liftSymbol ")"
+                      return (Ann (mkPos sPos ePos) (fst e) e2, ePos))
 
-pRest :: Bool -> CxtParser (Maybe ExprPos)
-pRest b = do liftReservedOp "->"
-             fmap Just (pExpr_ b)
+pRest :: CxtParser ExprPos -> CxtParser (Maybe ExprPos)
+pRest p = do liftReservedOp "->"
+             fmap Just (pExpr_ p)
           <||> return Nothing
 
-pPi :: Bool -> CxtParser ExprPos
-pPi b = do sPos <- lift getPosition
+pPi :: CxtParser ExprPos -> CxtParser ExprPos
+pPi p = do sPos <- lift getPosition
            liftReserved "forall"
-           ((do (x, e) <- pparenBind b
-                (e1, ePos) <- local (x:) $ pRestPi b
+           ((do (x, e) <- pparenBind p
+                (e1, ePos) <- local (x:) $ pRestPi p
                 return (Pi (mkPos sPos ePos) x (fst e) e1, ePos))
             <||>
-            (do (x, e) <- pBind b
+            (do (x, e) <- pBind p
                 liftReservedOp ","
-                (e1, ePos) <- local (x:) $ pExpr_ b
+                (e1, ePos) <- local (x:) $ pExpr_ p
                 return (Pi (mkPos sPos ePos) x (fst e) e1, ePos)))
 
 
-pRestPi :: Bool -> CxtParser ExprPos
-pRestPi b = do sPos <- lift getPosition
-               (x, e) <- pparenBind b
-               (e1, ePos) <- local (x:) $ pRestPi b
+pRestPi :: CxtParser ExprPos -> CxtParser ExprPos
+pRestPi p = do sPos <- lift getPosition
+               (x, e) <- pparenBind p
+               (e1, ePos) <- local (x:) $ pRestPi p
                return (Pi (mkPos sPos ePos) x (fst e) e1, ePos)
             <||>
             do liftReservedOp ","
-               pExpr_ b
+               pExpr_ p
 
-pLam :: Bool -> CxtParser ExprPos
-pLam b = do sPos <- lift getPosition
+pLam :: CxtParser ExprPos -> CxtParser ExprPos
+pLam p = do sPos <- lift getPosition
             liftReserved "fun"
-            ((do (x, e) <- pparenBind b
-                 (e1, ePos) <- local (x:) $ pRestLam b
+            ((do (x, e) <- pparenBind p
+                 (e1, ePos) <- local (x:) $ pRestLam p
                  return (Lam (mkPos sPos ePos) x (fst e) e1, ePos))
              <||>
-             (do (x, e) <- pBind b
+             (do (x, e) <- pBind p
                  liftReservedOp "=>"
-                 (e1, ePos) <- local (x:) $ pExpr_ b
+                 (e1, ePos) <- local (x:) $ pExpr_ p
                  return (Lam (mkPos sPos ePos) x (fst e) e1, ePos)))
 
-pRestLam :: Bool -> CxtParser ExprPos
-pRestLam b = do sPos <- lift getPosition
-                (x, e) <- pparenBind b
-                (e1, ePos) <- local (x:) $ pRestLam b
+pRestLam :: CxtParser ExprPos -> CxtParser ExprPos
+pRestLam p = do sPos <- lift getPosition
+                (x, e) <- pparenBind p
+                (e1, ePos) <- local (x:) $ pRestLam p
                 return (Lam (mkPos sPos ePos) x (fst e) e1, ePos)
              <||>
              do liftReservedOp "=>"
-                pExpr_ b
+                pExpr_ p
 
 liftedMany1 :: CxtParser a -> CxtParser [a]
 liftedMany1 p = do x <- p
                    xs <- liftedMany p
                    return (x:xs)
 
-pBind :: Bool -> CxtParser (Name, ExprPos)
-pBind b = do x <- liftIdentifier
+pBind :: CxtParser ExprPos -> CxtParser (Name, ExprPos)
+pBind p = do x <- liftIdentifier
              liftSymbol ":"
-             e <- pExpr_ b
+             e <- pExpr_ p
              return (x,e)
 
-pparenBind :: Bool -> CxtParser (Name, ExprPos)
-pparenBind b = do liftSymbol "("
-                  r <- pBind b
+pparenBind :: CxtParser ExprPos -> CxtParser (Name, ExprPos)
+pparenBind p = do liftSymbol "("
+                  r <- pBind p
                   liftSymbol ")"
                   return r
 
-
-(<||>) :: CxtParser a -> CxtParser a -> CxtParser a
-(<||>) m n = CxtParserM $ ReaderT $ \r -> runReaderT (cxtParser m) r <|> runReaderT (cxtParser n) r
 
 pSort :: CxtParser ExprPos
 pSort = foldl1 (<||>) $ map pReserved [("Type",Box), ("Prop",Star)]
@@ -205,18 +232,6 @@ pSort = foldl1 (<||>) $ map pReserved [("Type",Box), ("Prop",Star)]
                                     return (TSort (mkPos sPos sEnd) r, sEnd)
 
 
-pIdent :: Bool -> CxtParser ExprPos
-pIdent b = do sPos <- lift getPosition
-              x <- liftIdentifier
-              st <- ask
-              let sEnd = updatePosString sPos x in
-               if x == "_" 
-                then if b 
-                      then return (Meta (mkPos sPos sEnd) 0, sEnd)
-                      else fail $ messageString (UnExpect "_")
-                else case elemIndex x st of
-                       Just n -> return (Bound (mkPos sPos sEnd) n, sEnd)
-                       Nothing -> return (Free (mkPos sPos sEnd) x, sEnd)
 {-----
 
 decl ::= "import" filename "."
@@ -278,6 +293,8 @@ lexer  = P.makeTokenParser
            P.reservedNames   = ["forall", "fun", "Type", "Prop", "let",
                                 "import", "axiom", "refine"],
            P.reservedOpNames = ["->", "=>", ",", ":=", ":", "."],
+           P.identStart      = letter,
+           P.identLetter     = alphaNum,
            P.opLetter        = oneOf ",->:=."
          })
 
