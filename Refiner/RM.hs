@@ -30,8 +30,8 @@ data Goal = Goal { goalCxt :: NamedCxt EVAR,
 --            deriving(Show)
 
 instance Show Goal where
-    show (Goal c t) = s ++ "\n------------\n" ++ (show $ A.tprint 0 (map fst c) (reify t))
-        where (s,_) = foldr (\(x,t) (s,e) -> (s++ "\n" ++ x ++ ":" ++ (show $ A.tprint 0 e (reify t)), x:e)) ("",[]) c
+    show (Goal c t) = s ++ "\n------------\n" ++ (A.ppExpr (map fst c) (reify t))
+        where (s,_) = foldr (\(x,t) (s,e) -> (s++ "\n" ++ x ++ ":" ++ (A.ppExpr e (reify t)), x:e)) ("",[]) c
 
 class (Monad m) => HasGoal m where
     getGoal :: m [(MetaId, Goal)]
