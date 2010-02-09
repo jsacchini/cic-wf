@@ -6,7 +6,7 @@ module Environment where
 import Data.List
 
 import Syntax.Internal
-import Syntax.ETag
+import Syntax.Global
 
 -- Global environments
 
@@ -18,25 +18,11 @@ class Env e where
     lookupEnv :: Name -> e -> Maybe (Elem e)
     listEnv :: e -> [(Name, Elem e)]
 
--- type ConstrType = (Name, NamedCxt, [Term])
-
-
--- Inductive I Gamma_I : Gamma_a . s := C_i Gamma_i. I ts_i
--- is represented as
--- Ind I Gamma_I Gamma_a s [(C_i, Gamma_i, ts_i)]
-
--- isInd :: Global -> Bool
--- isInd (Ind _ _ _ _) = True
--- isInd _ = False
-
-class (Monad m) => MonadGE m where
-    lookupGE :: Name -> m (Maybe (Global NM))
-
 newtype EnvT a = EnvT { unEnvT :: [(Name, a)] }
                  deriving(Show)
 
-type GlobalEnv a = EnvT (Global a)
-type LocalEnv a = EnvT (Type a)
+type GlobalEnv = EnvT Global
+type LocalEnv a = EnvT (GType a)
 
 instance Env (EnvT a) where
     type Elem (EnvT a) = a

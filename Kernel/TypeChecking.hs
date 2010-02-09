@@ -9,64 +9,61 @@ import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.Error
 
 import Environment
-import Syntax.ETag
 import Syntax.Internal hiding (lift)
 import qualified Syntax.Internal as I
 import qualified Syntax.Abstract as A
+import Syntax.Global
 import Kernel.Conversion
 import Kernel.TCM
 
 
 
-checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term NM)
-checkSort A.Star = return (TSort Box)
-checkSort A.Box = return (TSort Box)
+checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term, Type)
+checkSort A.Star = return (star, box)
+checkSort A.Box = return (box, box)
 
-isSort :: (MonadTCM tcm) => (Term NM) -> tcm ()
-isSort (TSort _) = return ()
+isSort :: (MonadTCM tcm) => Term -> tcm Sort
+isSort (TSort s) = return s
 isSort t = typeError $ NotSort t
 
-checkProd :: (MonadTCM tcm) => (Term NM) -> (Term NM) -> tcm (Term NM)
-checkProd (TSort s1) (TSort Box) = return $ TSort Box
-checkProd (TSort s1) (TSort Star) = return $ TSort Star
-checkProd t1 t2 = typeError $ InvalidProductRule t1 t2
+checkProd :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
+checkProd s1 Box = return Box
+checkProd s1 Star = return Star
+-- checkProd s1 s2 = typeError $ InvalidProductRule s1 s2
 
 -- We assume that in the global environment, types are normalized
 
-infer :: (MonadTCM tcm) => A.Expr -> tcm (Term NM)
-infer (A.Ann _ t u) = let clu = interp u in
-                        do check t clu
-                           return clu
+infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
+infer (A.Ann _ t u) = do (u', r) <- infer u
+                         _ <- isSort r
+                         t' <- check t u'
+                         return (t', u') 
 infer (A.TSort _ s) = checkSort s
-infer (A.Pi _ x t1 t2) = do r1 <- infer t1
-                            isSort r1
-                            r2 <- local (interp t1:) $ infer t2
-                            isSort r2
-                            checkProd r1 r2
+infer (A.Pi _ x t1 t2) = do (t1', r1) <- infer t1
+                            s1 <- isSort r1
+                            (t2', r2) <- local (Bind x t1':) $ infer t2
+                            s2 <- isSort r2
+                            s3 <- checkProd s1 s2
+                            return (Pi (Bind x t1') t2', TSort s3)
 infer (A.Bound _ n) = do l <- ask
-                         return $ I.lift (n+1) 0 $ l !! n
-infer (A.Free _ x) = do t <- lookupGlobal x 
-                        case t of
-                          Def t _ -> return t
-                          Axiom t -> return t
-infer (A.Lam _ x t u) = do r1 <- infer t
-                           isSort r1
-                           r2 <- local (interp t:) $ infer u
+                         return (Bound n, I.lift (n+1) 0 $ expr (l !! n))
+infer (A.Var _ x) = do t <- lookupGlobal x 
+                       case t of
+                         Def t _ -> return (Free x, t)
+                         Axiom t -> return (Free x, t)
+infer (A.Lam _ x t u) = do (t', r1) <- infer t
+                           s1 <- isSort r1
+                           (u', r2) <- local (Bind x t':) $ infer u
                            -- s <- infer g l (Pi t r2)
                            -- isSort s
-                           return $ Pi x (interp t) r2
-infer (A.App _ t1 t2) = do r1 <- infer t1
-                           r2 <- infer t2
+                           return (Lam (Bind x t') u', Pi (Bind x t') r2)
+infer (A.App _ t1 t2) = do (t1', r1) <- infer t1
                            case r1 of
-                             Pi _ u1 u2 -> do conversion r2 u1
-                                              return $ subst (interp t2) u2
-                             otherwise -> typeError $ NotFunction r2
+                             Pi b1 u2 -> do t2' <- check t2 (expr b1)
+                                            return (App t1' t2', subst t2' u2)
+                             otherwise -> typeError $ NotFunction r1
 
-check :: (MonadTCM tcm) => A.Expr -> (Term NM) -> tcm ()
-check t u = do r <- infer t
+check :: (MonadTCM tcm) => A.Expr -> Term -> tcm Term
+check t u = do (t', r) <- infer t
                conversion r u
-
-lcheck :: (MonadTCM tcm) => [A.Expr] -> [(Term NM)] -> tcm ()
-lcheck [] [] = return ()
-lcheck (t:ts) (u:us) = do check t u
-	                  lcheck ts (mapsubst 0 (interp t) us)
+               return t'

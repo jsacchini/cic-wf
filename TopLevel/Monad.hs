@@ -25,54 +25,46 @@ import System.Console.Haskeline
 import System.IO
 
 import Syntax.Abstract
+import qualified Syntax.Scope as S
+import qualified Syntax.Global as GE
 import Utils.MonadUndo
 import Kernel.TCM
 import qualified Kernel.Whnf as W
 import qualified Syntax.Internal as I
-import Syntax.ETag
 import qualified Kernel.TypeChecking as T
 import qualified Environment as E
 import Utils.Fresh
 import Utils.Misc
-import Parser
+import Syntax.Parser
 
 import qualified Refiner.RM as RM
 import qualified Refiner.Refiner as R
 import qualified Refiner.Unify as RU
 
 
-addGlobal :: Name -> I.Type NM -> I.Term NM -> TLM ()
-addGlobal x t u = do g <- get
-                     let g' = global g
-                     when (E.bindedEnv x g') (throwIO $ AlreadyDefined x)
-                     put $ g { global = (E.extendEnv x (I.Def t u) g') }
-
-addAxiom :: Name -> I.Type NM -> TLM ()
-addAxiom x t = do g <- get
-                  let g' = global g
-                  when (E.bindedEnv x g') (throwIO $ AlreadyDefined x)
-                  put $ g { global = (E.extendEnv x (I.Axiom t) g') }
-
-data TCErr = TypeError TypeError
-           | RefinerError RM.RefinerError
-           | MyIOException E.IOException
-           | MyParsingError ParseError
-           | AlreadyDefined String
-           | InternalError String
-           | UnknownGoal I.MetaId
-           deriving(Typeable,Show)
-
-instance Error TCErr where
-    strMsg = InternalError
-
-instance E.Exception TCErr
-
-
 -- | Interaction monad.
 
-data TLState = TLState { global :: E.GlobalEnv NM,
+data TopLevelErr = TypeError TypeError
+                 | RefinerError RM.RefinerError
+                 | MyIOException E.IOException
+                 | MyParsingError ParseError
+                 | AlreadyDefined String
+                 | InternalError String
+                 | UnknownGoal
+                 | NoSelectedGoal
+                 | NoProofMode
+                 | UnfinishedProof
+                 deriving(Typeable,Show)
+
+instance Error TopLevelErr where
+    strMsg = InternalError
+
+instance E.Exception TopLevelErr
+
+
+data TLState = TLState { global :: E.GlobalEnv,
                          freshMeta :: I.MetaId,
-                         goal :: Maybe (Name, I.Type NM, I.Term EVAR),
+                         goal :: Maybe (Name, I.Type, I.ETerm),
                          subGoals :: Map.Map I.MetaId RM.Goal,
                          currentSubGoal :: Maybe (I.MetaId, RM.Goal)
                        }
@@ -100,129 +92,150 @@ instance MonadIO TLM where
 
 instance MonadTCM (ReaderT TCEnv TLM)
 
-instance E.MonadGE (ReaderT r TLM) where
+instance GE.MonadGE (ReaderT r TLM) where
     lookupGE x = do g <- get
                     return $ E.lookupEnv x (global g)
 
 instance BuildFresh I.MetaId TLState where
     nextFresh s = (freshMeta s, s { freshMeta = freshMeta s + 1 })
 
-instance RM.HasGoal (ReaderT (I.NamedCxt EVAR) TLM) where
-    addGoal i g = do s <- get
-                     put $ s { subGoals = Map.insert i g (subGoals s) }
-    removeGoal i = do s <- get
-                      put $ s { subGoals = Map.delete i (subGoals s) }
+instance RM.HasGoal (ReaderT (I.ENamedCxt) TLM) where
+    addGoal i g = modify $ \s -> s { subGoals = Map.insert i g (subGoals s) }
+    removeGoal i = modify $ \s -> s { subGoals = Map.delete i (subGoals s) }
+    mapGoal f = modify $ \s -> s { subGoals = Map.map f (subGoals s) }
 
-instance RM.MonadRM (ReaderT (I.NamedCxt EVAR) TLM)
+instance RM.MonadRM (ReaderT (I.ENamedCxt) TLM)
 
-runTLM :: TLM a -> IO (Either TCErr a)
+runTLM :: TLM a -> IO (Either TopLevelErr a)
 runTLM m = (Right <$> runTLM' m) `E.catch` (return . Left)
 
 runTLM' :: TLM a -> IO a
-runTLM' = -- flip runReaderT [] .
-          flip evalUndoT initialTLState .
-          unTLM
+runTLM' = flip evalUndoT initialTLState . unTLM
 
 initialTLState :: TLState
 initialTLState = TLState { global = E.emptyEnv, 
                            freshMeta = 0,
                            goal = Nothing,
                            subGoals = Map.empty,
-                           currentSubGoal = Nothing
-                         }
+                           currentSubGoal = Nothing  }
 
 
-infer :: Expr -> TLM (I.Term NM)
+-- Lifted operations from TCM and RM
+
+infer :: Expr -> TLM (I.Term, I.Type)
 infer = flip runReaderT [] . T.infer
 
-check :: Expr -> I.Term NM -> TLM ()
-check e = flip runReaderT [] . T.check e
+check :: Expr -> I.Term -> TLM I.Term
+check e = flip runReaderT []  . T.check e
 
-isSort :: I.Term NM -> TLM ()
+isSort :: I.Term -> TLM I.Sort
 isSort = flip runReaderT [] . T.isSort
 
-refine :: I.NamedCxt EVAR -> Expr -> I.Term NM -> TLM (I.Term EVAR)
+refine :: I.ENamedCxt -> Expr -> I.Term -> TLM I.ETerm
 refine xs e t = flip runReaderT xs $ R.refine e t
 
-refineSub :: I.NamedCxt EVAR -> Expr -> I.Term EVAR -> TLM (I.Term EVAR)
+refineSub :: I.ENamedCxt -> Expr -> I.ETerm -> TLM I.ETerm
 refineSub xs e t = flip runReaderT xs $ fmap fst $ R.check e t
 
-normalForm :: Expr -> TLM (I.Term NM)
-normalForm = flip runReaderT [] . W.normalForm . I.interp
+scope :: Expr -> TLM Expr
+scope = flip runReaderT [] . S.scope 
 
+scopeSub :: [Name] -> Expr -> TLM Expr
+scopeSub xs = flip runReaderT xs . S.scope
+
+
+-- Operations on the monad
 
 runParserTLM :: FilePath -> GenParser tok () a -> [tok] -> TLM a
 runParserTLM f p s = liftIO $ case runParser p () f s of
                                 Left e -> throwIO $ MyParsingError e
                                 Right t -> return t
 
+addGlobal :: Name -> I.Type -> I.Term -> TLM ()
+addGlobal x t u = do g <- fmap global get
+                     when (E.bindedEnv x g) (throwIO $ AlreadyDefined x)
+                     modify $ \s -> s { global = (E.extendEnv x (GE.Def t u) g) }
 
-showGlobal :: TLM String
-showGlobal = do g <- get
-                return $ showEnv $ reverse $ E.listEnv (global g)
+addAxiom :: Name -> I.Type -> TLM ()
+addAxiom x t = do g <- fmap global get
+                  when (E.bindedEnv x g) (throwIO $ AlreadyDefined x)
+                  modify $ \s -> s { global = (E.extendEnv x (GE.Axiom t) g) }
+
+normalForm :: I.Term -> TLM I.Term
+normalForm = flip runReaderT [] . W.normalForm
+
+
+showGlobal :: TLM ()
+showGlobal = do g <- fmap global get
+                liftIO $ putStr $ showEnv $ reverse $ E.listEnv g
     where showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
-          showG (x, I.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
-          showG (x, I.Axiom t) = "axiom " ++ x ++ " : " ++ show t
+          showG (x, GE.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
+          showG (x, GE.Axiom t) = "axiom " ++ x ++ " : " ++ show t
 
 
-showGoal :: TLM String
-showGoal = do s <- get
-              case goal s of
-                Just (x, t, e) -> return $ "goal " ++ x ++ " : " ++ show t ++ " := " ++ show e
-                Nothing -> return $ "No goal"
+showProof :: TLM ()
+showProof = do g <- fmap goal get
+               case g of
+                 Just (x, t, e) -> liftIO $ putStrLn $ concat ["goal ", x, " : ", show t, " := ", show e]
+                 Nothing -> throwIO NoProofMode
 
-showContext :: TLM String
-showContext = do s <- get
-                 case currentSubGoal s of
-                   Just (i, g) -> return $ show g
-                   Nothing -> return $ "No current goal"
+showContext :: TLM ()
+showContext = do csg <- fmap currentSubGoal get
+                 case csg of
+                   Just (i, g) -> liftIO $ print g
+                   Nothing -> throwIO NoSelectedGoal
 
-
-setSubGoal :: I.MetaId -> TLM ()
-setSubGoal n = do g <- get
-                  let sg = subGoals g in
-                   case Map.lookup n sg of
-                     Just goal -> put $ g { currentSubGoal = Just (n,goal),
-                                            subGoals = Map.delete n sg }
-                     Nothing -> throwIO $ UnknownGoal n
-
-listGoals :: TLM String
-listGoals = do g <- get
-               return $ Map.foldWithKey (\n sg r -> show n ++ " : " ++ RM.showGoalType sg ++ "\n" ++ r) "" (subGoals g)
-
--- refineCurrent :: Expr -> TLM ()
+showGoals :: TLM ()
+showGoals = do g <- fmap subGoals get
+               curr <- fmap goal get
+               when (isNothing curr) $ throwIO NoProofMode
+               -- liftIO $ putStr $ show $ Map.toList g
+               liftIO $ putStr $ Map.foldWithKey showG "" g
+    where showG n sg r = concat [show n, " : ", RM.showGoalType sg, "\n", r]
 
 clearGoals :: TLM ()
-clearGoals = do s <- get
-                put $ s { goal = Nothing,
-                          subGoals = Map.empty,
-                          currentSubGoal = Nothing,
-                          freshMeta = 0
-                        }
+clearGoals = modify $ \s -> s { goal = Nothing,
+                                subGoals = Map.empty,
+                                currentSubGoal = Nothing,
+                                freshMeta = 0 }
 
 
 qed :: TLM ()
 qed = do sg <- fmap subGoals get
-         when (not (Map.null sg)) $ liftIO (print "Not finished") >> return ()
          cg <- fmap currentSubGoal get
-         when (isJust cg) $ liftIO (print "Not finished") >> return ()
+         when (not (Map.null sg) || isJust cg) $ throwIO UnfinishedProof
          Just (x, t, e) <- fmap goal get
-         check (I.reify e) (I.cast t) -- cast shouldn't fail
-         addGlobal x (I.cast t) (I.cast e)
+         check (I.reify e) t -- check shouldn't fail
+         addGlobal x t (I.downcast e)
+         clearGoals
 
 execCommand :: String -> TLM ()
 execCommand xs = do csg <- fmap currentSubGoal get
                     case csg of
-                      Nothing -> do c <- runParserTLM "<interactive>" (parseEOF (parseCommand pVar)) xs
+                      Nothing -> do c <- runParserTLM "<interactive>" parseTopLevelCommand xs
                                     processCommand c
-                      Just (n, RM.Goal cxt t) -> do e <- runParserTLM "<interactive>" (parseEOF (parseExpr pIdentMeta)) xs
-                                                    e' <- refineSub cxt e t
+                      Just (n, RM.Goal cxt t) -> do e <- runParserTLM "<interactive>" parseExprMeta xs
+                                                    e1 <- scopeSub (map I.bind cxt) e
+                                                    e' <- refineSub cxt e1 t
                                                     cg <- fmap goal get
                                                     modify $ \s -> s { goal = fmap (\(x,t,e) -> (x,t,RU.apply [(n,e')] e)) cg,
-                                                                       currentSubGoal = Nothing
+                                                                       currentSubGoal = Nothing,
+                                                                       subGoals = Map.delete n (subGoals s)
                                                                      }
                                                     setSomeSubGoal
                                  
+readAndSetSubGoal :: String -> TLM ()
+readAndSetSubGoal xs = do n <- return (read xs :: I.MetaId) `catch` h
+                          setSubGoal n
+    where h :: E.SomeException -> TLM I.MetaId
+          h = const $ throwIO UnknownGoal
+
+setSubGoal :: I.MetaId -> TLM ()
+setSubGoal n = do sg <- fmap subGoals get
+                  case Map.lookup n sg of
+                    Just goal -> modify $ \s -> s { currentSubGoal = Just (n,goal) }
+                    Nothing -> throwIO $ UnknownGoal
+
 setSomeSubGoal :: TLM ()
 setSomeSubGoal = do sg <- fmap subGoals get
                     when (not (Map.null sg)) $ setSubGoal (fst (Map.findMin sg))
@@ -233,26 +246,35 @@ processCommand (Definition x t u) = processDef x t u
 processCommand (Axiom x t) = processAxiom x t
 processCommand (Load xs) = processLoad xs
 processCommand (Refine x t e) = do clearGoals
-                                   t' <- infer t
-                                   e' <- refine [] e t'
+                                   t1 <- scope t
+                                   (t', r) <- infer t1
+                                   isSort r
+                                   e1 <- scope e
+                                   e' <- refine [] e1 t'
                                    modify $ \s -> s { goal = Just (x, t', e') }
                                    setSomeSubGoal
 
 processLoad :: FilePath -> TLM ()
 processLoad xs = do h <- liftIO $ openFile xs ReadMode
                     ss <- liftIO $ hGetContents h
-                    cs <- runParserTLM xs (parseEOF parseFile) ss
+                    cs <- runParserTLM xs parseFile ss
                     liftIO $ hClose h
                     forM_ cs processCommand
 
 processAxiom :: Name -> Expr -> TLM ()
-processAxiom x t = do r <- infer t
+processAxiom x t = do t1 <- scope t
+                      (t',r) <- infer t1
                       isSort r
-                      addAxiom x (I.interp t)
+                      addAxiom x t'
 
 processDef :: Name -> Maybe Expr -> Expr -> TLM ()
-processDef x (Just t) u = do check u (I.interp t)
-                             addGlobal x (I.interp t) (I.interp u)
-processDef x Nothing u = do t <- infer u
-                            addGlobal x t (I.interp u)
+processDef x (Just t) u = do t1 <- scope t
+                             (t', r) <- infer t1
+                             isSort r
+                             u1 <- scope u
+                             u' <- check u1 t'
+                             addGlobal x t' u'
+processDef x Nothing u = do u1 <- scope u
+                            (u', r) <- infer u1
+                            addGlobal x r u'
 

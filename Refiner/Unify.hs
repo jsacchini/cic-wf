@@ -9,12 +9,16 @@ import Utils.Impossible
 
 import "mtl" Control.Monad.Error
 import "mtl" Control.Monad.State
-import Syntax.Internal
-import Syntax.ETag
+
+import Data.Foldable hiding (notElem)
+import Control.Arrow (second)
+
 import Environment
+import Syntax.Internal
+import Syntax.Global
 import Refiner.RM
 
-type Subst = [(MetaId, Term EVAR)]
+type Subst = [(MetaId, ETerm)]
 
 (<+>) :: Subst -> Subst -> Subst
 (<+>) = (++)
@@ -25,51 +29,51 @@ domain = map fst
 class Apply a where
     apply :: Subst -> a -> a
 
-instance Apply (Term EVAR) where
-    -- apply :: Subst -> Term EVAR -> Term EVAR
+instance Apply ETerm where
     apply [] t = t
     apply ((i, t1): s) t = apply s $ substMeta i t1 t
 
-instance Apply (NamedCxt EVAR) where
-    apply s = map (\(x,t) -> (x,apply s t))
+instance Apply ENamedCxt where
+    apply s = map (fmap $ apply s)
 
-whnf :: (MonadRM rm) => Term a -> rm (Term a)
+instance Apply Goal where
+    apply s (Goal e t) = Goal (apply s e) (apply s t)
+
+whnf :: (MonadRM rm) => ETerm -> rm ETerm
 whnf t@(App t1 t2) = do u1 <- whnf t1
                         case u1 of
-                          Lam x _ u -> whnf $ subst t2 u
+                          Lam _ u -> whnf $ subst t2 u
                           u -> return $ App u t2
 whnf t@(Free x) = do d <- lookupGlobal x
                      case d of
-                       Def _ u -> return $ cast u
+                       Def _ u -> return $ upcast u
                        Axiom _ -> return t
 whnf t = return t
 
 
--- remove :: Subst -> [(MetaId, a, b)] -> [(MetaId, a, b)]
--- remove :: Subst -> [(MetaId, ([Type], Type))] -> [(MetaId, ([Type], Type))]
-remove s = (map (\(x,t) -> (x+300,([],t))) s++) . ((100, ([],TSort Box)):)-- filter $ flip notElem (map fst s) . fst 
+remove s = filter $ flip notElem (map fst s) . fst 
 
-unify :: (MonadRM rm) => Term EVAR -> Term EVAR -> rm Subst
+unify :: (MonadRM rm) => ETerm -> ETerm -> rm Subst
 unify t1 t2 = do w1 <- whnf t1
                  w2 <- whnf t2
                  case (w1, w2) of
-                   (Meta i _ _, _) -> return [(i, w2)]
-                   (_, Meta i _ _) -> return [(i, w2)]
-                   (Free x, Free y) -> do when (x /= y) $ refinerError RefinerError
+                   (Meta i _ _, _) -> return [(i, w2)] -- missing occur check
+                   (_, Meta i _ _) -> return [(i, w1)] -- missing occur check
+                   (Free x, Free y) -> do when (x /= y) $ refinerError $ RefinerError $ "unify free"++ show w1 ++ " " ++ show w2
                                           return []
-                   (Bound m, Bound n) -> do when (m /= n) $ refinerError RefinerError
+                   (Bound m, Bound n) -> do when (m /= n) $ refinerError $ RefinerError $ "unify bound" ++ show w1 ++ " " ++ show w2
                                             return []
-                   (TSort s1, TSort s2) -> do when (s1 /= s2) $ refinerError RefinerError
+                   (TSort s1, TSort s2) -> do when (s1 /= s2) $ refinerError $ RefinerError $ "unify sort" ++ show w1 ++ " " ++ show w2
                                               return []
-                   (Pi _ u1 u2, Pi _ v1 v2) -> do sigma1 <- unify u1 v1
-                                                  sigma2 <- unify (apply sigma1 u2) (apply sigma1 v2)
-                                                  return $ sigma1 <+> sigma2
-                   (Lam _ u1 u2, Lam _ v1 v2) -> do sigma1 <- unify u1 v1
-                                                    sigma2 <- unify (apply sigma1 u2) (apply sigma1 v2)
-                                                    return $ sigma1 <+> sigma2
+                   (Pi u1 u2, Pi v1 v2) -> do sigma1 <- unify (expr u1) (expr v1)
+                                              sigma2 <- unify (apply sigma1 u2) (apply sigma1 v2)
+                                              return $ sigma1 <+> sigma2
+                   (Lam u1 u2, Lam v1 v2) -> do sigma1 <- unify (expr u1) (expr v1)
+                                                sigma2 <- unify (apply sigma1 u2) (apply sigma1 v2)
+                                                return $ sigma1 <+> sigma2
                    (App u1 u2, App v1 v2) -> do sigma1 <- unify u1 v1
                                                 sigma2 <- unify (apply sigma1 u2) (apply sigma1 v2)
                                                 return $ sigma1 <+> sigma2
-                   (_, _) -> refinerError RefinerError
+                   (_, _) -> refinerError $ RefinerError $ "unify " ++ show w1 ++ " " ++ show w2
 
 

@@ -14,26 +14,25 @@ import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.State
 
 import Syntax.ETag
-import Utils.Fresh
 import Environment
 import Utils.Fresh
 
 unRight (Right x) = x
 
-data RMState = RMState { global :: GlobalEnv NM,
+data RMState = RMState { global :: GlobalEnv,
                          freshMeta :: MetaId,
                          goals :: [(MetaId, Goal)]
                        }
---               deriving(Show)
+               deriving(Show)
 
-instance Show RMState where
-    show (RMState _ _ g) = show g -- show f
+-- instance Show RMState where
+--     show (RMState _ _ g) = show g -- show f
 
 newtype RM a = RM { unRM :: StateT RMState
-                             (ReaderT (NamedCxt EVAR) IO) a }
+                             (ReaderT ENamedCxt IO) a }
     deriving (Monad,
               Functor,
-              MonadReader (NamedCxt EVAR),
+              MonadReader ENamedCxt,
               MonadState RMState)
 
 -- instance MonadGE RM where
@@ -49,10 +48,11 @@ instance BuildFresh Int RMState where
                   where i = freshMeta s
 
 instance HasGoal RM where
-    getGoal = do s <- get
-                 return $ goals s
-    putGoal g = do s <- get
-                   put $ s { goals = g }
+    addGoal i g = do s <- get
+                     put $ s { goals = (i,g): (goals s) }
+    removeGoal i = do s <- get
+                      put $ s { goals =  filter ((/=i) . fst) (goals s) }
+    mapGoal f = modify $ \s -> s { goals = map (\(x,g) -> (x, f g)) (goals s) }
 
 instance MonadGE RM where
     lookupGE x = do g <- get
@@ -66,4 +66,8 @@ runRM = flip runReaderT [] .
         unRM
 
 
-testRM = runRM . refine . unRight . runParser (parseExpr pIdentMeta) () "" 
+testRM = runRM . refine_ . unRight . runParser (parseExpr pIdentMeta) () "" 
+
+checkRM e t = runRM $ refine e' (interp t')
+    where e' = unRight $ runParser (parseExpr pIdentMeta) () "" e
+          t' = unRight $ runParser (parseExpr pIdentMeta) () "" t
