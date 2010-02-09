@@ -29,6 +29,7 @@ import Parser
 import qualified Kernel.TypeChecking as T
 import qualified Environment as E
 import Utils.Fresh
+import Utils.Misc
 
 import qualified Refiner.RM as RM
 
@@ -66,6 +67,12 @@ data TLCommand = LoadFile String
                | Help
                | NoOp
                | NoCommand String
+               -- Goal commands
+               | SetGoal String
+               | Qed
+               | ShowContext
+               | ShowGoal
+               | ListGoals
                deriving(Show)
 
 data InteractiveCommand = Cmd [String] String (String -> TLCommand) String
@@ -81,7 +88,13 @@ commands
          Cmd [":undo"]        ""        (const Undo)   "undo last action",
          Cmd [":redo"]        ""        (const Redo)   "redo last action",
          Cmd [":quit"]        ""        (const Quit)   "exit interpreter",
-         Cmd [":help",":?"]   ""        (const Help)   "display this list of commands" ]
+         Cmd [":help",":?"]   ""        (const Help)   "display this list of commands",
+         Cmd [":context"]     ""        (const ShowContext) "show current goal context",
+         Cmd [":qed"]         ""        (const Qed)    "finishes proof",
+         Cmd [":set"]         ""        SetGoal        "sets a new subgoal",
+         Cmd [":show"]        ""        (const ShowGoal) "show goal",
+         Cmd [":goals"]       ""        (const ListGoals) "list all goals"
+       ]
 
 
 interpretCommand :: String -> IM TLCommand
@@ -101,8 +114,16 @@ interpretCommand x
          return $ NoCommand x
 
 
+readPrompt :: IM (Maybe String)
+readPrompt = do pr <- showPrompt
+                readline pr
+    where showPrompt = lift $ do g <- get
+                                 case currentSubGoal g of
+                                   Nothing -> return "> "
+                                   Just (n,_) -> return $ show n ++ " > "
+
 interactiveLoop :: IM ()
-interactiveLoop = do xs <- readline "> "
+interactiveLoop = do xs <- readPrompt
                      case xs of
                        Nothing -> return ()
                        Just xs -> do c <- interpretCommand xs
@@ -114,18 +135,12 @@ interactiveLoop = do xs <- readline "> "
 processTLCommand :: TLCommand -> IM ()
 processTLCommand (Check s) = catchIM $ do e <- runParserTLM "<interactive>" (parseEOF (parseExpr pVar)) s
                                           infer e >>= liftIO . print
--- processTLCommand (Eval s) = catchIM $ do e <- liftIO $ runParserTLM "<interactive>" (parseEOF parseExpr) s
---                                          _ <- infer e
---                                          v <- norm (I.interp e)
---                                          lift $ print (valterm v)
+processTLCommand (Eval s) = catchIM $ do e <- runParserTLM "<interactive>" (parseEOF (parseExpr pVar)) s
+                                         _ <- infer e
+                                         v <- normalForm e
+                                         liftIO $ print v
 processTLCommand Help = outputStrLn "help coming"
-processTLCommand Print = do g <- lift get
-                            let g' = global g
-                            outputStr $ showEnv $ reverse $ E.listEnv g'
-                where showEnv :: [(Name, I.Global NM)] -> String
-                      showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
-                      showG (x, I.Def t u) = "let " ++ x ++ " : " ++ show t ++ " := " ++ show u
-                      showG (x, I.Axiom t) = "axiom " ++ x ++ " : " ++ show t
+processTLCommand Print = lift showGlobal >>= outputStr
 processTLCommand (LoadFile xs) = catchIM $ oneStep $ processLoad (takeWhile (not . isSpace) xs)
 processTLCommand Undo = do b <- lift undo
                            if b then outputStrLn "si" else outputStrLn "no"
@@ -133,33 +148,13 @@ processTLCommand Redo = do b <- lift redo
                            if b then outputStrLn "si" else outputStrLn "no"
 processTLCommand NoOp = return ()
 processTLCommand Quit = return ()
-processTLCommand (NoCommand xs) = catchIM $ do c <- runParserTLM "<interactive>" (parseEOF (parseCommand pVar)) xs
-                                               processCommand c
-
-
-processCommand :: Command -> TLM ()
-processCommand (Definition x t u) = processDef x t u
-processCommand (Axiom x t) = processAxiom x t
-processCommand (Load xs) = processLoad xs
-
-processLoad :: FilePath -> TLM ()
-processLoad xs = do h <- liftIO $ openFile xs ReadMode
-                    ss <- liftIO $ hGetContents h
-                    cs <- runParserTLM xs (parseEOF parseFile) ss
-                    liftIO $ hClose h
-                    forM_ cs processCommand
-
-processAxiom :: Name -> Expr -> TLM ()
-processAxiom x t = do r <- infer t
-                      isSort r
-                      addAxiom x (I.interp t)
-
-processDef :: Name -> Maybe Expr -> Expr -> TLM ()
-processDef x (Just t) u = do check u (I.interp t)
-                             addGlobal x (I.interp t) (I.interp u)
-processDef x Nothing u = do t <- infer u
-                            addGlobal x t (I.interp u)
-
+processTLCommand (NoCommand xs) = catchIM $ execCommand xs
+processTLCommand (SetGoal xs) = let g = read xs::I.MetaId in
+                                catchIM $ setSubGoal g
+processTLCommand ShowGoal = lift showGoal >>= outputStrLn
+processTLCommand ShowContext = lift showContext >>= outputStrLn
+processTLCommand ListGoals = lift listGoals >>= outputStrLn
+processTLCommand Qed = catchIM qed
 
 --------- Completion
 completion :: CompletionFunc TLM

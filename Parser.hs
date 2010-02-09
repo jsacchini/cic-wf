@@ -59,17 +59,12 @@ pIdentMeta :: CxtParser ExprPos
 pIdentMeta = pVar <||> pMeta <||> pEVar
 
 
-parseEOF p = do e <- p
-                eof
-                return e
-
-
 parseFile :: CharParser () [Command]
 parseFile = whiteSpace >> many (parseCommand pIdent)
                
 
 parseCommand :: CxtParser ExprPos -> CharParser () Command
-parseCommand p = whiteSpace >> (parseLet p <|> parseLoad p <|> parseAxiom p)
+parseCommand p = whiteSpace >> (parseLet p <|> parseLoad p <|> parseAxiom p <|> parseRefine)
 
 -- parseAxiom :: CxtParser ExprPos -> CharParser () (Command a)
 parseAxiom p = do reserved "axiom"
@@ -99,6 +94,7 @@ parseLet p = do reserved "let"
 parseRefine :: CharParser () Command
 parseRefine = do reserved "refine"
                  x <- identifier
+                 symbol ":"
                  t <- parseExpr pIdentMeta
                  symbol ":="
                  e <- parseExpr pIdentMeta

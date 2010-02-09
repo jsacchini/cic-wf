@@ -33,26 +33,30 @@ instance Show Goal where
     show (Goal c t) = s ++ "\n------------\n" ++ (A.ppExpr (map fst c) (reify t))
         where (s,_) = foldr (\(x,t) (s,e) -> (s++ "\n" ++ x ++ ":" ++ (A.ppExpr e (reify t)), x:e)) ("",[]) c
 
+showGoalType :: Goal -> String
+showGoalType (Goal c t) = A.ppExpr (map fst c) (reify t)
+
 class (Monad m) => HasGoal m where
-    getGoal :: m [(MetaId, Goal)]
-    putGoal :: [(MetaId, Goal)] -> m ()
+    addGoal :: MetaId -> Goal -> m ()
+    removeGoal :: MetaId -> m ()
 
 class (MonadGE m,
        HasGoal m,
+       Functor m,
        MonadReader (NamedCxt EVAR) m,
        Fresh MetaId m) => MonadRM m
 
-addGoal :: (HasGoal m) => MetaId -> Goal -> m ()
-addGoal i g = do gs <- getGoal
-                 putGoal $ (i,g):gs
+-- addGoal :: (HasGoal m) => MetaId -> Goal -> m ()
+-- addGoal i g = do gs <- getGoal
+--                  putGoal $ (i,g):gs
 
-removeGoal :: (HasGoal m) => MetaId -> m ()
-removeGoal i = do gs <- getGoal
-                  putGoal $ filter ((/=i) . fst) gs
+-- removeGoal :: (HasGoal m) => MetaId -> m ()
+-- removeGoal i = do gs <- getGoal
+--                   putGoal $ filter ((/=i) . fst) gs
 
-modifyGoals :: (HasGoal m) => (Goal -> Goal) -> m ()
-modifyGoals f = do gs <- getGoal
-                   putGoal $ map (\(i,x) -> (i, f x)) gs
+-- modifyGoals :: (HasGoal m) => (Goal -> Goal) -> m ()
+-- modifyGoals f = do gs <- getGoal
+--                    putGoal $ map (\(i,x) -> (i, f x)) gs
 
 
 refinerError :: (MonadRM rm) => RefinerError -> rm a

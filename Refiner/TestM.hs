@@ -32,6 +32,7 @@ instance Show RMState where
 newtype RM a = RM { unRM :: StateT RMState
                              (ReaderT (NamedCxt EVAR) IO) a }
     deriving (Monad,
+              Functor,
               MonadReader (NamedCxt EVAR),
               MonadState RMState)
 
