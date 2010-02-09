@@ -39,8 +39,13 @@ data Command = Definition Name (Maybe Expr) Expr
                | Refine Name Expr Expr
 
 
+-- show should only be called on closed expressions
+-- for open expressions, use ppExpr
 instance Show (Expr) where
     show = show . tprint 0 []
+
+ppExpr :: [Name] -> Expr -> String
+ppExpr xs = show . tprint 0 xs
 
 type Pos = Position
 
