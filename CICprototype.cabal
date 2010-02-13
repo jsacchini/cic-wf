@@ -10,4 +10,9 @@ Cabal-Version:       >=1.2
 
 Executable cic
   Main-is:           Main.hs
-  Build-Depends:     base -any, parsec >= 2, pretty -any, haskeline -any, mtl -any
+  Build-Depends:     base >= 4.1,
+                     parsec >= 2,
+                     pretty -any,
+                     haskeline >= 0.6,
+                     mtl -any,
+                     containers -any
