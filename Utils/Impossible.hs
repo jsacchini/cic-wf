@@ -6,7 +6,7 @@
 
 module Utils.Impossible where
 
-import Control.Exception as E
+import qualified Control.Exception as E(Exception,throw,catch)
 import Data.Typeable
 
 -- | \"Impossible\" errors, annotated with a file name and a line
@@ -20,13 +20,13 @@ instance Show Impossible where
     , "Location of the error: " ++ file ++ ":" ++ show line
     ]
 
-instance Exception Impossible
+instance E.Exception Impossible
 
 -- | Abort by throwing an \"impossible\" error. You should not use
 -- this function directly. Instead use the macro in @undefined.h@.
 
 throwImpossible :: Impossible -> a
-throwImpossible = throw
+throwImpossible = E.throw
 
 -- | Catch an \"impossible\" error, if possible.
 
