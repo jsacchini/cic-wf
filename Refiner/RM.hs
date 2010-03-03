@@ -11,7 +11,9 @@ import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.State
 import Control.Exception
 
+import Syntax.Bind
 import Syntax.Internal hiding (lift)
+import Syntax.Name
 import Syntax.Global
 import qualified Syntax.Abstract as A
 import Utils.Fresh
@@ -19,7 +21,7 @@ import Environment
 
 -- Refiner error
 
-data RefinerError 
+data RefinerError
     = RefinerError String
     deriving(Typeable,Show)
 
@@ -42,7 +44,7 @@ class (Monad m) => HasGoal m where
     mapGoal :: (Goal -> Goal) -> m ()
 
 class (MonadIO m,
-       MonadGE m,
+       LookupName Global m,
        HasGoal m,
        Functor m,
        MonadReader ENamedCxt m,
@@ -51,9 +53,9 @@ class (MonadIO m,
 
 refinerError :: (MonadRM rm) => RefinerError -> rm a
 refinerError = liftIO . throwIO
-        
+
 lookupGlobal :: (MonadRM rm) => Name -> rm Global
-lookupGlobal x = do g <- lookupGE x 
+lookupGlobal x = do g <- lookupName x
                     case g of
                       Just t -> return t
                       Nothing -> refinerError $ RefinerError "lookupGlobal"

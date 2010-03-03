@@ -14,11 +14,13 @@ import Data.Function
 import Data.Foldable hiding (notElem)
 import Data.Monoid
 
+import Syntax.Bind
+import Syntax.Name
 import Syntax.Position
 import qualified Syntax.Abstract as A
 import Syntax.ETag
 
-data Sort 
+data Sort
     = Box
     | Star
     deriving(Eq, Show)
@@ -28,45 +30,22 @@ box = TSort Box
 star :: (ETag a) => GTerm a
 star = TSort Star
 
-type Name = String
-
 type MetaId = Int
 type Shift = Int
 type CxtSize = Int
 
 data GTerm a where
     TSort :: (ETag a) => Sort -> GTerm a
-    Pi :: (ETag a) => GBind (GType a) -> GTerm a -> GTerm a
+    Pi :: (ETag a) => Bind (GType a) -> GTerm a -> GTerm a
     Bound :: (ETag a) => Int -> GTerm a
     Free :: (ETag a) => Name -> GTerm a
-    Lam :: (ETag a) => GBind (GType a) -> GTerm a -> GTerm a
+    Lam :: (ETag a) => Bind (GType a) -> GTerm a -> GTerm a
     App :: (ETag a) => GTerm a -> GTerm a -> GTerm a
     Meta :: MetaId -> Shift -> CxtSize -> GTerm EVAR
 
 type GType a = GTerm a
---               deriving(Show)
 
-type GNamedCxt a = [GBind a]
-
-data GBind a = Bind Name a
-             | NoBind a
-             deriving(Show) -- we never call directly show for binds
-
-instance Functor GBind where
-    fmap f (NoBind t) = NoBind $ f t
-    fmap f (Bind x t) = Bind x $ f t
-
-instance Foldable GBind where
-    foldMap f (NoBind t) = f t
-    foldMap f (Bind _ t) = f t
-
-expr :: GBind a -> a
-expr (NoBind t) = t
-expr (Bind _ t) = t
-
-bind :: GBind a -> Name
-bind (NoBind _) = ""
-bind (Bind x _) = x
+type GNamedCxt a = [Bind a]
 
 type Term = GTerm NM
 type Type = GTerm NM
@@ -74,11 +53,15 @@ type ETerm = GTerm EVAR
 type EType = GTerm EVAR
 type NamedCxt = GNamedCxt Term
 type ENamedCxt = GNamedCxt ETerm
-type Bind = GBind Term
-type EBind = GBind ETerm
+type BindT = Bind Term
+type EBindT = Bind ETerm
 
-instance Show (GTerm a) where
-    show = show . reify
+-- instance Show (GTerm a) where -- for debugging only
+--     show = A.ppExpr (bounds 0) . reify
+--            where bounds n = ("BB "++show n) : bounds (n+1)
+
+ppTerm :: [Name] -> (GTerm a) -> String
+ppTerm xs = A.ppExpr xs . reify
 
 lift :: Int -> Int -> GTerm a -> GTerm a
 lift k n t@(TSort _) = t
@@ -99,7 +82,7 @@ substBound i r t@(Free _) = t
 substBound i r (Lam b u) = Lam (fmap (substBound i r) b) (substBound (i+1) r u)
 substBound i r (App t1 t2) = App (substBound i r t1) (substBound i r t2)
 substBound i r t@(Meta _ _ _) = t
-                          
+
 substMeta :: MetaId -> GTerm a -> GTerm a -> GTerm a
 substMeta i r t@(TSort _) = t
 substMeta i r (Pi b t2) = Pi (fmap (substMeta i r) b) (substMeta i r t2)
@@ -128,12 +111,6 @@ isFree n = getAny . isFree_ n
 
 reify t = reify_ (collectFree t) t
 
-freshName :: [Name] -> Name -> Name
-freshName xs y | notElem y xs = y
-               | otherwise = addSuffix 0
-                             where addSuffix n | notElem (y++show n) xs = y++show n
-                                               | otherwise = addSuffix (n+1)
-
 collectFree :: GTerm a -> [Name]
 collectFree (TSort _) = []
 collectFree (Pi b t2) = foldMap collectFree b ++ collectFree t2
@@ -146,13 +123,13 @@ collectFree (Meta _ _ _) = []
 reify_ :: [Name] -> GTerm a -> A.Expr
 reify_ xs (TSort Box) = A.TSort noPos A.Box
 reify_ xs (TSort Star) = A.TSort noPos A.Star
-reify_ xs (Pi (NoBind t1) t2) = A.Pi noPos "" (reify_ xs t1) (reify_ ("":xs) t2)
-reify_ xs (Pi (Bind x t1) t2) = A.Pi noPos x' (reify_ xs t1) (reify_ (x':xs) t2)
+reify_ xs (Pi (NoBind t1) t2) = A.Pi noPos (NoBind (reify_ xs t1)) (reify_ ("":xs) t2)
+reify_ xs (Pi (Bind x t1) t2) = A.Pi noPos (Bind x' (reify_ xs t1)) (reify_ (x':xs) t2)
                                 where x' = freshName xs x
 reify_ xs (Bound n) = A.Bound noPos n
 reify_ xs (Free x) = A.Var noPos x
-reify_ xs (Lam (NoBind t) u) = A.Lam noPos "" (reify_ xs t) (reify_ ("":xs) u)
-reify_ xs (Lam (Bind x t) u) = A.Lam noPos x' (reify_ xs t) (reify_ (x':xs) u)
+reify_ xs (Lam (NoBind t) u) = A.Lam noPos (NoBind $ reify_ xs t) (reify_ ("":xs) u)
+reify_ xs (Lam (Bind x t) u) = A.Lam noPos (Bind x' (reify_ xs t)) (reify_ (x':xs) u)
                              where x' = freshName xs x
 reify_ xs (App t1 t2) = A.App noPos (reify_ xs t1) (reify_ xs t2)
 reify_ xs (Meta i _ _) = A.EVar noPos (Just i)

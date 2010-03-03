@@ -1,27 +1,239 @@
 {-# LANGUAGE PackageImports, FlexibleContexts, GeneralizedNewtypeDeriving,
   StandaloneDeriving, DeriveDataTypeable
  #-}
-module Syntax.Parser where
+module Syntax.Parser
+    (parseExpr, parseTopLevelCommand, parseFile,
+     Syntax.Parser.runParser, ParsingError
+    ) where
 
 import Data.List
+import Data.Typeable
 
 import "mtl" Control.Monad.Reader
+import Control.Exception
 
 import Text.ParserCombinators.Parsec
 import Text.ParserCombinators.Parsec.Pos
-import Text.ParserCombinators.Parsec.Prim
+import Text.ParserCombinators.Parsec.Prim as Prim
 import qualified Text.ParserCombinators.Parsec.Token as P
 import Text.ParserCombinators.Parsec.Language(emptyDef)
 
 import Syntax.Abstract
+import Syntax.Bind
 import Syntax.Position
 
 type ExprPos = (Expr, SourcePos) -- final position
+
+data ParsingError = ParsingError ParseError
+                    deriving(Typeable,Show)
+
+instance Exception ParsingError
+
+runParser :: (MonadIO m) => FilePath -> CharParser () a -> String -> m a
+runParser f p s = liftIO $ case Prim.runParser p () f s of
+                             Left e -> throwIO $ ParsingError e
+                             Right t -> return t
+
 
 parseEOF p = do e <- p
                 eof
                 return e
 
+
+parseFile :: CharParser () [Command]
+parseFile = parseEOF $ whiteSpace >> many parseCommand
+            where parseCommand = whiteSpace >> (parseLet <|> parseLoad <|> parseAxiom)
+
+parseTopLevelCommand :: CharParser () Command
+parseTopLevelCommand = parseEOF $ (parseLet <|> parseLoad <|> parseAxiom) -- <|> parseRefine)
+
+parseExpr = parseEOF $ whiteSpace >> fmap fst pExpr
+
+parseAxiom :: CharParser () Command
+parseAxiom = do reserved "axiom"
+                x <- identifier
+                reservedOp ":"
+                t <- fmap fst pExpr
+                reservedOp "."
+                return $ AxiomCommand x t
+
+parseLoad :: CharParser () Command
+parseLoad = do reserved "import"
+               symbol "\""
+               xs <- many $ alphaNum <|> oneOf "."
+               symbol "\""
+               symbol "."
+               return $ Load xs
+
+parseLet :: CharParser () Command
+parseLet = do reserved "let"
+              x <- identifier
+              t <- pMaybeExpr
+              reservedOp ":="
+              e <- fmap fst pExpr
+              reservedOp "."
+              return $ Definition x t e
+
+-- parseRefine :: CharParser () Command
+-- parseRefine = do reserved "refine"
+--                  x <- identifier
+--                  symbol ":"
+--                  t <- fmap fst pExpr
+--                  symbol ":="
+--                  e <- fmap fst pExpr
+--                  symbol "."
+--                  return $ Refine x t e
+
+parseInd :: CharParser () Command
+parseInd = do reserved "data"
+              i <- identifier
+              bs <- many $ parens pBind
+              reservedOp ":"
+              arg <- fmap fst pExpr
+              reservedOp ":="
+              cs <- many parseConstr
+              symbol "."
+              return $ Inductive (MkInd i bs arg cs)
+
+parseConstr = do reservedOp "|"
+                 n <- identifier
+                 reservedOp ":"
+                 e <- fmap fst pExpr
+                 return $ MkConstrExpr n e
+
+pMaybeExpr :: CharParser () (Maybe Expr)
+pMaybeExpr = do reservedOp ":"
+                e <- fmap fst pExpr
+                return $ Just e
+             <|> return Nothing
+
+pExpr :: CharParser () ExprPos
+pExpr = parsePos $ do e <- pExpr_
+                      -- return e
+                      (do reservedOp "::"
+                          (e2, ePos) <- pExpr_
+                          return (Ann noPos (fst e) e2, ePos)
+                       <|> return e)
+
+pExpr_ :: CharParser () ExprPos
+pExpr_ = pPi <|>
+         pLam <|>
+         pMatch <|>
+         pFix <|>
+         do sPos <- getPosition
+            e <- pExpr1 sPos
+            rest <- pRest
+            case rest of
+              Just (e1, ePos) -> return (Pi (mkPos sPos ePos) (NoBind $ fst e) e1, ePos)
+              Nothing -> return e
+
+
+pExpr1 :: SourcePos -> CharParser () ExprPos
+pExpr1 sPos = do f <- pExpr2
+                 args <- many $ pExpr2
+                 let ePos = snd $ last (f:args) in
+                  return (foldl (\r (e,p) -> App (mkPos sPos p) r e) (fst f) args, ePos)
+
+pExpr2 :: CharParser () ExprPos
+pExpr2 = pIdent <|> pSort <|> parens pExpr
+
+-- pparenExpr :: CharParser () ExprPos
+-- pparenExpr = do sPos <- getPosition
+--                 parens $ pMaybeAnn sPos
+--     where pMaybeAnn p = do e <- pExpr
+--                            (do symbol "::"
+--                                (e2, ePos) <- pExpr
+--                                return (Ann (mkPos p ePos) (fst e) e2, ePos)
+--                             <|> return e)
+                -- symbol "("
+                -- e <- pExpr
+                -- (do symbol ")"
+                --     return e
+                --  <|>
+                --  do symbol "::"
+                --     (e2, _) <- pExpr
+                --     ePos <- getPosition
+                --     symbol ")"
+                --     return (Ann (mkPos sPos ePos) (fst e) e2, ePos))
+
+pRest :: CharParser () (Maybe ExprPos)
+pRest = do reservedOp "->"
+           fmap Just pExpr
+        <|> return Nothing
+
+pFix :: CharParser () ExprPos
+pFix = parsePos $ do reserved "fix"
+                     ns <- fmap read (many digit)
+                     whiteSpace
+                     f <- identifier
+                     bs <- many $ parens pBind
+                     reservedOp ":"
+                     ret <- fmap fst pExpr
+                     reservedOp ":="
+                     (e, ePos) <- pExpr
+                     return (Fix noPos ns f bs ret e, ePos)
+
+pMatch :: CharParser () ExprPos
+pMatch = parsePos $ do reserved "match"
+                       e <- fmap fst pExpr
+                       aname <- optionMaybe pAsName
+                       iname <- optionMaybe pInName
+                       ret <- optionMaybe pReturn
+                       reserved "with"
+                       bs <- many pBranch
+                       ePos <- fmap (flip updatePosString "end") getPosition
+                       reserved "end"
+                       return $ (Match noPos (MkMatch e aname iname ret bs), ePos)
+
+pAsName = reserved "as" >> identifier
+pInName = reserved "in" >> fmap (\xs -> (head xs, tail xs)) (many1 identifier)
+pReturn = reserved "return" >> fmap fst pExpr
+
+pBranch :: CharParser () Branch
+pBranch = do reservedOp "|"
+             c <- identifier
+             as <- many identifier
+             symbol "=>"
+             e <- fmap fst pExpr
+             return $ MkBranch c 0 as e -- in scope we put the right number
+
+pPi :: CharParser () ExprPos
+pPi = parsePos $ do reserved "forall"
+                    bs <- pBinds
+                    reservedOp ","
+                    (e, ePos) <- pExpr
+                    return $ (foldr (\(sp, b) r -> Pi (mkPos sp ePos) b r) e bs, ePos)
+
+pLam :: CharParser () ExprPos
+pLam = parsePos $ do reserved "fun"
+                     bs <- pBinds
+                     reservedOp "=>"
+                     (e, ePos) <- pExpr
+                     return $ (foldr (\(sp, b) r -> Lam (mkPos sp ePos) b r) e bs, ePos)
+
+pBind :: CharParser () BindE
+pBind = do x <- identifier
+           symbol ":"
+           e <- fmap fst pExpr
+           return $ Bind x e
+
+pBinds :: CharParser () [(SourcePos, BindE)]
+pBinds = do sPos <- getPosition
+            b <- pBind
+            return [(sPos, b)]
+         <|> (many1 $ do sPos <- getPosition
+                         b <- parens pBind
+                         return (sPos, b))
+
+-- pFix p = do sPos <- getPosition
+--             reserved "fix"
+--             n <- many digit
+--             f <- identifier
+--             symbol ":"
+--             t <- fmap fst $ pExpr p
+--             symbol ":="
+--             (e, ePos) <- pExpr p
+--             return $ Fix n f
 
 pVar :: CharParser () ExprPos
 pVar = do sPos <- getPosition
@@ -43,151 +255,7 @@ pEVar = do sPos <- getPosition
             return (EVar (mkPos sPos ePos) (Just $ read ns), ePos)
 
 pIdent :: CharParser () ExprPos
-pIdent = pVar
-pIdentMeta :: CharParser () ExprPos
-pIdentMeta = pVar <|> pMeta <|> pEVar
-
-
-parseFile :: CharParser () [Command]
-parseFile = parseEOF $ whiteSpace >> many parseCommand
-            where parseCommand = whiteSpace >> (parseLet pIdent <|> parseLoad pIdent <|> parseAxiom pIdent)
-               
-parseTopLevelCommand :: CharParser () Command
-parseTopLevelCommand = parseEOF $ (parseLet pIdentMeta <|> parseLoad pIdentMeta <|> parseAxiom pIdentMeta <|> parseRefine)
-
-parseExpression = parseEOF $ whiteSpace >> parseExpr pIdent
-parseExprMeta = parseEOF $ whiteSpace >> parseExpr pIdentMeta
-
-parseAxiom :: CharParser () ExprPos -> CharParser () Command
-parseAxiom p = do reserved "axiom"
-                  x <- identifier
-                  symbol ":"
-                  t <- parseExpr p
-                  symbol "."
-                  return $ Axiom x t
-
-parseLoad :: CharParser () ExprPos -> CharParser () Command
-parseLoad p = do reserved "import"
-                 symbol "\""
-                 xs <- many $ alphaNum <|> oneOf "."
-                 symbol "\""
-                 symbol "."
-                 return $ Load xs
-
-parseLet :: CharParser () ExprPos -> CharParser () Command
-parseLet p = do reserved "let"
-                x <- identifier
-                t <- pMaybeExpr p
-                symbol ":="
-                e <- parseExpr p
-                symbol "."
-                return $ Definition x t e
-
-parseRefine :: CharParser () Command
-parseRefine = do reserved "refine"
-                 x <- identifier
-                 symbol ":"
-                 t <- parseExpr pIdentMeta
-                 symbol ":="
-                 e <- parseExpr pIdentMeta
-                 symbol "."
-                 return $ Refine x t e
-
-pMaybeExpr :: CharParser () ExprPos -> CharParser () (Maybe Expr)
-pMaybeExpr p = do reservedOp ":"
-                  e <- parseExpr p
-                  return $ Just e
-               <|> return Nothing
-
-parseExpr :: CharParser () ExprPos -> CharParser () Expr
-parseExpr = fmap fst . pExpr_
-
-pExpr_ :: CharParser () ExprPos -> CharParser () ExprPos
-pExpr_ p = pPi p <|> 
-           pLam p <|> 
-           do sPos <- getPosition
-              e <- pExpr1 p sPos
-              rest <- pRest p
-              case rest of
-                Just (e1, ePos) -> return (Pi (mkPos sPos ePos) "" (fst e) e1, ePos)
-                Nothing -> return e
-
-
-pExpr1 :: CharParser () ExprPos -> SourcePos -> CharParser () ExprPos
-pExpr1 p sPos = do f <- pExpr2 p
-                   args <- many $ pExpr2 p
-                   let ePos = snd $ last (f:args) in
-                    return (foldl (\r (e,p) -> App (mkPos sPos p) r e) (fst f) args, ePos)
-
-pExpr2 :: CharParser () ExprPos -> CharParser () ExprPos
-pExpr2 p = p <|> pSort <|> pparenExpr p
-
-pparenExpr :: CharParser () ExprPos -> CharParser () ExprPos
-pparenExpr p = do sPos <- getPosition
-                  symbol "("
-                  e <- pExpr_ p
-                  (do symbol ")"
-                      return e
-                   <|>
-                   do symbol "::"
-                      (e2, _) <- pExpr_ p
-                      ePos <- getPosition
-                      symbol ")"
-                      return (Ann (mkPos sPos ePos) (fst e) e2, ePos))
-
-pRest :: CharParser () ExprPos -> CharParser () (Maybe ExprPos)
-pRest p = do reservedOp "->"
-             fmap Just (pExpr_ p)
-          <|> return Nothing
-
-pPi :: CharParser () ExprPos -> CharParser () ExprPos
-pPi p = do sPos <- getPosition
-           reserved "forall"
-           ((do (x, e) <- parens $ pBind p
-                (e1, ePos) <- pRestPi p
-                return (Pi (mkPos sPos ePos) x (fst e) e1, ePos))
-            <|>
-            (do (x, e) <- pBind p
-                reservedOp ","
-                (e1, ePos) <- pExpr_ p
-                return (Pi (mkPos sPos ePos) x (fst e) e1, ePos)))
-
-
-pRestPi :: CharParser () ExprPos -> CharParser () ExprPos
-pRestPi p = do sPos <- getPosition
-               (x, e) <- parens $ pBind p
-               (e1, ePos) <- pRestPi p
-               return (Pi (mkPos sPos ePos) x (fst e) e1, ePos)
-            <|>
-            do reservedOp ","
-               pExpr_ p
-
-pLam :: CharParser () ExprPos -> CharParser () ExprPos
-pLam p = do sPos <- getPosition
-            reserved "fun"
-            ((do (x, e) <- parens $ pBind p
-                 (e1, ePos) <- pRestLam p
-                 return (Lam (mkPos sPos ePos) x (fst e) e1, ePos))
-             <|>
-             (do (x, e) <- pBind p
-                 reservedOp "=>"
-                 (e1, ePos) <- pExpr_ p
-                 return (Lam (mkPos sPos ePos) x (fst e) e1, ePos)))
-
-pRestLam :: CharParser () ExprPos -> CharParser () ExprPos
-pRestLam p = do sPos <- getPosition
-                (x, e) <- parens $ pBind p
-                (e1, ePos) <- pRestLam p
-                return (Lam (mkPos sPos ePos) x (fst e) e1, ePos)
-             <|>
-             do reservedOp "=>"
-                pExpr_ p
-
-pBind :: CharParser () ExprPos -> CharParser () (Name, ExprPos)
-pBind p = do x <- identifier
-             symbol ":"
-             e <- pExpr_ p
-             return (x,e)
+pIdent = pVar <|> pMeta <|> pEVar
 
 pSort :: CharParser () ExprPos
 pSort = foldl1 (<|>) $ map pReserved [("Type",Box), ("Prop",Star)]
@@ -195,6 +263,23 @@ pSort = foldl1 (<|>) $ map pReserved [("Type",Box), ("Prop",Star)]
                                    reserved s
                                    let ePos = updatePosString sPos s in
                                     return (TSort (mkPos sPos ePos) r, ePos)
+
+parsePos :: CharParser () ExprPos -> CharParser () ExprPos
+parsePos p = do sPos <- getPosition
+                (e, ePos) <- p
+                return (updatePos (mkPos sPos ePos) e, ePos)
+
+updatePos :: Position -> Expr -> Expr
+updatePos p (Ann _ e1 e2) = Ann p e1 e2
+updatePos p (TSort _ s) = TSort p s
+updatePos p (Pi _ e1 e2) = Pi p e1 e2
+updatePos p (Var _ x) = Var p x
+updatePos p (Bound _ n) = Bound p n
+updatePos p (EVar _ n) = EVar p n
+updatePos p (Lam _ e1 e2) = Lam p e1 e2
+updatePos p (App _ e1 e2) = App p e1 e2
+updatePos p (Match _ e) = Match p e
+updatePos p (Fix _ n f rs r e) = Fix p n f rs r e
 
 
 {-----
@@ -237,7 +322,7 @@ constrtype ::= "forall" bind "," constrtype1
 
 constrtype1 ::= ident expr*
               | expr -> constrtype1
-             
+
 types for inductive types
 
 indsort ::= "forall" bind "," indsort1
@@ -250,17 +335,19 @@ indsort1 ::= sort
 
 
 lexer :: P.TokenParser ()
-lexer  = P.makeTokenParser 
+lexer  = P.makeTokenParser
          (emptyDef
          { P.commentStart    = "(*",
            P.commentEnd      = "*)",
            P.commentLine     = "--",
            P.reservedNames   = ["forall", "fun", "Type", "Prop", "let",
-                                "import", "axiom", "refine"],
-           P.reservedOpNames = ["->", "=>", ",", ":=", ":", "."],
+                                "import", "axiom", "refine", "match", "as", "in",
+                                "return", "with", "end", "data", "fix"],
+           P.reservedOpNames = ["->", "=>", ",", ":=", ":", ".", "::"],
            P.identStart      = letter,
            P.identLetter     = alphaNum,
-           P.opLetter        = oneOf ",->:=."
+           P.opStart         = oneOf ",-=:.",
+           P.opLetter        = oneOf ",>:=."
          })
 
 whiteSpace      = P.whiteSpace lexer

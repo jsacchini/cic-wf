@@ -12,6 +12,3 @@ main = do r <- runTLM $ runIM interactiveLoop
           case r of
             Right _ -> exitSuccess
             Left _ -> exitFailure
-                
-
-

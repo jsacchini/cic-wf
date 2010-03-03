@@ -6,6 +6,7 @@ module Kernel.Whnf where
 #include "../undefined.h"
 import Utils.Impossible
 
+import Syntax.Bind
 import Syntax.Internal
 import Syntax.Global
 import Environment
@@ -25,7 +26,7 @@ whnf t = return t
 class NormalForm a where
     normalForm :: (MonadTCM tcm) => a -> tcm a
 
-instance NormalForm Bind where
+instance NormalForm BindT where
     normalForm (NoBind t) = do n <- normalForm t
                                return $ NoBind n
     normalForm (Bind x t) = do n <- normalForm t

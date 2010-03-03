@@ -17,7 +17,7 @@ import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.Error
 
 import qualified Control.Exception as E
-import Text.ParserCombinators.Parsec
+--import Text.ParserCombinators.Parsec
 
 import System.Console.Haskeline
 import System.IO
@@ -25,6 +25,7 @@ import System.IO
 import Syntax.Abstract
 import Utils.MonadUndo
 import Kernel.TCM
+import Kernel.Command
 import qualified Syntax.Internal as I
 import Syntax.ETag
 import Syntax.Parser
@@ -80,8 +81,8 @@ cmdName (Cmd xs _ _ _ _ _) = xs
 
 commands :: [InteractiveCommand]
 commands = syntax
-    where syntax = 
-              [ Cmd [":type"]        "<expr>"  none Check   "print type of expression"               completeGlobal, 
+    where syntax =
+              [ Cmd [":type"]        "<expr>"  none Check   "print type of expression"               completeGlobal,
                 Cmd [":load"]        "<file>"  arg  LoadFile         "load program from file"                 completeFilename,
                 Cmd [":eval"]        "<expr>"  none Eval    "evaluates an expression to normal form" completeGlobal,
                 Cmd [":print"]       ""        arg0 (const Print)    "print all global definitions"           noCompletion,
@@ -91,7 +92,7 @@ commands = syntax
                 Cmd [":help",":?"]   ""        arg0 (const Help)     "display this list of commands"          noCompletion,
                 Cmd [":qed"]         ""        arg0 (const Qed)      "finishes proof"                         noCompletion,
                 Cmd [":set"]         "<goal>"  arg1 SetGoal "sets a new subgoal"                     (completeFirstArg completeGoal),
-                Cmd [":show"]        (concat $ intersperse " | " showSub) 
+                Cmd [":show"]        (concat $ intersperse " | " showSub)
                                                arg1 ShowCommand "show stuff"                        showCompletion,
                 Cmd [":reset"]       ""        arg0 (const Reset)    "reset current goal"                     noCompletion
               ]
@@ -127,7 +128,7 @@ interpretCommand x
                                              then return (f t)
                                              else do outputStr $ showHelp $ head ns
                                                      return NoOp
-               x -> do outputStrLn ("Ambiguous command, could be " ++ 
+               x -> do outputStrLn ("Ambiguous command, could be " ++
                                     concat (intersperse ", " (map (head . cmdName) matching)) ++ ".")
                        return NoOp
        else
@@ -154,12 +155,12 @@ interactiveLoop = do xs <- readPrompt
                                        _ -> interactiveLoop
 
 processTLCommand :: TLCommand -> IM ()
-processTLCommand (Check s) = handleIM $ do e <- runParserTLM "<interactive>" parseExpression s
-                                           infer e >>= liftIO . print
-processTLCommand (Eval s) = handleIM $ do e <- runParserTLM "<interactive>" parseExpression s
+processTLCommand (Check s) = handleIM $ do e <- runParser "<interactive>" parseExpr s
+                                           scope e >>= infer >>= liftIO . putStrLn . I.ppTerm [] . snd
+processTLCommand (Eval s) = handleIM $ do e <- runParser "<interactive>" parseExpr s
                                           (e',_) <- infer e
                                           v <- normalForm e'
-                                          liftIO $ print v
+                                          liftIO $ putStrLn $ I.ppTerm [] v
 processTLCommand Help = outputStrLn "help coming"
 processTLCommand Print = handleIM showGlobal
 processTLCommand (LoadFile fs) = handleIM $ oneStep $ processLoad (head $ words fs)
@@ -205,7 +206,7 @@ completeDecl = completeWords ["let", "axiom"]
 
 completeGlobal :: (String, String) -> TLM (String, [Completion])
 completeGlobal = wrapCompleter " " $ \w -> do g <- get
-                                              let g' = global g 
+                                              let g' = global g
                                               return (filter (w `isPrefixOf`) (map fst (E.listEnv g')))
 
 completeGoal :: (String, String) -> TLM (String, [Completion])

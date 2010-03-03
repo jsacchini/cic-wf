@@ -5,7 +5,9 @@ module Environment where
 
 import Data.List
 
+import Syntax.Bind
 import Syntax.Internal
+import Syntax.Name
 import Syntax.Global
 
 -- Global environments
