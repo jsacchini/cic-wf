@@ -11,7 +11,7 @@ import System.IO
 
 import Syntax.Bind
 import Syntax.Name
-import Syntax.Parser
+import Syntax.Parser hiding (runParser)
 import Syntax.Abstract
 import qualified Syntax.Internal as I
 import Syntax.Scope
@@ -20,13 +20,14 @@ import Syntax.Global
 
 newtype TestM a = TestM { unTestM :: ReaderT [Name] (StateT GlobalEnv IO) a }
                   deriving(Monad, MonadReader [Name], MonadState GlobalEnv, MonadIO)
-instance MonadGE TestM where
-    lookupGE x = do g <- get
-                    return $ lookupEnv x g
-    toListGE = do g <- get
-                  return $ listEnv g
-    extendGE x a = do g <- get
-                      put (extendEnv x a g)
+
+instance LookupName Global TestM where
+    lookupName x = do g <- get
+                      return $ lookupEnv x g
+    definedName x = do g <- get
+                       return $ bindedEnv x g
+
+instance ScopeMonad TestM where
 
 gg = foldr (uncurry extendEnv) emptyEnv
      [("list", list),
@@ -51,6 +52,12 @@ runTestM = flip runStateT gg .
            unTestM
 
 testS xs = case runParser parseExpr () "" xs of
+             Left err -> print err
+             Right e -> do (t, _) <- runTestM $ scope e
+                           print e
+                           print t
+
+testC xs = case runParser parseTopLevelCommand () "" xs of
              Left err -> print err
              Right e -> do (t, _) <- runTestM $ scope e
                            print e
