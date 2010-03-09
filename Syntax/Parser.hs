@@ -45,7 +45,8 @@ parseFile = parseEOF $ whiteSpace >> many parseCommand
             where parseCommand = whiteSpace >> (parseLet <|> parseLoad <|> parseAxiom)
 
 parseTopLevelCommand :: CharParser () Command
-parseTopLevelCommand = parseEOF $ (parseLet <|> parseLoad <|> parseAxiom) -- <|> parseRefine)
+parseTopLevelCommand = parseEOF $ whiteSpace >> 
+                       (parseLet <|> parseLoad <|> parseAxiom <|> parseInd)
 
 parseExpr = parseEOF $ whiteSpace >> fmap fst pExpr
 
