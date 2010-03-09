@@ -51,6 +51,9 @@ class Scope a where
 instance Scope BindE where
     scope (Bind x e) = scope e >>= return . Bind x
     scope (NoBind e) = scope e >>= return . NoBind
+    scope (BindDef x e1 e2) = do se1 <- scope e1
+                                 se2 <- scope e2
+                                 return $ BindDef x se1 se2
 
 instance Scope Expr where
     scope (Ann p e1 e2) = do s1 <- scope e1
@@ -105,11 +108,6 @@ instance (Scope a, BindClass a) => Scope [a] where
                       ss <- local (bind x:) (scope xs)
                       return (s:ss)
 
-instance (Scope a, Scope b, BindClass a) => Scope (a,b) where
-    scope (x,y) = do sx <- scope x
-                     sy <- local (bind x:) (scope y)
-                     return (sx,sy)
-
 instance Scope Command where
     scope (Definition x t u) = do st <- scope t
                                   su <- scope u
@@ -117,8 +115,20 @@ instance Scope Command where
     scope (AxiomCommand x t) = do st <- scope t
                                   return $ AxiomCommand x st
     scope t@(Load _) = return t
-    scope t@(Inductive i) = return t -- TODO!
+    scope (Inductive i) = do si <- scope i
+                             return $ Inductive si
 
+instance Scope IndExpr where
+    scope (MkInd x params arg cs) = do sp <- scope params
+                                       let indbinds = x : map bind params
+                                       sa <- local (indbinds++) (scope arg)
+                                       scs <- mapM (local (indbinds++) . scope) cs
+                                       return $ MkInd x sp sa scs
+
+instance Scope ConstrExpr where
+    scope (MkConstrExpr x t) = scope t >>= return . MkConstrExpr x
+
+appScope :: (ScopeMonad m) => Expr -> m (Pos -> [(Pos, Expr)] -> m Expr, [(Pos, Expr)])
 appScope (App p e1 e2) = do (f, as) <- appScope e1
                             s2 <- scope e2
                             return (f, (p,s2):as)
