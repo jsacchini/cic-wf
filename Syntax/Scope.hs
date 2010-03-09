@@ -88,7 +88,7 @@ instance Scope Expr where
     scope t@(TSort _ _) = return t
     scope t@(EVar _ _) = return t
     scope t@(Bound _ _) = __IMPOSSIBLE__
-    scope t@(Ind _ _ _) = __IMPOSSIBLE__
+    scope t@(Ind _ _) = __IMPOSSIBLE__
 
 instance Scope Branch where
     scope (MkBranch cname i args body) = do sbody <- local (args++) (scope body)
@@ -128,14 +128,12 @@ appScope (Var p x) =
          Just n -> return $ mkFun (Bound p n)
          Nothing -> do g <- lookupName x
                        case g of
-                         Just (IndDef params args _ _) -> return $ mkInd (wrongArg p x) x (length params + length args)
+                         Just (IndDef params args _ _) -> return $ mkFun (Ind p x)
                          Just (ConstrDef i params _ _ args _) -> return $ mkConstr (wrongArg p x) i (length params) (length args)
                          Just _ -> return $ mkFun (Var p x)
                          Nothing -> scopeError $ UndefinedName p x
 appScope e = return $ mkFun e
 
 mkFun e = (\_ as -> return $ foldr (\(p,e1) r -> App p r e1) e as, [])
-mkInd err x n = (\p a -> do when (length a/=n) $ err (length a) n
-                            return $ Ind p x (map snd a), [])
 mkConstr err i m n = (\p a -> do when (length a/=m+n) $ err (length a) (m+n)
                                  return $ Constr p i (map snd (take m a)) (map snd (drop m a)), [])

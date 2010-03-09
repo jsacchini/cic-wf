@@ -39,7 +39,7 @@ data Expr = Ann Pos Expr Expr -- annotated term and type
           | Match Pos MatchExpr
           | Fix Pos Int Name [BindE] Expr Expr
           | Constr Pos (IName, Int) [Expr] [Expr]
-          | Ind Pos IName [Expr]
+          | Ind Pos IName
           deriving(Show) -- for debugging only
 -- instance Show (Expr) where
 --     show = show . tprint 0 []
