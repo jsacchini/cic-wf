@@ -4,7 +4,10 @@
  #-}
 {-# LANGUAGE CPP #-}
 
-module Syntax.Scope (scope, ScopeError(..), ScopeMonad) where
+module Syntax.Scope (scope,
+                     ScopeError(..),
+                     ScopeMonad,
+                     Scope) where
 
 #include "../undefined.h"
 import Utils.Impossible
@@ -106,6 +109,15 @@ instance (Scope a, Scope b, BindClass a) => Scope (a,b) where
     scope (x,y) = do sx <- scope x
                      sy <- local (bind x:) (scope y)
                      return (sx,sy)
+
+instance Scope Command where
+    scope (Definition x t u) = do st <- scope t
+                                  su <- scope u
+                                  return $ Definition x st su
+    scope (AxiomCommand x t) = do st <- scope t
+                                  return $ AxiomCommand x st
+    scope t@(Load _) = return t
+    scope t@(Inductive i) = return t -- TODO!
 
 appScope (App p e1 e2) = do (f, as) <- appScope e1
                             s2 <- scope e2

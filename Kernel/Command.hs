@@ -50,20 +50,22 @@ check e = flip runReaderT []  . T.check e
 isSort :: (TCGlobalMonad gm) => Term -> gm Sort
 isSort = flip runReaderT [] . T.isSort
 
-scope :: (TCGlobalMonad gm) => A.Expr -> gm A.Expr
+scope :: (S.Scope a, TCGlobalMonad gm) => a -> gm a
 scope = flip runReaderT [] . S.scope
 
-scopeSub :: (TCGlobalMonad gm) => [Name] -> A.Expr -> gm A.Expr
+scopeSub :: (S.Scope a, TCGlobalMonad gm) => [Name] -> a -> gm a
 scopeSub xs = flip runReaderT xs . S.scope
 
-normalForm :: (TCGlobalMonad gm) => Term -> gm Term
+normalForm :: (W.NormalForm a, TCGlobalMonad gm) => a -> gm a
 normalForm = flip runReaderT [] . W.normalForm
 
 
 checkCommand :: (TCGlobalMonad gm) => A.Command -> gm ()
-checkCommand (A.Definition x t u) = processDef x t u
-checkCommand (A.AxiomCommand x t) = processAxiom x t
-checkCommand (A.Load xs) = processLoad xs
+checkCommand c = do c1 <- scope c
+                    case c1 of
+                      A.Definition x t u -> processDef x t u
+                      A.AxiomCommand x t -> processAxiom x t
+                      A.Load xs -> processLoad xs
 
 processLoad :: (TCGlobalMonad gm) => FilePath -> gm ()
 processLoad xs = do h <- liftIO $ openFile xs ReadMode
@@ -73,20 +75,16 @@ processLoad xs = do h <- liftIO $ openFile xs ReadMode
                     forM_ cs checkCommand
 
 processAxiom :: (TCGlobalMonad gm) => Name -> A.Expr -> gm ()
-processAxiom x t = do t1 <- scope t
-                      (t',r) <- infer t1
+processAxiom x t = do (t',r) <- infer t
                       isSort r
                       addGlobal x (Axiom t')
 
 processDef :: (TCGlobalMonad gm) => Name -> Maybe A.Expr -> A.Expr -> gm ()
-processDef x (Just t) u = do t1 <- scope t
-                             (t', r) <- infer t1
+processDef x (Just t) u = do (t', r) <- infer t
                              isSort r
-                             u1 <- scope u
-                             u' <- check u1 t'
+                             u' <- check u t'
                              addGlobal x (Def t' u')
-processDef x Nothing u = do u1 <- scope u
-                            (u', r) <- infer u1
+processDef x Nothing u = do (u', r) <- infer u
                             addGlobal x (Def r u')
 
 addGlobal :: (TCGlobalMonad gm) => Name -> Global -> gm ()
