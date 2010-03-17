@@ -82,7 +82,7 @@ infer (A.App _ t1 t2) = do (t1', r1) <- infer t1
                              otherwise -> throwNotFunction r1
 infer (A.Ind _ x) = do t <- lookupGlobal x
                        case t of
-                         IndDef param arg s _ -> return (Free x, foldr Pi (TSort s) (param++arg))
+                         IndDef param arg s _ -> return (Free x, foldr Pi (TSort s) (param+|+arg))
 infer (A.Constr _ _ (iname,k) ps as) =
     do t <- lookupGlobal iname
        case t of
@@ -91,11 +91,11 @@ infer (A.Constr _ _ (iname,k) ps as) =
                                          let (MkConstr x cArg tIndex) = cs !! k
                                              -- itype = foldr Pi (TSort s) (cParam++cIndex)
                                              -- bi = Bind iname itype
-                                             nParam = length cParam
-                                             cArg' = cxtSubst_ nParam (Free iname) cArg
+                                             nParam = cxtSize cParam
+                                             cArg' = liftCxt (flip subst_ (Free iname)) nParam cArg
                                          -- liftIO $ putStrLn $ concat ["context\n---\n", show xs, "\n-----\nparams ", show ps, "|" , show as, "\nagainst: ", show cParam, "|", show cArg']
-                                         tParamArg <- checkList (ps++as) (cParam++cArg')
-                                         let (tParam, tArg) = splitAt (length cParam) tParamArg
+                                         tParamArg <- checkList (ps++as) (cParam+|+cArg')
+                                         let (tParam, tArg) = splitAt (cxtSize cParam) tParamArg
                                          -- liftIO $ putStrLn $ concat ["checked param ", show tParam, "|", show tArg]
                                          -- liftIO $ putStrLn $ concat ["check (", show xs, ") ", show as, " :!: ", show (map expr cArg'), " ---- ", show (map expr cArg)]
                                          -- tArg <- {-local (bi:) $-} checkList as cArg'
@@ -113,7 +113,7 @@ checkList [] [] = return []
 checkList (e:es) (b:bs) = do xs <- ask
                              -- liftIO $ putStrLn $ concat ["*** ", show e, " :: ", show (expr b)]
                              t <- check e (expr b)
-                             ts <- checkList es (cxtSubst t bs)
+                             ts <- checkList es (liftCxt (flip subst_ t) 0 bs)
                              return (t:ts)
 
 -- instance Infer A.BindE BindT Sort where

@@ -47,19 +47,19 @@ isConstr n = do x <- lookupName n
 paramsInd :: (LookupName Global m) => Name -> m Int
 paramsInd x = do n <- lookupName x
                  case n of
-                   Just (IndDef params _ _ _) -> return (length params)
+                   Just (IndDef params _ _ _) -> return (cxtSize params)
 
 argsInd :: (LookupName Global m) => Name -> m Int
 argsInd x = do n <- lookupName x
                case n of
-                 Just (IndDef _ args _ _) -> return (length args)
+                 Just (IndDef _ args _ _) -> return (cxtSize args)
 
 paramsConstr :: (LookupName Global m) => Name -> m Int
 paramsConstr x = do n <- lookupName x
                     case n of
-                      Just (ConstrDef _ params _ _ _ _) -> return (length params)
+                      Just (ConstrDef _ params _ _ _ _) -> return (cxtSize params)
 
 argsConstr :: (LookupName Global m) => Name -> m Int
 argsConstr x = do n <- lookupName x
                   case n of
-                    Just (ConstrDef _ _ _ _ args _) -> return (length args)
+                    Just (ConstrDef _ _ _ _ args _) -> return (cxtSize args)

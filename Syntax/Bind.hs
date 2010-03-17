@@ -12,6 +12,14 @@ data Bind a = Bind Name a
             | BindDef Name a a
             deriving(Show)
 
+type BindCxt a = [Bind a]
+
+cxtSize :: BindCxt a -> Int
+cxtSize xs = length xs
+
+(+|+) :: BindCxt a -> BindCxt a -> BindCxt a
+(+|+) xs ys = xs ++ ys
+
 class BindClass a where
     bind :: a -> Name
 

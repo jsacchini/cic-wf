@@ -139,7 +139,7 @@ appScope (Var p x) =
          Nothing -> do g <- lookupName x
                        case g of
                          Just (IndDef params args _ _) -> return $ mkFun (Ind p x)
-                         Just (ConstrDef i params _ _ args _) -> return $ mkConstr (wrongArg p x) x i (length params) (length args)
+                         Just (ConstrDef i params _ _ args _) -> return $ mkConstr (wrongArg p x) x i (cxtSize params) (cxtSize args)
                          Just _ -> return $ mkFun (Var p x)
                          Nothing -> scopeError $ UndefinedName p x
 appScope e = return $ mkFun e
