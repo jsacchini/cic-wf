@@ -10,7 +10,7 @@ module Syntax.Abstract where
 import Utils.Impossible
 
 import Data.Function
-import Data.Foldable hiding (notElem)
+import Data.Foldable hiding (notElem, concat, foldr)
 import Data.Monoid
 import Text.PrettyPrint.HughesPJ
 
@@ -38,7 +38,7 @@ data Expr = Ann Pos Expr Expr -- annotated term and type
           | App Pos Expr Expr
           | Match Pos MatchExpr
           | Fix Pos Int Name [BindE] Expr Expr
-          | Constr Pos (IName, Int) [Expr] [Expr]
+          | Constr Pos CName (IName, Int) [Expr] [Expr]
           | Ind Pos IName
           deriving(Show) -- for debugging only
 -- instance Show (Expr) where
@@ -98,6 +98,8 @@ isFree_ _ (Var _ _) = mempty
 isFree_ _ (EVar _ _) = mempty
 isFree_ n (Lam _ t u) = foldMap (isFree_ n) t `mappend` isFree_ (n+1) u
 isFree_ n (App _ t1 t2) = isFree_ n t1 `mappend` isFree_ n t2
+isFree_ n (Constr _ _ _ ps as) = foldr mappend mempty (map (isFree_ n) (ps++as))
+isFree_ n (Fix _ _ _ bs t e) = foldr mappend mempty (map (foldMap (isFree_ n)) bs) `mappend` isFree_ n t `mappend` isFree_ n e
 
 isFree n = getAny . isFree_ n
 -- Pretty printer
@@ -126,11 +128,13 @@ tprint p l t@(Pi _ b t2) | not (isFree 0 t2) = parensIf (p > 0) $ sep [tprint 1 
     where (x,t1) = (bind b, expr b)
 tprint p l t@(Lam _ _ _) = parensIf (p > 0) $ text "fun " <> nestedLam l t
 tprint _ l (Bound _ n) | n < length l = text (l !! n)
-                       | otherwise = __IMPOSSIBLE__
-tprint _ _ (Var _ x) = text "[" <> text x <> text "]"
+                       | otherwise = text $ "PROBLEM " ++ show n
+tprint _ _ (Var _ x) = text x -- text "[" <> text x <> text "]"
 tprint _ _ (EVar _ Nothing) = text "_"
 tprint _ _ (EVar _ (Just n)) = text $ '?':show n
 tprint p l (App _ t1 t2) = parensIf (p > 2) $ sep [tprint 2 l t1, nest 2 $ tprint 3 l t2]
+tprint p l (Constr _ x _ ps as) = parensIf (p > 2) $ text x <+> foldr (<+>) empty (map (tprint p l) (ps ++ as))
+tprint _ _ t = text $ concat ["* ", show t, " *"]
 
 nestedLamDef :: Expr -> ([(Name,Expr)], Expr)
 nestedLamDef (Lam _ b t2) = ((varName,t1):ds, e)

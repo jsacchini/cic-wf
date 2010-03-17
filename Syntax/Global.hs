@@ -6,18 +6,23 @@ import Syntax.Internal
 import Syntax.Name
 import Syntax.ETag
 
+{---
+TODO:
+ - pretty printing of Global (ppGlobal :: Name -> Global -> String)
+---}
+
 data Global
     = Def Type Term
     | IndDef NamedCxt NamedCxt Sort [Constr]
     | ConstrDef (Name, Int) NamedCxt NamedCxt Sort NamedCxt [Term]
     | Axiom Type
---    deriving(Show)
+    deriving(Show)
 
 data Constr = MkConstr {
       constrName :: Name,
       constrArg :: NamedCxt,
       constrType :: [Term]
-    } -- deriving(Show)
+    } deriving(Show)
 
 instance Show Syntax.ETag.NM where
     show = const ""

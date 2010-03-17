@@ -120,7 +120,7 @@ instance Scope Command where
 
 instance Scope IndExpr where
     scope (MkInd x params arg cs) = do sp <- scope params
-                                       let indbinds = x : map bind params
+                                       let indbinds = reverse $ x : map bind params
                                        sa <- local (indbinds++) (scope arg)
                                        scs <- mapM (local (indbinds++) . scope) cs
                                        return $ MkInd x sp sa scs
@@ -139,11 +139,14 @@ appScope (Var p x) =
          Nothing -> do g <- lookupName x
                        case g of
                          Just (IndDef params args _ _) -> return $ mkFun (Ind p x)
-                         Just (ConstrDef i params _ _ args _) -> return $ mkConstr (wrongArg p x) i (length params) (length args)
+                         Just (ConstrDef i params _ _ args _) -> return $ mkConstr (wrongArg p x) x i (length params) (length args)
                          Just _ -> return $ mkFun (Var p x)
                          Nothing -> scopeError $ UndefinedName p x
 appScope e = return $ mkFun e
 
 mkFun e = (\_ as -> return $ foldr (\(p,e1) r -> App p r e1) e as, [])
-mkConstr err i m n = (\p a -> do when (length a/=m+n) $ err (length a) (m+n)
-                                 return $ Constr p i (map snd (take m a)) (map snd (drop m a)), [])
+mkConstr err x i m n = (\p a -> do when (length a/=m+n) $ err (length a) (m+n)
+                                   let a' = reverse $ take (m+n) a
+                                       params = map snd $ take m a'
+                                       args = map snd $ drop m a'
+                                   return $ Constr p x i params args, [])

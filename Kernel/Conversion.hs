@@ -1,9 +1,12 @@
-{-# LANGUAGE PackageImports, TypeSynonymInstances, DeriveDataTypeable, CPP #-}
+{-# LANGUAGE PackageImports, TypeSynonymInstances, DeriveDataTypeable,
+  FlexibleInstances, CPP
+ #-}
 
 module Kernel.Conversion where
 
 import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.State
+import Control.Exception
 
 import Data.Typeable
 
@@ -35,4 +38,8 @@ instance Conversion Term where
                             (App u1 u2, App v1 v2) -> do b1 <- conversion u1 v1
                                                          b2 <- conversion u2 v2
                                                          return (b1 && b2)
+                            (Constr _ x p1 a1, Constr _ y p2 a2) -> if x /= y then return False
+                                                                    else do bps <- sequence (map (uncurry conversion) (zip p1 p2))
+                                                                            bas <- sequence (map (uncurry conversion) (zip a1 a2))
+                                                                            return $ and (bps ++ bas)
                             (_, _) -> return False

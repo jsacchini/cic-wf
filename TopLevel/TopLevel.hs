@@ -30,6 +30,7 @@ import qualified Syntax.Internal as I
 import Syntax.ETag
 import Syntax.Parser
 import qualified Kernel.TypeChecking as T
+import qualified Kernel.GlobalMonad as GM
 import qualified Environment as E
 import Utils.Fresh
 import Utils.Misc
@@ -46,7 +47,8 @@ type IM = InputT TLM
 runIM :: IM a -> TLM a
 runIM = runInputT settings
         where settings :: Settings TLM
-              settings = defSettings { complete = completion }
+              settings = defSettings { complete = completion,
+                                       historyFile = Just "/home/jorge/.cicminus-history" }
               defSettings :: Settings TLM
               defSettings = defaultSettings
 
@@ -156,10 +158,10 @@ interactiveLoop = do xs <- readPrompt
 
 processTLCommand :: TLCommand -> IM ()
 processTLCommand (Check s) = handleIM $ do e <- runParser "<interactive>" parseExpr s
-                                           scope e >>= infer >>= liftIO . putStrLn . I.ppTerm [] . snd
+                                           GM.scope e >>= GM.infer >>= liftIO . putStrLn . I.ppTerm [] . snd
 processTLCommand (Eval s) = handleIM $ do e <- runParser "<interactive>" parseExpr s
-                                          (e',_) <- infer e
-                                          v <- normalForm e'
+                                          (e',_) <- GM.infer e
+                                          v <- GM.normalForm e'
                                           liftIO $ putStrLn $ I.ppTerm [] v
 processTLCommand Help = outputStrLn "help coming"
 processTLCommand Print = handleIM showGlobal

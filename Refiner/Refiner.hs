@@ -45,7 +45,7 @@ checkProd s1 Star = Star
 refine :: (MonadRM rm) => A.Expr -> Type -> rm ETerm
 refine e t = do (e', _) <- check e (upcast t)
                 return e'
-                
+
 
 refine_ :: (MonadRM rm) => A.Expr -> rm (EType, ETerm, Subst)
 refine_ (A.EVar _ e) = refinerError $ RefinerError $ "evar" ++ show e
@@ -63,7 +63,7 @@ refine_ (A.Pi _ b t2) = do (r1, t1', sigma1) <- refine_ (expr b)
                                    sigma1 <+> sigma2)
 refine_ (A.Bound _ n) = do l <- ask
                            return (I.lift (n+1) 0 $ expr (l !! n), Bound n, [])
-refine_ (A.Var _ x) = do t <- lookupGlobal x 
+refine_ (A.Var _ x) = do t <- lookupGlobal x
                          case t of
                            Def t _ -> return (upcast t, Free x, [])
                            Axiom t -> return (upcast t, Free x, [])
@@ -108,4 +108,4 @@ check t u = do l <- ask
                mapM_ removeGoal (domain ss)
                mapGoal (apply ss)
                return (apply ss t', ss)
-               
+

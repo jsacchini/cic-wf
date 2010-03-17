@@ -42,10 +42,10 @@ parseEOF p = do e <- p
 
 parseFile :: CharParser () [Command]
 parseFile = parseEOF $ whiteSpace >> many parseCommand
-            where parseCommand = whiteSpace >> (parseLet <|> parseLoad <|> parseAxiom)
+            where parseCommand = whiteSpace >> (parseLet <|> parseLoad <|> parseAxiom <|> parseInd)
 
 parseTopLevelCommand :: CharParser () Command
-parseTopLevelCommand = parseEOF $ whiteSpace >> 
+parseTopLevelCommand = parseEOF $ whiteSpace >>
                        (parseLet <|> parseLoad <|> parseAxiom <|> parseInd)
 
 parseExpr = parseEOF $ whiteSpace >> fmap fst pExpr

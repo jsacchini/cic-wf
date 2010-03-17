@@ -33,7 +33,9 @@ gg = foldr (uncurry extendEnv) emptyEnv
      [("list", list),
       ("nat", nat),
       ("O", zero),
-      ("S", suc)]
+      ("S", suc),
+      ("nil", nil),
+      ("cons", cons)]
 
 nat = IndDef [] [] I.Box
       [MkConstr "O" [] [],
@@ -45,6 +47,10 @@ suc = ConstrDef ("nat",1) [] [] I.Box [NoBind $ I.Bound 0] []
 list = IndDef [Bind "A" (I.TSort I.Box)] [] I.Box
        [MkConstr "nil" [] [],
         MkConstr "cons" [NoBind $ I.Bound 0, NoBind $ I.Bound 1] []]
+
+nil = ConstrDef ("list", 0) [Bind "A" (I.TSort I.Box)] [] I.Box [] []
+cons = ConstrDef ("list", 1) [Bind "A" (I.TSort I.Box)] [] I.Box [NoBind $ I.Bound 0, NoBind (I.App (I.Bound 2) (I.Bound 1))] []
+
 
 runTestM :: TestM a -> IO (a, GlobalEnv)
 runTestM = flip runStateT gg .

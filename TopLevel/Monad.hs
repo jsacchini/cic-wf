@@ -30,7 +30,8 @@ import qualified Syntax.Scope as S
 import Syntax.Global
 import Utils.MonadUndo
 import Kernel.TCM
-import qualified Kernel.Command as C
+import Kernel.Command
+import qualified Kernel.GlobalMonad as GM
 import qualified Kernel.Whnf as W
 import qualified Syntax.Internal as I
 import qualified Kernel.TypeChecking as T
@@ -51,7 +52,7 @@ data TopLevelErr = TypeError TypeError
                  | MyIOException E.IOException
                  | MyParsingError ParsingError
                  | ScopeError S.ScopeError
-                 | CommandError C.CommandError
+                 | CommandError GM.CommandError
                  | InternalError String
                  | UnknownGoal
                  | NoSelectedGoal
@@ -120,7 +121,7 @@ instance RM.MonadRM (ReaderT (I.ENamedCxt) TLM)
 
 instance S.ScopeMonad (ReaderT [Name] TLM)
 
-instance C.TCGlobalMonad TLM
+instance GM.TCGlobalMonad TLM
 
 runTLM :: TLM a -> IO (Either TopLevelErr a)
 runTLM m = (Right <$> runTLM' m) `E.catch` (return . Left)
@@ -152,6 +153,7 @@ showGlobal = do g <- fmap global get
     where showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
           showG (x, Def t u) = "let " ++ x ++ " : " ++ I.ppTerm [] t ++ " := " ++ I.ppTerm [] u
           showG (x, Axiom t) = "axiom " ++ x ++ " : " ++ I.ppTerm [] t
+          showG (x, t) = x ++ " : " ++ show t
 
 
 showProof :: TLM ()
@@ -186,17 +188,17 @@ qed = do sg <- fmap subGoals get
          cg <- fmap currentSubGoal get
          when (not (Map.null sg) || isJust cg) $ throwIO UnfinishedProof
          Just (x, t, e) <- fmap goal get
-         C.check (I.reify e) t -- check shouldn't fail
-         C.addGlobal x (Def t (I.downcast e))
+         GM.check (I.reify e) t -- check shouldn't fail
+         GM.addGlobal x (Def t (I.downcast e))
          clearGoals
 
 execCommand :: String -> TLM ()
 execCommand xs = do csg <- fmap currentSubGoal get
                     case csg of
                       Nothing -> do c <- runParser "<interactive>" parseTopLevelCommand xs
-                                    C.checkCommand c
+                                    checkCommand c
                       Just (n, RM.Goal cxt t) -> do e <- runParser "<interactive>" parseExpr xs
-                                                    e1 <- C.scopeSub (map bind cxt) e
+                                                    e1 <- GM.scopeSub (map bind cxt) e
                                                     e' <- refineSub cxt e1 t
                                                     cg <- fmap goal get
                                                     modify $ \s -> s { goal = fmap (\(x,t,e) -> (x,t,RU.apply [(n,e')] e)) cg,

@@ -22,20 +22,22 @@ import Environment
 import Utils.MonadUndo
 
 -- Type checking
-
 data TypeError
     = NotConvertible TCEnv Term Term
     | NotFunction TCEnv Term
     | NotSort TCEnv Term
+    | NotArity TCEnv Term
+    | NotConstructor TCEnv Term
     | InvalidProductRule Sort Sort
     | IdentifierNotFound Name
     | ConstantError String
     deriving(Typeable)
 
 instance Show TypeError where
-    show (NotConvertible e t1 t2) = "NotConvertible " ++ ppTerm (map bind e) t1 ++ " " ++ ppTerm (map bind e) t2
+    show (NotConvertible e t1 t2) = "NotConvertible " ++ ppTerm (map bind e) t1 ++ " =!= " ++ ppTerm (map bind e) t2
     show (NotFunction e t1) = "NotFunction " ++ ppTerm (map bind e) t1
     show (NotSort e t1) = "NotSort " ++ ppTerm (map bind e) t1
+    show (NotArity e t1) = "NotArity " ++ ppTerm (map bind e) t1
     show (InvalidProductRule s1 s2) = "InvalidProductRule " ++ show s1 ++ " " ++ show s2
     show (IdentifierNotFound x) = "IdentifierNotFound " ++ x
     show (ConstantError s) = "ConstantError " ++ s

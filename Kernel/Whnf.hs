@@ -21,6 +21,7 @@ whnf t@(Free x) = do d <- lookupGlobal x
                      case d of
                        Def _ u -> return u
                        Axiom _ -> return t
+                       IndDef _ _ _ _ -> return t
 whnf t = return t
 
 class NormalForm a where
