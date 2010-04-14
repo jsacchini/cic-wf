@@ -68,7 +68,7 @@ instance E.Exception TopLevelErr
 
 data TLState = TLState { global :: E.GlobalEnv,
                          freshMeta :: I.MetaId,
-                         goal :: Maybe (Name, I.Type, I.ETerm),
+                         goal :: Maybe (Name, I.Type, I.Term),
                          subGoals :: Map.Map I.MetaId RM.Goal,
                          currentSubGoal :: Maybe (I.MetaId, RM.Goal)
                        }
@@ -112,12 +112,12 @@ instance ExtendName Global TLM where
 instance BuildFresh I.MetaId TLState where
     nextFresh s = (freshMeta s, s { freshMeta = freshMeta s + 1 })
 
-instance RM.HasGoal (ReaderT (I.ENamedCxt) TLM) where
+instance RM.HasGoal (ReaderT (I.NamedCxt) TLM) where
     addGoal i g = modify $ \s -> s { subGoals = Map.insert i g (subGoals s) }
     removeGoal i = modify $ \s -> s { subGoals = Map.delete i (subGoals s) }
     mapGoal f = modify $ \s -> s { subGoals = Map.map f (subGoals s) }
 
-instance RM.MonadRM (ReaderT (I.ENamedCxt) TLM)
+instance RM.MonadRM (ReaderT (I.NamedCxt) TLM)
 
 instance S.ScopeMonad (ReaderT [Name] TLM)
 
@@ -139,10 +139,10 @@ initialTLState = TLState { global = E.emptyEnv,
 
 -- Lifted operations from RM
 
-refine :: I.ENamedCxt -> Expr -> I.Term -> TLM I.ETerm
+refine :: I.NamedCxt -> Expr -> I.Term -> TLM I.Term
 refine xs e t = flip runReaderT xs $ R.refine e t
 
-refineSub :: I.ENamedCxt -> Expr -> I.ETerm -> TLM I.ETerm
+refineSub :: I.NamedCxt -> Expr -> I.Term -> TLM I.Term
 refineSub xs e t = flip runReaderT xs $ fmap fst $ R.check e t
 
 -- operations on the monad
@@ -189,7 +189,7 @@ qed = do sg <- fmap subGoals get
          when (not (Map.null sg) || isJust cg) $ throwIO UnfinishedProof
          Just (x, t, e) <- fmap goal get
          GM.check (I.reify e) t -- check shouldn't fail
-         GM.addGlobal x (Def t (I.downcast e))
+         GM.addGlobal x (Def t e) -- there should be no meta in e
          clearGoals
 
 execCommand :: String -> TLM ()

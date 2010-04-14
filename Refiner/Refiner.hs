@@ -42,12 +42,12 @@ checkProd s1 Star = Star
 
 -- We assume that in the global environment, types are normalized
 
-refine :: (MonadRM rm) => A.Expr -> Type -> rm ETerm
-refine e t = do (e', _) <- check e (upcast t)
+refine :: (MonadRM rm) => A.Expr -> Type -> rm Term
+refine e t = do (e', _) <- check e t
                 return e'
 
 
-refine_ :: (MonadRM rm) => A.Expr -> rm (EType, ETerm, Subst)
+refine_ :: (MonadRM rm) => A.Expr -> rm (Type, Term, Subst)
 refine_ (A.EVar _ e) = refinerError $ RefinerError $ "evar" ++ show e
 refine_ (A.Ann _ t u) = do (r, u', sigma1) <- refine_ u
                            isSort r
@@ -65,8 +65,8 @@ refine_ (A.Bound _ n) = do l <- ask
                            return (I.lift (n+1) 0 $ expr (l !! n), Bound n, [])
 refine_ (A.Var _ x) = do t <- lookupGlobal x
                          case t of
-                           Def t _ -> return (upcast t, Free x, [])
-                           Axiom t -> return (upcast t, Free x, [])
+                           Def t _ -> return (t, Free x, [])
+                           Axiom t -> return (t, Free x, [])
 refine_ (A.Lam _ b u) = do (r1, t', sigma1) <- refine_ (expr b)
                            isSort r1
                            (r2, u', sigma2) <- local (fmap (const t') b:) $ refine_ u
@@ -87,7 +87,7 @@ refine_ (A.App _ t1 t2) = do (r1, t1', sigma1) <- refine_ t1
                                                       sigma1 <+> sigma2)
                                otherwise -> refinerError $ RefinerError $ "not function " -- ++ show t1'
 
-check :: (MonadRM rm) => A.Expr -> EType -> rm (ETerm, Subst)
+check :: (MonadRM rm) => A.Expr -> Type -> rm (Term, Subst)
 check (A.EVar _ _) u = do i <- fresh
                           l <- ask
                           addGoal i $ Goal l u

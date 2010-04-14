@@ -27,8 +27,8 @@ data RefinerError
 
 instance Exception RefinerError
 
-data Goal = Goal { goalCxt :: ENamedCxt,
-                   goalType :: EType }
+data Goal = Goal { goalCxt :: NamedCxt,
+                   goalType :: Type }
             -- deriving(Show)
 
 instance Show Goal where
@@ -47,7 +47,7 @@ class (MonadIO m,
        LookupName Global m,
        HasGoal m,
        Functor m,
-       MonadReader ENamedCxt m,
+       MonadReader NamedCxt m,
        Fresh MetaId m) => MonadRM m
 
 

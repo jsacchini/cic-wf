@@ -4,7 +4,6 @@ module Syntax.Global where
 import Syntax.Bind
 import Syntax.Internal
 import Syntax.Name
-import Syntax.ETag
 
 {---
 TODO:
@@ -23,9 +22,6 @@ data Constr = MkConstr {
       constrArg :: NamedCxt,
       constrType :: [Term]
     } deriving(Show)
-
-instance Show Syntax.ETag.NM where
-    show = const ""
 
 -- class (Monad m) => MonadGE m where
 --     lookupGE :: Name -> m (Maybe Global)

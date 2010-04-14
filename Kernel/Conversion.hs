@@ -12,7 +12,6 @@ import Data.Typeable
 
 import Syntax.Bind
 import Syntax.Internal
-import Syntax.ETag
 import Kernel.Whnf
 import Kernel.TCM
 

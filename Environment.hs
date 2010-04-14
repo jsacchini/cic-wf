@@ -24,7 +24,7 @@ newtype EnvT a = EnvT { unEnvT :: [(Name, a)] }
                  deriving(Show)
 
 type GlobalEnv = EnvT Global
-type LocalEnv a = EnvT (GType a)
+type LocalEnv = EnvT Type
 
 instance Env (EnvT a) where
     type Elem (EnvT a) = a

@@ -17,7 +17,6 @@ import Syntax.Bind
 import Syntax.Internal hiding (lift)
 import Syntax.Name
 import Syntax.Global
-import Syntax.ETag
 import Environment
 import Utils.MonadUndo
 

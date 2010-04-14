@@ -18,60 +18,48 @@ import Syntax.Bind
 import Syntax.Name
 import Syntax.Position
 import qualified Syntax.Abstract as A
-import Syntax.ETag
 
 import Utils.Misc
+
 data Sort
     = Box
     | Star
     deriving(Eq, Show)
 
-box :: (ETag a) => GTerm a
+box :: Term
 box = TSort Box
-star :: (ETag a) => GTerm a
+star :: Term
 star = TSort Star
 
 type MetaId = Int
 type Shift = Int
 type CxtSize = Int
 
-data GTerm a where
-    TSort :: (ETag a) => Sort -> GTerm a
-    Pi :: (ETag a) => Bind (GType a) -> GTerm a -> GTerm a
-    Bound :: (ETag a) => Int -> GTerm a
-    Free :: (ETag a) => Name -> GTerm a
-    Lam :: (ETag a) => Bind (GType a) -> GTerm a -> GTerm a
-    App :: (ETag a) => GTerm a -> GTerm a -> GTerm a
-    Meta :: MetaId -> Shift -> CxtSize -> GTerm EVAR
-    Constr :: (ETag a) => Name -> (Name, Int) -> [GTerm a] -> [GTerm a] -> GTerm a
-    Fix :: (ETag a) => Int -> Name -> GNamedCxt a -> GType a -> GTerm a -> GTerm a
+data Term
+    = TSort Sort
+    | Pi (Bind Type) Term
+    | Bound Int
+    | Free Name
+    | Lam (Bind Type) Term
+    | App Term Term
+    | Meta MetaId Shift CxtSize
+    | Constr Name (Name, Int) [Term] [Term]
+    | Fix Int Name NamedCxt Type Term
 
+type Type = Term
 
-type GType a = GTerm a
-
--- newtype GNamedCxt a = NamedCxt { unCxt :: [Bind (GTerm a)] }
---                       deriving(Show)
--- cxtSize (NamedCxt xs) = length xs
-
-type GNamedCxt a = BindCxt (GTerm a)
-
-type Term = GTerm NM
-type Type = GTerm NM
-type ETerm = GTerm EVAR
-type EType = GTerm EVAR
-type NamedCxt = GNamedCxt NM
-type ENamedCxt = GNamedCxt EVAR
 type BindT = Bind Term
-type EBindT = Bind ETerm
 
-instance Show (GTerm a) where -- for debugging only
+type NamedCxt = [Bind Term]
+
+instance Show Term where -- for debugging only
     show = A.ppExpr (take 100 $ bounds 0) . reify
         where bounds n = ("BB "++show n) : bounds (n+1)
 
-ppTerm :: [Name] -> (GTerm a) -> String
+ppTerm :: [Name] -> Term -> String
 ppTerm xs = A.ppExpr xs . reify
 
-lift :: Int -> Int -> GTerm a -> GTerm a
+lift :: Int -> Int -> Term -> Term
 lift k n t@(TSort _) = t
 lift k n (Pi b t2) = Pi (fmap (lift k n) b) (lift k (n+1) t2)
 lift k n t@(Bound m) = if m < n then t else Bound $ m+k
@@ -82,11 +70,11 @@ lift k n t@(Meta i m s) = if m < n then t else Meta i (m+k) s
 lift k n (Constr c x ps as) = Constr c x (map (lift k n) ps) (map (lift k n) as)
 lift k n (Fix m x bs t e) = Fix m x (liftCxt (flip lift n) k bs) (lift k (n+cxtSize bs) t) (lift k (n+1) e)
 
-liftCxt :: (Int -> GTerm a -> GTerm a) -> Int -> GNamedCxt a -> GNamedCxt a
+liftCxt :: (Int -> Term -> Term) -> Int -> NamedCxt -> NamedCxt
 liftCxt f n [] = []
 liftCxt f n (b:bs) = fmap (f n) b : liftCxt f (n+1) bs
 
-subst_ :: Int -> GTerm a -> GTerm a -> GTerm a
+subst_ :: Int -> Term -> Term -> Term
 subst_ i r t@(TSort _) = t
 subst_ i r (Pi b t2) = Pi (fmap (subst_ i r) b) (subst_ (i+1) r t2)
 subst_ i r t@(Bound n) | n < i = t
@@ -99,7 +87,7 @@ subst_ i r t@(Meta _ _ _) = t
 subst_ i r (Constr c x ps as) = Constr c x (map (subst_ i r) ps) (map (subst_ i r) as)
 subst_ i r (Fix n x bs t e) = Fix n x (substCxt_ i r bs) (subst_ (i+cxtSize bs) r t) (subst_ (i+1) r e)
 
-substMeta :: MetaId -> GTerm a -> GTerm a -> GTerm a
+substMeta :: MetaId -> Term -> Term -> Term
 substMeta i r t@(TSort _) = t
 substMeta i r (Pi b t2) = Pi (fmap (substMeta i r) b) (substMeta i r t2)
 substMeta i r t@(Bound _) = t
@@ -109,28 +97,25 @@ substMeta i r (App t1 t2) = App (substMeta i r t1) (substMeta i r t2)
 substMeta i r t@(Meta j _ _) | i == j = r
                              | otherwise = t
 
-
-subst :: GTerm a -> GTerm a -> GTerm a
+subst :: Term -> Term -> Term
 subst = subst_ 0
 
-substList_ :: Int -> [GTerm a] -> GTerm a -> GTerm a
+substList_ :: Int -> [Term] -> Term -> Term
 substList_ = foldInt subst_
--- substList_ _ [] t = t
--- substList_ k (r:rs) t = substList_ (k+1) rs (subst_ k r t)
 
-substCxt_ :: Int -> GTerm a -> GNamedCxt a -> GNamedCxt a
+substCxt_ :: Int -> Term -> NamedCxt -> NamedCxt
 substCxt_ i r = liftCxt (flip subst_ r) i
 
 substCxt = substCxt_ 0
 
-cxtSubstList_ :: Int -> [GTerm a] -> GNamedCxt a -> GNamedCxt a
+cxtSubstList_ :: Int -> [Term] -> NamedCxt -> NamedCxt
 cxtSubstList_ k bs c = foldr (substCxt_ k) c bs
 
-foldCxt :: (Monoid b) => (Int -> GTerm a -> b) -> Int -> GNamedCxt a -> b
+foldCxt :: (Monoid b) => (Int -> Term -> b) -> Int -> NamedCxt -> b
 foldCxt f n [] = mempty
 foldCxt f n (b:bs) = foldMap (f n) b `mappend` foldCxt f n bs
 
-isFree_ :: Int -> GTerm a -> Any
+isFree_ :: Int -> Term -> Any
 isFree_ _ (TSort _) = mempty
 isFree_ n (Pi b t2) = foldMap (isFree_ n) b `mappend` isFree_ (n+1) t2
 isFree_ n (Bound m) = Any $ n == m
@@ -138,15 +123,16 @@ isFree_ _ (Free _) = mempty
 isFree_ n (Lam b u) = foldMap (isFree_ n) b `mappend` isFree_ (n+1) u
 isFree_ n (App t1 t2) = isFree_ n t1 `mappend` isFree_ n t2
 isFree_ n (Constr _ x ps as) = Prelude.foldr mappend mempty (map (isFree_ n) (ps++as))
+isFree_ n (Meta _ _ _) = mempty
 isFree_ n (Fix _ _ bs t e) = foldCxt isFree_ n bs `mappend` isFree_ (n+cxtSize bs) t `mappend` isFree_ (n+1) e
 
-isFree :: Int -> GTerm a -> Bool
+isFree :: Int -> Term -> Bool
 isFree n = getAny . isFree_ n
 
 
 reify t = reify_ (collectFree t) t
 
-collectFree :: GTerm a -> [Name]
+collectFree :: Term -> [Name]
 collectFree (TSort _) = []
 collectFree (Pi b t2) = foldMap collectFree b ++ collectFree t2
 collectFree (Bound _) = []
@@ -157,7 +143,7 @@ collectFree (Meta _ _ _) = []
 collectFree (Constr _ x ps as) = concat $ map collectFree (ps ++ as)
 collectFree (Fix _ _ bs t e) = concat (map (foldMap collectFree) bs) ++ collectFree t ++ collectFree e
 
-reify_ :: [Name] -> GTerm a -> A.Expr
+reify_ :: [Name] -> Term -> A.Expr
 reify_ xs (TSort Box) = A.TSort noPos A.Box
 reify_ xs (TSort Star) = A.TSort noPos A.Star
 reify_ xs (Pi (NoBind t1) t2) = A.Pi noPos (NoBind (reify_ xs t1)) (reify_ ("":xs) t2)
@@ -179,22 +165,3 @@ reifyCxt_ xs (Bind x t:bs) = Bind x' (reify_ xs t) : reifyCxt_ (x':xs) bs
                              where x' = freshName xs x
 reifyCxt_ xs (BindDef x t1 t2:bs) = BindDef x' (reify_ xs t1) (reify_ xs t2) : reifyCxt_ (x':xs) bs
                                     where x' = freshName xs x
-
--------- casting
-
-upcast :: GTerm NM -> GTerm EVAR
-upcast (TSort s) = TSort s
-upcast (Pi b t2) = Pi (fmap upcast b) (upcast t2)
-upcast (Bound n) = Bound n
-upcast (Free x) = Free x
-upcast (Lam b t2) = Lam (fmap upcast b) (upcast t2)
-upcast (App t1 t2) = App (upcast t1) (upcast t2)
-
-downcast :: GTerm EVAR -> GTerm NM
-downcast (TSort s) = TSort s
-downcast (Pi b t2) = Pi (fmap downcast b) (downcast t2)
-downcast (Bound n) = Bound n
-downcast (Free x) = Free x
-downcast (Lam b t2) = Lam (fmap downcast b) (downcast t2)
-downcast (App t1 t2) = App (downcast t1) (downcast t2)
-downcast (Meta _ _ _) = __IMPOSSIBLE__

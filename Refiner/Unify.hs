@@ -20,7 +20,7 @@ import Syntax.Internal
 import Syntax.Global
 import Refiner.RM
 
-type Subst = [(MetaId, ETerm)]
+type Subst = [(MetaId, Term)]
 
 (<+>) :: Subst -> Subst -> Subst
 (<+>) = (++)
@@ -31,31 +31,31 @@ domain = map fst
 class Apply a where
     apply :: Subst -> a -> a
 
-instance Apply ETerm where
+instance Apply Term where
     apply [] t = t
     apply ((i, t1): s) t = apply s $ substMeta i t1 t
 
-instance Apply ENamedCxt where
+instance Apply NamedCxt where
     apply s = map (fmap $ apply s)
 
 instance Apply Goal where
     apply s (Goal e t) = Goal (apply s e) (apply s t)
 
-whnf :: (MonadRM rm) => ETerm -> rm ETerm
+whnf :: (MonadRM rm) => Term -> rm Term
 whnf t@(App t1 t2) = do u1 <- whnf t1
                         case u1 of
                           Lam _ u -> whnf $ subst t2 u
                           u -> return $ App u t2
 whnf t@(Free x) = do d <- lookupGlobal x
                      case d of
-                       Def _ u -> return $ upcast u
+                       Def _ u -> return u
                        Axiom _ -> return t
 whnf t = return t
 
 
 remove s = filter $ flip notElem (map fst s) . fst 
 
-unify :: (MonadRM rm) => ETerm -> ETerm -> rm Subst
+unify :: (MonadRM rm) => Term -> Term -> rm Subst
 unify t1 t2 = do w1 <- whnf t1
                  w2 <- whnf t2
                  case (w1, w2) of

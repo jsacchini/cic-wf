@@ -27,7 +27,6 @@ import Utils.MonadUndo
 import Kernel.TCM
 import Kernel.Command
 import qualified Syntax.Internal as I
-import Syntax.ETag
 import Syntax.Parser
 import qualified Kernel.TypeChecking as T
 import qualified Kernel.GlobalMonad as GM
