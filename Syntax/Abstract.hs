@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs, TypeOperators, TypeFamilies, RankNTypes,
-  ImpredicativeTypes, TypeSynonymInstances, FlexibleInstances, MultiParamTypeClasses
+  TypeSynonymInstances, FlexibleInstances, MultiParamTypeClasses
  #-}
 {-# LANGUAGE CPP #-}
 -- Terms

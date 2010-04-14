@@ -1,5 +1,5 @@
 {-# LANGUAGE PackageImports, MultiParamTypeClasses, FlexibleInstances, 
-  TypeSynonymInstances #-}
+  TypeSynonymInstances, GADTs #-}
 {-# LANGUAGE CPP #-}
 
 module Refiner.Unify where
