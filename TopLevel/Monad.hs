@@ -18,7 +18,7 @@ import Control.Applicative
 import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.Error
 
-import qualified Control.Exception as E
+import qualified Control.Exception as Exn
 
 import System.Console.Haskeline
 import System.IO
@@ -35,7 +35,7 @@ import qualified Kernel.GlobalMonad as GM
 import qualified Kernel.Whnf as W
 import qualified Syntax.Internal as I
 import qualified Kernel.TypeChecking as T
-import qualified Environment as E
+import qualified Environment as Env
 import Utils.Fresh
 import Utils.Misc
 import Syntax.Parser
@@ -49,7 +49,7 @@ import qualified Refiner.Unify as RU
 
 data TopLevelErr = TypeError TypeError
                  | RefinerError RM.RefinerError
-                 | MyIOException E.IOException
+                 | MyIOException Exn.IOException
                  | MyParsingError ParsingError
                  | ScopeError S.ScopeError
                  | CommandError GM.CommandError
@@ -63,10 +63,10 @@ data TopLevelErr = TypeError TypeError
 -- instance Error TopLevelErr where
 --     strMsg = InternalError
 
-instance E.Exception TopLevelErr
+instance Exn.Exception TopLevelErr
 
 
-data TLState = TLState { global :: E.GlobalEnv,
+data TLState = TLState { global :: Env.GlobalEnv,
                          freshMeta :: I.MetaId,
                          goal :: Maybe (Name, I.Type, I.Term),
                          subGoals :: Map.Map I.MetaId RM.Goal,
@@ -84,30 +84,30 @@ deriving instance MonadException TLM
 
 instance MonadIO TLM where
     liftIO m = TLM $ liftIO $ m
-                     `E.catch` catchP
-                     `E.catch` catchIO
-                     `E.catch` catchT
-                     `E.catch` catchR
-                     `E.catch` catchS
-                     `E.catch` catchC
-             where catchP = E.throwIO . MyParsingError
-                   catchIO = E.throwIO . MyIOException
-                   catchT = E.throwIO . TypeError
-                   catchR = E.throwIO . RefinerError
-                   catchS = E.throwIO . ScopeError
-                   catchC = E.throwIO . CommandError
+                     `Exn.catch` catchP
+                     `Exn.catch` catchIO
+                     `Exn.catch` catchT
+                     `Exn.catch` catchR
+                     `Exn.catch` catchS
+                     `Exn.catch` catchC
+             where catchP = Exn.throwIO . MyParsingError
+                   catchIO = Exn.throwIO . MyIOException
+                   catchT = Exn.throwIO . TypeError
+                   catchR = Exn.throwIO . RefinerError
+                   catchS = Exn.throwIO . ScopeError
+                   catchC = Exn.throwIO . CommandError
 
 
 instance MonadTCM (ReaderT TCEnv TLM)
 
 instance LookupName Global TLM where
     lookupName x = do g <- get
-                      return $ E.lookupEnv x (global g)
+                      return $ Env.lookupEnv x (global g)
     definedName x = do g <- get
-                       return $ E.bindedEnv x (global g)
+                       return $ Env.bindedEnv x (global g)
 
 instance ExtendName Global TLM where
-    extendName x a = modify $ \g -> g { global = E.extendEnv x a (global g) }
+    extendName x a = modify $ \g -> g { global = Env.extendEnv x a (global g) }
 
 instance BuildFresh I.MetaId TLState where
     nextFresh s = (freshMeta s, s { freshMeta = freshMeta s + 1 })
@@ -124,13 +124,13 @@ instance S.ScopeMonad (ReaderT [Name] TLM)
 instance GM.TCGlobalMonad TLM
 
 runTLM :: TLM a -> IO (Either TopLevelErr a)
-runTLM m = (Right <$> runTLM' m) `E.catch` (return . Left)
+runTLM m = (Right <$> runTLM' m) `Exn.catch` (return . Left)
 
 runTLM' :: TLM a -> IO a
 runTLM' = flip evalUndoT initialTLState . unTLM
 
 initialTLState :: TLState
-initialTLState = TLState { global = E.emptyEnv,
+initialTLState = TLState { global = Env.emptyEnv,
                            freshMeta = 0,
                            goal = Nothing,
                            subGoals = Map.empty,
@@ -149,7 +149,7 @@ refineSub xs e t = flip runReaderT xs $ fmap fst $ R.check e t
 
 showGlobal :: TLM ()
 showGlobal = do g <- fmap global get
-                liftIO $ putStr $ showEnv $ reverse $ E.listEnv g
+                liftIO $ putStr $ showEnv $ reverse $ Env.listEnv g
     where showEnv = foldr ((\x r -> x ++ "\n" ++ r) . showG) ""
           showG (x, Def t u) = "let " ++ x ++ " : " ++ I.ppTerm [] t ++ " := " ++ I.ppTerm [] u
           showG (x, Axiom t) = "axiom " ++ x ++ " : " ++ I.ppTerm [] t
@@ -210,7 +210,7 @@ execCommand xs = do csg <- fmap currentSubGoal get
 readAndSetSubGoal :: String -> TLM ()
 readAndSetSubGoal xs = do n <- return (read xs :: I.MetaId) `catch` h
                           setSubGoal n
-    where h :: E.SomeException -> TLM I.MetaId
+    where h :: Exn.SomeException -> TLM I.MetaId
           h = const $ throwIO UnknownGoal
 
 setSubGoal :: I.MetaId -> TLM ()
