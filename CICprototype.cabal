@@ -16,4 +16,10 @@ Executable cic
                      haskeline >= 0.6,
                      mtl -any,
                      containers -any,
-                     haskell98 >= 1.0
+                     haskell98 >= 1.0,
+                     array -any,
+                     filepath -any
+  Build-Tools:       alex >= 2.0,
+                     happy >= 1.18
+  other-modules:     Syntax.Lexer
+                     Syntax.Parser

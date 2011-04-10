@@ -1,10 +1,14 @@
 let id := fun (A : Type) (x : A) => x.
 
 axiom False : forall P:Type, P.
-(* data list (A:Type) : Type := | nil : list A | cons : A -> list A -> list A.
 
-data nat : Type := | O : nat | S : nat -> nat.
+axiom True : forall P:Type, P -> P.
+
+
+data list (A:Type) : Type := | nil : list A | cons : A -> list A -> list A.
+
+data nat : Type := O : nat | S : nat -> nat.
 data vec (A:Type) : nat -> Type := | vnil : vec A O | vcons : forall n : nat,
 A -> vec A n -> vec A (S n).
-*)
+
 
