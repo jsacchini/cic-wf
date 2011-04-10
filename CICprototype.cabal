@@ -1,10 +1,10 @@
 Name:                CICprototype
 Version:             0.1
-Description:         
+Description:
 License:             GPL
 License-file:        LICENSE
-Author:              yo
-Maintainer:          yo
+Author:              Jorge Luis Sacchini
+Maintainer:          Jorge Luis Sacchini <sacchini@qatar.cmu.edu>
 Build-Type:          Simple
 Cabal-Version:       >=1.2
 
@@ -15,4 +15,5 @@ Executable cic
                      pretty -any,
                      haskeline >= 0.6,
                      mtl -any,
-                     containers -any
+                     containers -any,
+                     haskell98 >= 1.0

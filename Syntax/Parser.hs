@@ -30,10 +30,10 @@ data ParsingError = ParsingError ParseError
 
 instance Exception ParsingError
 
-runParser :: (MonadIO m) => FilePath -> CharParser () a -> String -> m a
-runParser f p s = liftIO $ case Prim.runParser p () f s of
-                             Left e -> throwIO $ ParsingError e
-                             Right t -> return t
+runParser :: (Monad m) => FilePath -> CharParser () a -> String -> m a
+runParser f p s = case Prim.runParser p () f s of
+                    Left e -> throw $ ParsingError e
+                    Right t -> return t
 
 
 parseEOF p = do e <- p
