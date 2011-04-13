@@ -27,7 +27,8 @@ import qualified Syntax.Abstract as A
   'prop'           { TokKeyword KwProp $$ }
   'let'            { TokKeyword KwLet $$ }
   'import'         { TokKeyword KwImport $$ }
-  'axiom'          { TokKeyword KwAxiom $$ }
+  'assume'         { TokKeyword KwAssume $$ }
+  'define'         { TokKeyword KwDefine $$ }
   'data'           { TokKeyword KwData $$ }
 
   '('              { TokSymbol SymbLeftParen $$}
@@ -53,10 +54,10 @@ DeclsR : Decl '.'          { [$1] }
 
 Decl :: { A.Declaration }
 Decl
-  : 'let' ident MaybeExp ':=' Exp
+  : 'define' ident MaybeExp ':=' Exp
          { A.Definition (fuseRange $1 $5) (snd $2) $3 $5 }
-  | 'axiom' ident ':' Exp
-         { A.Axiom (fuseRange $1 $4) (snd $2) $4 }
+  | 'assume' ident ':' Exp
+         { A.Assumption (fuseRange $1 $4) (snd $2) $4 }
   | 'data' ident Telescope ':' Exp ':=' Constructors
          { A.Inductive (fuseRange $1 $7) (snd $2) $3 $5 $7 }
 

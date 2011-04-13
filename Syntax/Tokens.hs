@@ -3,8 +3,8 @@ module Syntax.Tokens where
 import Syntax.Position
 
 -- Keywords. Type is separated, since it has an argument
-data Keyword = KwForall | KwFun | KwProp | KwLet | KwImport
-             | KwAxiom | KwRefine | KwMatch | KwAs | KwIn | KwReturn | KwWith
+data Keyword = KwForall | KwFun | KwProp | KwLet | KwDefine | KwImport
+             | KwAssume | KwRefine | KwMatch | KwAs | KwIn | KwReturn | KwWith
              | KwEnd | KwData | KwFix
              deriving(Eq,Show)
 
@@ -14,7 +14,7 @@ data Symbol = SymbLeftParen | SymbRightParen | SymbArrow | SymbImplies
             deriving(Eq,Show)
 
 -- TokType and TokIdent have a pair argument because Happy would only allows
--- us to access one argument
+-- us to access one argument of a token
 data Token = TokKeyword Keyword Position
            | TokSymbol Symbol Position
            | TokType (Position,Int)
@@ -53,9 +53,10 @@ ident p s =
                      ("fun"   , TokKeyword KwFun),
                      ("Type"  , \p -> TokType (p,0)), -- with no number
                      ("Prop"  , TokKeyword KwProp),
+                     ("define", TokKeyword KwDefine),
                      ("let"   , TokKeyword KwLet),
                      ("import", TokKeyword KwImport),
-                     ("axiom" , TokKeyword KwAxiom),
+                     ("assume", TokKeyword KwAssume),
                      ("match" , TokKeyword KwMatch),
                      ("as"    , TokKeyword KwAs),
                      ("in"    , TokKeyword KwIn),

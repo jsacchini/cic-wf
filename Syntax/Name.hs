@@ -7,8 +7,12 @@ import "mtl" Control.Monad.Trans
 
 type Name = String
 
--- class HasName a where
---     getName :: a -> Name
+class HasName a where
+  getName :: a -> Name
+
+class HasNames a where
+  getNames :: a -> [Name]
+
 
 freshName :: [Name] -> Name -> Name
 freshName xs y | notElem y xs = y

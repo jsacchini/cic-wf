@@ -1,8 +1,8 @@
-let id := fun (A : Type) (x : A) => x.
+define id := fun (A : Type) (x : A) => x.
 
-axiom False : forall P:Type, P.
+assume False : forall P:Type, P.
 
-axiom True : forall P:Type, P -> P.
+assume True : forall P:Type, P -> P.
 
 
 data list (A:Type) : Type := | nil : list A | cons : A -> list A -> list A.

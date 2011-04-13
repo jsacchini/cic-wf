@@ -33,6 +33,9 @@ import Syntax.Tokens
 import Syntax.ParseMonad
 import Syntax.Parser
 
+import Utils.Pretty
+-- import Syntax.Scope
+
 -- main :: IO ()
 -- main = do r <- runTLM $ runIM interactiveLoop
 --           case r of
@@ -46,7 +49,7 @@ main =
     where runFile f = do h <- openFile f ReadMode
                          ss <- hGetContents h
                          case parse fileParser ss of
-                           ParseOk ts -> putStrLn $ show ts
+                           ParseOk ts -> putStrLn $ show $ prettyPrint ts
                            ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
                          hClose h
           parseTokens :: Parser [Token]
