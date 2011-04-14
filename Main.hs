@@ -32,9 +32,13 @@ import Syntax.Lexer
 import Syntax.Tokens
 import Syntax.ParseMonad
 import Syntax.Parser
+import Syntax.Scope
 
 import Utils.Pretty
--- import Syntax.Scope
+
+import Kernel.TCM
+
+import Control.Monad
 
 -- main :: IO ()
 -- main = do r <- runTLM $ runIM interactiveLoop
@@ -49,7 +53,14 @@ main =
     where runFile f = do h <- openFile f ReadMode
                          ss <- hGetContents h
                          case parse fileParser ss of
-                           ParseOk ts -> putStrLn $ show $ prettyPrint ts
+                           ParseOk ts -> do putStrLn $ show $ prettyPrint ts
+                                            putStrLn "---------------------"
+                                            forM_ ts (putStrLn . show)
+                                            putStrLn "---------------------"
+                                            s <- mapM (runTCM . scope) ts
+                                            forM_ s (\x -> case x of
+                                                        Left err -> putStrLn $ show err
+                                                        Right e -> putStrLn $ show e)
                            ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
                          hClose h
           parseTokens :: Parser [Token]

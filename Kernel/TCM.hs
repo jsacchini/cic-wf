@@ -5,76 +5,117 @@
 
 module Kernel.TCM where
 
-import qualified Control.Exception as E
+import Prelude hiding (catch)
+import Control.Exception
+
 
 import Data.List
 import Data.Typeable
 
+import Data.Map (Map)
+import qualified Data.Map as Map
+
+import Control.Applicative
 import "mtl" Control.Monad.Reader
 
 import qualified Syntax.Abstract as A
-import Syntax.Bind
-import Syntax.Internal hiding (lift)
+import qualified Syntax.Internal as I
 import Syntax.Name
-import Syntax.Global
-import Environment
+import Syntax.Position
 import Utils.MonadUndo
 
--- Type checking
+-- Type checking errors
+-- We include scope errors, so we have to catch only one type
 data TypeError
-    = NotConvertible TCEnv Term Term
-    | NotFunction TCEnv Term
-    | NotSort TCEnv Term
-    | NotArity TCEnv Term
-    | NotConstructor TCEnv Term
-    | InvalidProductRule Sort Sort
+    = NotConvertible TCEnv I.Term I.Term
+    | NotFunction TCEnv I.Term
+    | NotSort TCEnv I.Term
+    | NotArity TCEnv I.Term
+    | NotConstructor TCEnv I.Term
+    | InvalidProductRule I.Sort I.Sort
     | IdentifierNotFound Name
     | ConstantError String
-    deriving(Typeable)
+    -- Scope checking
+    | WrongNumberOfArguments Range Name Int Int
+    | WrongFixNumber Range Name Int
+    | UndefinedName Range Name
+    | NotInductive Name
+    | ConstructorNotApplied Range Name
+    deriving(Show, Typeable)
 
-instance Show TypeError where
-    show (NotConvertible e t1 t2) = "NotConvertible " ++ ppTerm (map bind e) t1 ++ " =!= " ++ ppTerm (map bind e) t2
-    show (NotFunction e t1) = "NotFunction " ++ ppTerm (map bind e) t1
-    show (NotSort e t1) = "NotSort " ++ ppTerm (map bind e) t1
-    show (NotArity e t1) = "NotArity " ++ ppTerm (map bind e) t1
-    show (InvalidProductRule s1 s2) = "InvalidProductRule " ++ show s1 ++ " " ++ show s2
-    show (IdentifierNotFound x) = "IdentifierNotFound " ++ x
-    show (ConstantError s) = "ConstantError " ++ s
+-- instance Show TypeError where
+--     show (NotConvertible e t1 t2) = "NotConvertible " ++ ppTerm (map bind e) t1 ++ " =!= " ++ ppTerm (map bind e) t2
+--     show (NotFunction e t1) = "NotFunction " ++ ppI.Term (map bind e) t1
+--     show (NotSort e t1) = "NotSort " ++ ppI.Term (map bind e) t1
+--     show (NotArity e t1) = "NotArity " ++ ppI.Term (map bind e) t1
+--     show (InvalidProductRule s1 s2) = "InvalidProductRule " ++ show s1 ++ " " ++ show s2
+--     show (IdentifierNotFound x) = "IdentifierNotFound " ++ x
+--     show (ConstantError s) = "ConstantError " ++ s
 
-instance E.Exception TypeError
+instance Exception TypeError
 
-type TCState = GlobalEnv
-type TCEnv = [BindT]
+
+-- Global state containing definition, assumption, datatypes, etc..
+data TCState = TCState
+               { stSignature :: Signature,
+                 stDefined :: [Name], -- defined names in order
+                 stFresh :: Fresh
+               }
+
+type Signature = Map Name I.Global
+type Fresh = Int
+
+-- Local environment
+type TCEnv = [I.Bind]
+
+data TCErr = TCErr TypeError
+             deriving(Show, Typeable)
+
+instance Exception TCErr
 
 class (Functor tcm,
-       MonadIO tcm,
        MonadReader TCEnv tcm,
-       LookupName Global tcm,
-       ExtendName Global tcm) => MonadTCM tcm where
+       MonadState TCState tcm,
+       MonadIO tcm) => MonadTCM tcm
+
+type TCM = StateT TCState (ReaderT TCEnv IO)
+
+instance MonadTCM TCM
 
 -- | Running the type checking monad
--- runTCM :: TCM a -> IO (Either TCErr a)
--- runTCM m = (Right <$> runTCM' m) `E.catch` (return . Left)
+runTCM :: TCM a -> IO (Either TCErr a)
+runTCM m = (Right <$> runTCM' m) `catch` (return . Left)
+
+runTCM' :: TCM a -> IO a
+runTCM' m = liftM fst $ runReaderT (runStateT m initialTCState) initialTCEnv
 
 initialTCState :: TCState
-initialTCState = emptyEnv
+initialTCState = TCState { stSignature = Map.empty,
+                           stDefined = [],
+                           stFresh = 0
+                         }
 
 initialTCEnv :: TCEnv
 initialTCEnv = []
 
 typeError :: (MonadTCM tcm) => TypeError -> tcm a
-typeError = liftIO . E.throwIO
+typeError = throw
 
-throwNotConvertible :: (MonadTCM tcm) => Term -> Term -> tcm a
+throwNotConvertible :: (MonadTCM tcm) => I.Term -> I.Term -> tcm a
 throwNotConvertible t u = do e <- ask
                              typeError $ NotConvertible e t u
 
-throwNotFunction :: (MonadTCM tcm) => Term -> tcm a
+throwNotFunction :: (MonadTCM tcm) => I.Term -> tcm a
 throwNotFunction t = do e <- ask
                         typeError $ NotFunction e t
 
-lookupGlobal :: (MonadTCM tcm) => Name -> tcm Global
-lookupGlobal x = do g <- lookupName x
-                    case g of
-                      Just t -> return t
-                      Nothing -> typeError $ IdentifierNotFound x
+getSignature :: (MonadTCM tcm) => tcm Signature
+getSignature = get >>= return . stSignature
+
+lookupGlobal :: (MonadTCM tcm) => Name -> tcm (Maybe I.Global)
+lookupGlobal x = do sig <- getSignature
+                    return $ Map.lookup x sig
+
+getGlobal :: (MonadTCM tcm) => Name -> tcm I.Global
+getGlobal x = do sig <- getSignature
+                 return $ sig Map.! x

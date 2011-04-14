@@ -71,12 +71,16 @@ data Declaration = Definition Range Name (Maybe Expr) Expr
                  | Inductive Range IName Parameters Expr [Constructor]
                  deriving(Show)
 
+
 data Constructor = Constructor {
   constrRange :: Range,
   constrName  :: CName,
   constrType  :: Expr,
   constrId    :: Int
   } deriving(Show)
+
+instance HasNames Constructor where
+  getNames c = [constrName c]
 
 
 type Parameters = Telescope
@@ -86,6 +90,9 @@ data Bind = Bind Range [Name] Expr       -- x y : A. List must be non-empty
           -- | BindDef Range Name Expr Expr
           deriving(Show)
 
+instance HasNames Bind where
+  getNames (Bind _ xs _) = xs
+  getNames (NoBind _) = ["_"]
 
 type Telescope = [Bind]
 
@@ -95,6 +102,7 @@ data LetBind = LetBind Range Name (Maybe Expr) Expr
 instance HasRange Expr where
   getRange (Ann r _ _) = r
   getRange (Sort r _) = r
+  getRange (Pi r _ _) = r
   getRange (Var r _) = r
   getRange (Bound r _ _) = r
   getRange (EVar r _) = r

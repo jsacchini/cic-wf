@@ -15,9 +15,9 @@ class HasNames a where
 
 
 freshName :: [Name] -> Name -> Name
-freshName xs y | notElem y xs = y
+freshName xs y | y `notElem` xs = y
                | otherwise = addSuffix 0
-                             where addSuffix n | notElem (y++show n) xs = y++show n
+                             where addSuffix n | (y++show n) `notElem` xs = y++show n
                                                | otherwise = addSuffix (n+1)
 
 class (Monad m) => LookupName a m | m -> a where
