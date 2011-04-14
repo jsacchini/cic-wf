@@ -3,9 +3,8 @@
  #-}
 {-# LANGUAGE CPP #-}
 
--- Abstract syntax
--- The parser returns an abstract tree
--- It is also reused by the scope checker
+-- | Abstract syntax returned by the parser.
+-- It is also reused by the scope checker;
 -- Bound, Ind, Constr are filled by the scope checker
 
 module Syntax.Abstract where
@@ -16,6 +15,7 @@ import Utils.Impossible
 import Data.Function
 import Data.Foldable hiding (notElem, concat, foldr)
 import Data.Monoid
+
 import Text.PrettyPrint.HughesPJ
 
 import Syntax.Name
@@ -28,25 +28,25 @@ data Sort
     | Prop
     deriving(Eq)
 
-type IName = String -- inductive type names
-type CName = String -- constructor names
+type IName = Name -- ^ inductive type names
+type CName = Name -- ^ constructor names
 
-data Expr = Ann Range Expr Expr -- annotated term with type
-          | Sort Range Sort
-          | Pi Range [Bind] Expr -- var name, type, term
-          | Var Range Name
-          | Bound Range Name Int    -- name is just a hint
-          | EVar Range (Maybe Int)  -- existential variable
-          | Lam Range [Bind] Expr -- var name, type, body
-          | App Range Expr Expr
-          | Let Range LetBind Expr
-          | Match Range MatchExpr
-          | Fix Range Int Name Telescope Expr Expr
-          | Constr Range CName (IName, Int) [Expr] [Expr]
-          | Ind Range IName
-          deriving(Show) -- for debugging only
--- instance Show (Expr) where
---     show = show . tprint 0 []
+-- | The main data type of expressions
+data Expr =
+  Ann Range Expr Expr       -- ^ annotated term with type
+  | Sort Range Sort
+  | Pi Range [Bind] Expr    -- ^ var name, type, term
+  | Var Range Name
+  | Bound Range Name Int    -- ^ name is just a hint
+  | EVar Range (Maybe Int)  -- ^ existential variable
+  | Lam Range [Bind] Expr   -- ^ var name, type, body
+  | App Range Expr Expr
+  | Let Range LetBind Expr
+  | Match Range MatchExpr
+  | Fix Range Int Name Telescope Expr Expr
+  | Constr Range CName (IName, Int) [Expr] [Expr]
+  | Ind Range IName
+  deriving(Show) -- for debugging only
 
 data MatchExpr = MkMatch {
   matchRange    :: Range,
@@ -92,7 +92,7 @@ type Parameters = Telescope
 
 data Bind = Bind Range [Name] Expr       -- x y : A. List must be non-empty
           | NoBind Expr                  -- _ : A. We use the Range of expr
-          -- | BindDef Range Name Expr Expr
+          -- BindDef Range Name Expr Expr
           deriving(Show)
 
 instance HasNames Bind where

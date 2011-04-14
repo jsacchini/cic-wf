@@ -8,6 +8,8 @@ Maintainer:          Jorge Luis Sacchini <sacchini@qatar.cmu.edu>
 Build-Type:          Simple
 Cabal-Version:       >=1.2
 
+extra-source-files: undefined.h
+
 Executable cic
   Main-is:           Main.hs
   Build-Depends:     base >= 4.1,
@@ -21,5 +23,24 @@ Executable cic
                      filepath -any
   Build-Tools:       alex >= 2.0,
                      happy >= 1.18
+  extensions:        CPP
   other-modules:     Syntax.Lexer
                      Syntax.Parser
+                     Syntax.Abstract
+                     Syntax.Internal
+                     Syntax.InternaltoAbstract
+                     Syntax.Position
+                     Syntax.Alex
+                     Syntax.ParseMonad
+                     Syntax.Tokens
+                     Syntax.Name
+                     Syntax.Scope
+                     Utils.Fresh
+                     Utils.Misc
+                     Utils.Pretty
+                     Utils.Impossible
+                     Utils.MonadUndo
+                     Kernel.TCM
+                     Kernel.TypeChecking
+                     Kernel.Whnf
+                     Kernel.Conversion

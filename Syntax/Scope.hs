@@ -4,7 +4,7 @@
  #-}
 {-# LANGUAGE CPP #-}
 
--- Scope checking of Declaration and Expr
+-- | Scope checking of Declaration and Expr
 -- It replaces
 -- * Var x           --> Bound n  for bound variables
 -- * Var i           --> Ind i    for inductive types

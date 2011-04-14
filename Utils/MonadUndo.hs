@@ -4,7 +4,6 @@
 
 module Utils.MonadUndo (
         UndoT(..), evalUndoT, execUndoT, runUndoT, mapUndoT,
---        Undo, evalUndo, execUndo,
         MonadUndo, undo, redo, history, checkpoint, noUndo, oneStep,
         History, current, undos, redos,
         module Control.Monad.State
@@ -15,16 +14,16 @@ import "mtl" Control.Monad.State
 import "mtl" Control.Monad.Identity
 
 import System.Console.Haskeline
- 
+
 data History s = History { current :: s, undos :: [s], redos :: [s] }
     deriving (Eq, Show, Read)
- 
+
 blankHistory :: s -> History s
 blankHistory s = History { current = s, undos = [], redos = [] }
- 
+
 newtype Monad m => UndoT s m a = UndoT (StateT (History s) m a)
     deriving (Functor, Monad, MonadTrans, MonadIO)
- 
+
 class (MonadState s m) => MonadUndo s m | m -> s where
     undo :: m Bool -- undo the last state change, returns whether successful
     redo :: m Bool -- redo the last undo
@@ -50,7 +49,7 @@ instance (Monad m) => MonadState s (UndoT s m) where
               ur <- get
               put (History { current = x, undos = current ur : undos ur,
                              redos = [] })
- 
+
 instance (Monad m) => MonadUndo s (UndoT s m) where
     undo = UndoT $ do
         ur <- get
@@ -97,6 +96,6 @@ mapUndoT f (UndoT x) = UndoT $ mapStateT f x
 
 -- newtype Undo s a = Undo (UndoT s Identity a)
 --     deriving (Functor, Monad, MonadState s, MonadUndo s)
- 
+
 -- evalUndo (Undo x) = runIdentity . evalUndoT x
 -- execUndo (Undo x) = runIdentity . execUndoT x
