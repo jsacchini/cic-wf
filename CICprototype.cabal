@@ -14,7 +14,7 @@ Executable cic
                      parsec >= 2,
                      pretty -any,
                      haskeline >= 0.6,
-                     mtl -any,
+                     mtl == 1.*,
                      containers -any,
                      haskell98 >= 1.0,
                      array -any,

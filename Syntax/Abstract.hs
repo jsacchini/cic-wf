@@ -71,6 +71,11 @@ data Declaration = Definition Range Name (Maybe Expr) Expr
                  | Inductive Range IName Parameters Expr [Constructor]
                  deriving(Show)
 
+instance HasName Declaration where
+  getName (Definition _ x _ _) = x
+  getName (Assumption _ x _) = x
+  getName (Inductive _ x _ _ _) = x
+  getName (Import _) = error "to be implemented (getName Import)"
 
 data Constructor = Constructor {
   constrRange :: Range,

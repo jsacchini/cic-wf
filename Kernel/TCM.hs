@@ -58,9 +58,10 @@ instance Exception TypeError
 -- Global state containing definition, assumption, datatypes, etc..
 data TCState = TCState
                { stSignature :: Signature,
-                 stDefined :: [Name], -- defined names in order
+                 stDefined :: [Name], -- defined names in reverse order
                  stFresh :: Fresh
                }
+               deriving(Show)
 
 type Signature = Map Name I.Global
 type Fresh = Int
@@ -110,7 +111,7 @@ throwNotFunction t = do e <- ask
                         typeError $ NotFunction e t
 
 getSignature :: (MonadTCM tcm) => tcm Signature
-getSignature = get >>= return . stSignature
+getSignature = fmap stSignature get
 
 lookupGlobal :: (MonadTCM tcm) => Name -> tcm (Maybe I.Global)
 lookupGlobal x = do sig <- getSignature
@@ -118,4 +119,11 @@ lookupGlobal x = do sig <- getSignature
 
 getGlobal :: (MonadTCM tcm) => Name -> tcm I.Global
 getGlobal x = do sig <- getSignature
+                 -- liftIO $ putStrLn $ "getGlobal " ++ x ++ " " ++ show sig
                  return $ sig Map.! x
+
+addGlobal :: (MonadTCM tcm) => Name -> I.Global -> tcm ()
+addGlobal x g = do st <- get
+                   put $ st { stSignature = Map.insert x g (stSignature st),
+                              stDefined = x : stDefined st
+                            }

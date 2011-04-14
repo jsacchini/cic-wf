@@ -25,6 +25,12 @@ data Sort
     | Prop
     deriving(Eq, Show)
 
+instance Ord Sort where
+  compare Prop Prop = EQ
+  compare Prop (Type _) = LT
+  compare (Type _) Prop = GT
+  compare (Type m) (Type n) = compare m n
+
 tType :: Int -> Term
 tType = Sort . Type
 tProp :: Term
@@ -81,7 +87,7 @@ data Global = Definition Type Term
               constrArgs :: [Bind], -- arguments
               constrIndices :: [Term]
               }
-
+              deriving(Show)
 
 instance HasType Global where
   getType (Definition t _) = t
@@ -89,7 +95,7 @@ instance HasType Global where
   getType i@(Inductive {}) = Pi (indPars i ++ indIndices i) (Sort (indSort i))
   getType c@(Constructor {}) = Pi (constrPars c ++ constrArgs c) ind
     where ind = App (Ind (constrInd c)) (par ++ indices)
-          par = map Var $ map getName $ constrPars c
+          par = map (Var . getName) (constrPars c)
           indices = constrIndices c
 
 

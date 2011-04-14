@@ -4,6 +4,7 @@
 
 module Kernel.Conversion where
 
+import Control.Monad
 import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.State
 import Control.Exception
@@ -37,15 +38,9 @@ instance Conversion Term where
            (Var x, Var y) -> return (x == y)
            (Bound _ m, Bound _ n) -> return (m == n)
            (Sort s1, Sort s2) -> return (s1 == s2)
-           (Pi u1 u2, Pi v1 v2) -> do b1 <- conversion u1 v1
-                                      b2 <- conversion u2 v2
-                                      return (b1 && b2)
-           (Lam u1 u2, Lam v1 v2) -> do b1 <- conversion u1 v1
-                                        b2 <- conversion u2 v2
-                                        return (b1 && b2)
-           (App u1 u2, App v1 v2) -> do b1 <- conversion u1 v1
-                                        b2 <- conversion u2 v2
-                                        return (b1 && b2)
+           (Pi u1 u2, Pi v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
+           (Lam u1 u2, Lam v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
+           (App u1 u2, App v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
            -- (Constr _ x p1 a1, Constr _ y p2 a2) -> if x /= y then return False
            --                                         else do bps <- sequence (map (uncurry conversion) (zip p1 p2))
            --                                                 bas <- sequence (map (uncurry conversion) (zip a1 a2))
@@ -55,6 +50,5 @@ instance Conversion Term where
 
 (===) :: (MonadTCM) tcm => Term -> Term -> tcm ()
 (===) x y = do b <- conversion x y
-               if b
-                 then return ()
-                 else ask >>= \e -> typeError $ NotConvertible e x y
+               (unless b $
+                 ask >>= \e -> typeError $ NotConvertible e x y)

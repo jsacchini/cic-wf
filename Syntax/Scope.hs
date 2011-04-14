@@ -145,7 +145,7 @@ scopeApp e@(A.Var r x) args =
 scopeApp e args = return $ mkFunc e args
 
 mkFunc :: A.Expr -> [(Range, A.Expr)] -> A.Expr
-mkFunc func args = foldr (\(r,e1) y -> A.App r y e1) func args
+mkFunc = foldr (\(r,e1) y -> A.App r y e1)
 -- mkConstr err x i m n = (\p a -> do when (length a/=m+n) $ err (length a) (m+n)
 --                                    let a' = reverse $ take (m+n) a
 --                                        params = map snd $ take m a'

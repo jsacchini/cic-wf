@@ -7,6 +7,9 @@ import "mtl" Control.Monad.Trans
 
 type Name = String
 
+
+-- these classes are used by Bind
+-- The use of these classes and definition of Bind should be revised
 class HasName a where
   getName :: a -> Name
 

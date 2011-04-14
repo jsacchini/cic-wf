@@ -7,7 +7,6 @@ import Prelude hiding (catch)
 -- import System.Console.Haskeline
 import System.IO
 
--- import qualified Syntax.Abstract as A
 -- import Utils.MonadUndo
 -- import Kernel.TCM
 -- import Kernel.Command
@@ -25,10 +24,15 @@ import System.IO
 import System
 import System.Exit
 
+import Control.Monad.Trans
+import Control.Monad.State
+
 -- import TopLevel.TopLevel
 -- import TopLevel.Monad
 
+import qualified Syntax.Abstract as A
 import Syntax.Lexer
+import Syntax.Name
 import Syntax.Tokens
 import Syntax.ParseMonad
 import Syntax.Parser
@@ -37,6 +41,8 @@ import Syntax.Scope
 import Utils.Pretty
 
 import Kernel.TCM
+import Kernel.TypeChecking
+import Syntax.InternaltoAbstract
 
 import Control.Monad
 
@@ -45,6 +51,8 @@ import Control.Monad
 --           case r of
 --             Right _ -> exitSuccess
 --             Left _ -> exitFailure
+
+-- instance MonadIO TCM
 
 main :: IO ()
 main =
@@ -55,12 +63,10 @@ main =
                          case parse fileParser ss of
                            ParseOk ts -> do putStrLn $ show $ prettyPrint ts
                                             putStrLn "---------------------"
-                                            forM_ ts (putStrLn . show)
-                                            putStrLn "---------------------"
-                                            s <- mapM (runTCM . scope) ts
-                                            forM_ s (\x -> case x of
-                                                        Left err -> putStrLn $ show err
-                                                        Right e -> putStrLn $ show e)
+                                            r <- runTCM $ typeCheckFile ts
+                                            case r of
+                                              Left err -> putStrLn $ show err
+                                              Right _ -> return ()
                            ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
                          hClose h
           parseTokens :: Parser [Token]
@@ -69,6 +75,22 @@ main =
                              TokEOF -> return []
                              t' -> do ts <- parseTokens
                                       return (t':ts)
+          typeCheckDecl :: A.Declaration -> TCM ()
+          typeCheckDecl d = do d' <- scope d
+                               liftIO $ putStrLn $ "scoped " ++ show d'
+                               g <- inferDecl d'
+                               addGlobal (getName d) g
+          typeCheckFile :: [A.Declaration] -> TCM ()
+          typeCheckFile ds = do forM_ ds typeCheckDecl
+                                liftIO $ putStrLn "========================"
+                                sig <- fmap stSignature get
+                                liftIO $ putStrLn "========================"
+                                liftIO $ putStrLn $ show sig
+                                liftIO $ putStrLn "========================"
+                                xs <- fmap stDefined get
+                                forM_ xs showG
+                                  where showG x = do d <- reify x
+                                                     liftIO $ putStrLn $ show $  prettyPrint d
 
 -- main2 :: IO ()
 -- main2 =

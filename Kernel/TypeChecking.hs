@@ -6,41 +6,38 @@
 
 module Kernel.TypeChecking where
 
+#include "../undefined.h"
+import Utils.Impossible
+
 -- import qualified "mtl" Control.Monad.Error as EE
 import qualified Control.Exception as E
 import "mtl" Control.Monad.Reader
 import "mtl" Control.Monad.Error
 
-import Environment
-import Syntax.Bind
+import Data.Function
+
 import Syntax.Internal hiding (lift)
-import qualified Syntax.Internal as I
+import Syntax.Internal as I
 import qualified Syntax.Abstract as A
-import Syntax.Global
 import Kernel.Conversion
 import Kernel.TCM
 import Kernel.Whnf
 
 
 checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term, Type)
-checkSort A.Star = return (star, box)
-checkSort A.Box = return (box, box)
+checkSort A.Prop = return (tProp, tType 0)
+checkSort (A.Type n) = return (tType n, tType (n + 1))
 
 isSort :: (MonadTCM tcm) => Term -> tcm Sort
-isSort (TSort s) = return s
+isSort (Sort s) = return s
 isSort t = do xs <- ask
               typeError $ NotSort xs t
-
-checkProd :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
-checkProd s1 Box = return Box
-checkProd s1 Star = return Star
--- checkProd s1 s2 = typeError $ InvalidProductRule s1 s2
 
 -- We assume that in the global environment, types are normalized
 
 -- class Infer a b c | a -> b c where
---     infer :: (MonadTCM tcm) => a -> tcm (b, c)
---     check :: (MonadTCM tcm, Conversion c) => a -> c -> tcm b
+--   infer :: (MonadTCM tcm) => a -> tcm (b, c)
+--   check :: (MonadTCM tcm, Conversion c) => a -> c -> tcm b
 
 --     check t u = do (t', r) <- infer t
 --                    b <- conversion r u
@@ -54,53 +51,90 @@ infer (A.Ann _ t u) = do (u', r) <- infer u
                          t' <- check t u'
                          w <- whnf u'
                          return (t', w)
-infer (A.TSort _ s) = checkSort s
-infer (A.Pi _ t1 t2) = do (t1', s1) <- inferBind t1
-                          (t2', r2) <- local (t1':) $ infer t2
-                          s2 <- local (t1':) $ isSort r2
-                          s3 <- checkProd s1 s2
-                          return (Pi t1' t2', TSort s3)
-infer (A.Bound _ n) = do l <- ask
-                         when (n >= length l) $ liftIO $ putStrLn $ concat [show n, " ", show (length l)]
-                         w <- whnf $  I.lift (n+1) 0 $ expr (l !! n)
-                         return (Bound n, w)
-infer (A.Var _ x) = do t <- lookupGlobal x
+infer (A.Sort _ s) = checkSort s
+infer (A.Pi _ bs t) = do (bs', s1) <- inferBinds bs
+                         (t', r2) <- local (reverse bs'++) $ infer t
+                         s2 <- local (reverse bs'++) $ isSort r2
+                         return (Pi bs' t', Sort $ max s1 s2)
+infer (A.Bound _ x n) =
+  do l <- ask
+     when (n >= length l) $ liftIO $ putStrLn $ concat [show n, " ", show (length l)]
+     case (l !! n) of
+       Bind x t -> do w <- whnf (I.lift (n + 1) 0 t)
+                      return (Bound x n, w)
+       LocalDef x t1 t2 -> do w <- whnf (I.lift (n + 1) 0 t2)
+                              return (Bound x n, w)
+infer (A.Var _ x) = do t <- getGlobal x
                        case t of
-                         Def t _ -> do w <- whnf t
-                                       return (Free x, w)
-                         Axiom t -> do w <- whnf t
-                                       return (Free x, w)
-infer (A.Lam _ t u) = do (t', _) <- inferBind t
-                         (u', r2) <- local (t':) $ infer u
-                         -- s <- infer g l (Pi t r2)
-                         -- isSort s
-                         return (Lam t' u', Pi t' r2)
-infer (A.App _ t1 t2) = do (t1', r1) <- infer t1
-                           case r1 of
-                             Pi b1 u2 -> do t2' <- check t2 (expr b1)
-                                            return (App t1' t2', subst t2' u2)
-                             otherwise -> throwNotFunction r1
-infer (A.Ind _ x) = do t <- lookupGlobal x
-                       case t of
-                         IndDef param arg s _ -> return (Free x, foldr Pi (TSort s) (param+|+arg))
-infer (A.Constr _ _ (iname,k) ps as) =
-    do t <- lookupGlobal iname
-       case t of
-         IndDef cParam cIndex s cs -> do -- liftIO $ putStrLn $ "checking parameters " ++ show (iname,k)
-                                         -- xs <- ask
-                                         let (MkConstr x cArg tIndex) = cs !! k
-                                             -- itype = foldr Pi (TSort s) (cParam++cIndex)
-                                             -- bi = Bind iname itype
-                                             nParam = cxtSize cParam
-                                             cArg' = liftCxt (flip subst_ (Free iname)) nParam cArg
-                                         -- liftIO $ putStrLn $ concat ["context\n---\n", show xs, "\n-----\nparams ", show ps, "|" , show as, "\nagainst: ", show cParam, "|", show cArg']
-                                         tParamArg <- checkList (ps++as) (cParam+|+cArg')
-                                         let (tParam, tArg) = splitAt (cxtSize cParam) tParamArg
-                                         -- liftIO $ putStrLn $ concat ["checked param ", show tParam, "|", show tArg]
-                                         -- liftIO $ putStrLn $ concat ["check (", show xs, ") ", show as, " :!: ", show (map expr cArg'), " ---- ", show (map expr cArg)]
-                                         -- tArg <- {-local (bi:) $-} checkList as cArg'
-                                         let tIndex' = map (substList_ 0 (reverse $ tParam++tArg)) tIndex
-                                         return (Constr x (iname,k) tParam tArg, foldl App (Free iname) (tParam++tIndex'))
+                         Definition t _ -> do w <- whnf t
+                                              return (Var x, w)
+                         Assumption t   -> do w <- whnf t
+                                              return (Var x, w)
+                         _              -> __IMPOSSIBLE__
+infer (A.Lam _ bs t) = do (bs', _) <- inferBinds bs
+                          (t', u) <- local (reverse bs'++) $ infer t
+                          return (Lam bs' t', Pi bs' u)
+-- infer (A.App _ t1 t2) = do (t1', r1) <- infer t1
+--                            case r1 of
+--                              Pi b1 u2 -> do t2' <- check t2 (expr b1)
+--                                             return (App t1' t2', subst t2' u2)
+--                              otherwise -> throwNotFunction r1
+
+
+
+inferBind :: (MonadTCM tcm) => A.Bind -> tcm ([Bind], Sort)
+inferBind (A.Bind r xs e) = do (t, r) <- infer e
+                               s <- isSort r
+                               return (map (flip Bind t) xs, s)
+inferBind (A.NoBind e) = do (t, r) <- infer e
+                            s <- isSort r
+                            return ([Bind "" t], s)
+
+inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm ([Bind], Sort)
+inferBinds [] = return ([], Prop)
+inferBinds (b:bs) = do -- liftIO $ putStrLn $ "inferBinds "  ++ show (b:bs)
+                       (bs1, s1) <- inferBind b
+                       (bss1, s2) <- local (reverse bs1++) $ inferBinds bs
+                       return (bs1 ++ bss1, max s1 s2)
+
+
+inferDecl :: (MonadTCM tcm) => A.Declaration -> tcm Global
+inferDecl (A.Definition _ x (Just e1) e2) =
+  do (t1, r1) <- infer e1
+     _ <- isSort r1
+     t2 <- check e2 t1
+     return $ Definition t2 t1
+inferDecl (A.Definition _ x Nothing e) =
+  do (t, u) <- infer e
+     return $ Definition u t
+inferDecl (A.Assumption _ x e) =
+  do (t, r) <- infer e
+     _ <- isSort r
+     return $ Assumption t
+inferDecl _ = error "not yet"
+
+
+-- infer (A.Ind _ x) = do t <- lookupGlobal x
+--                        case t of
+--                          IndDef param arg s _ -> return (Free x, foldr Pi (TSort s) (param+|+arg))
+-- infer (A.Constr _ _ (iname,k) ps as) =
+--     do t <- lookupGlobal iname
+--        case t of
+--          IndDef cParam cIndex s cs -> do -- liftIO $ putStrLn $ "checking parameters " ++ show (iname,k)
+--                                          -- xs <- ask
+--                                          let (MkConstr x cArg tIndex) = cs !! k
+--                                              -- itype = foldr Pi (TSort s) (cParam++cIndex)
+--                                              -- bi = Bind iname itype
+--                                              nParam = cxtSize cParam
+--                                              cArg' = liftCxt (flip subst_ (Free iname)) nParam cArg
+--                                          -- liftIO $ putStrLn $ concat ["context\n---\n", show xs, "\n-----\nparams ", show ps, "|" , show as, "\nagainst: ", show cParam, "|", show cArg']
+--                                          tParamArg <- checkList (ps++as) (cParam+|+cArg')
+--                                          let (tParam, tArg) = splitAt (cxtSize cParam) tParamArg
+--                                          -- liftIO $ putStrLn $ concat ["checked param ", show tParam, "|", show tArg]
+--                                          -- liftIO $ putStrLn $ concat ["check (", show xs, ") ", show as, " :!: ", show (map expr cArg'), " ---- ", show (map expr cArg)]
+--                                          -- tArg <- {-local (bi:) $-} checkList as cArg'
+--                                          let tIndex' = map (substList_ 0 (reverse $ tParam++tArg)) tIndex
+--                                          return (Constr x (iname,k) tParam tArg, foldl App (Free iname) (tParam++tIndex'))
 
 check :: (MonadTCM tcm) => A.Expr -> Term -> tcm Term
 check t u = do (t', r) <- infer t
@@ -108,33 +142,33 @@ check t u = do (t', r) <- infer t
                unless b $ throwNotConvertible r u
                return t'
 
-checkList :: (MonadTCM tcm) => [A.Expr] -> NamedCxt -> tcm [Term]
-checkList [] [] = return []
-checkList (e:es) (b:bs) = do xs <- ask
-                             -- liftIO $ putStrLn $ concat ["*** ", show e, " :: ", show (expr b)]
-                             t <- check e (expr b)
-                             ts <- checkList es (liftCxt (flip subst_ t) 0 bs)
-                             return (t:ts)
+-- checkList :: (MonadTCM tcm) => [A.Expr] -> NamedCxt -> tcm [Term]
+-- checkList [] [] = return []
+-- checkList (e:es) (b:bs) = do xs <- ask
+--                              -- liftIO $ putStrLn $ concat ["*** ", show e, " :: ", show (expr b)]
+--                              t <- check e (expr b)
+--                              ts <- checkList es (liftCxt (flip subst_ t) 0 bs)
+--                              return (t:ts)
 
--- instance Infer A.BindE BindT Sort where
---     infer (NoBind t) = do (t', u) <- infer t
---                           s <- isSort u
+-- -- instance Infer A.BindE BindT Sort where
+-- --     infer (NoBind t) = do (t', u) <- infer t
+-- --                           s <- isSort u
+-- --                           return (NoBind t', s)
+
+-- inferBind :: (MonadTCM tcm) => A.BindE -> tcm (BindT, Sort)
+-- inferBind (NoBind t) = do (t', r) <- infer t
+--                           s <- isSort r
 --                           return (NoBind t', s)
+-- inferBind (Bind x t) = do (t', r) <- infer t
+--                           s <- isSort r
+--                           return (Bind x t', s)
+-- inferBind (BindDef x t u) = do (t', r) <- infer t
+--                                s <- isSort r
+--                                u' <- check u t'
+--                                return (BindDef x t' u', s)
 
-inferBind :: (MonadTCM tcm) => A.BindE -> tcm (BindT, Sort)
-inferBind (NoBind t) = do (t', r) <- infer t
-                          s <- isSort r
-                          return (NoBind t', s)
-inferBind (Bind x t) = do (t', r) <- infer t
-                          s <- isSort r
-                          return (Bind x t', s)
-inferBind (BindDef x t u) = do (t', r) <- infer t
-                               s <- isSort r
-                               u' <- check u t'
-                               return (BindDef x t' u', s)
-
-checkCxt :: (MonadTCM tcm) => [A.BindE] -> tcm NamedCxt
-checkCxt [] = return []
-checkCxt (b:bs) = do (b', _) <- inferBind b
-                     bs' <- local (b':) (checkCxt bs)
-                     return (b':bs')
+-- checkCxt :: (MonadTCM tcm) => [A.BindE] -> tcm NamedCxt
+-- checkCxt [] = return []
+-- checkCxt (b:bs) = do (b', _) <- inferBind b
+--                      bs' <- local (b':) (checkCxt bs)
+--                      return (b':bs')
