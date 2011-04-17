@@ -15,3 +15,18 @@ instance Pretty Doc where
 parensIf :: Bool -> Doc -> Doc
 parensIf True = PP.parens
 parensIf False = id
+
+dot :: Doc
+dot = PP.char '.'
+
+defEq :: Doc
+defEq = PP.text ":="
+
+doubleColon :: Doc
+doubleColon = PP.text "::"
+
+implies :: Doc
+implies = PP.text "=>"
+
+bar :: Doc
+bar = PP.char '|'

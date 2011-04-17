@@ -44,3 +44,20 @@ Executable cic
                      Kernel.TypeChecking
                      Kernel.Whnf
                      Kernel.Conversion
+
+Executable cic-parsetest
+  Main-is:           ParseTest.hs
+  Build-Depends:     base >= 4.1,
+                     parsec >= 2,
+                     pretty -any,
+                     haskeline >= 0.6,
+                     mtl == 1.*,
+                     containers -any,
+                     haskell98 >= 1.0,
+                     array -any,
+                     filepath -any
+  Build-Tools:       alex >= 2.0,
+                     happy >= 1.18
+  extensions:        CPP
+  other-modules:     Syntax.Lexer
+                     Syntax.Parser

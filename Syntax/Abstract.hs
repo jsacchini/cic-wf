@@ -148,40 +148,45 @@ instance Pretty Name where
 
 
 instance Pretty Bind where
-  prettyPrint (Bind _ xs e) = ppNames  <> text " : " <> prettyPrint e
-                              where ppNames = sep (map prettyPrint xs)
-  prettyPrint (NoBind e) = text "_" <> text " : " <> prettyPrint e
+  prettyPrint (Bind _ xs e) = ppNames  <+> colon <+> prettyPrint e
+                              where ppNames = hsep (map prettyPrint xs)
+  prettyPrint (NoBind e) = text "_" <+> colon <+> prettyPrint e
 
 instance Pretty Expr where
   prettyPrintDec = pp
     where
       pp :: Int -> Expr -> Doc
-      pp n (Ann _ e1 e2) = parensIf (n > 1) $ pp 2 e1 <> text " :: " <> pp 0 e2
+      pp n (Ann _ e1 e2) = parensIf (n > 1) $ pp 2 e1 <+> doubleColon <+> pp 0 e2
       pp _ (Sort _ s) = prettyPrint s
       pp n (Pi _ bs e) = parensIf (n > 0) $ nestedPi bs e
       pp _ (Var _ x) = text x -- text $ "[" ++ x ++ "]"
       pp _ (Bound _ x _) = text x -- text "<" ++ x ">"
       pp _ (EVar _ Nothing) = text "_"
-      pp _ (EVar _ (Just n)) = text $ '?':show n
+      pp _ (EVar _ (Just n)) = char '?' <> int n
       pp n (Lam _ bs e) = parensIf (n > 0) $ nestedLam bs e
-      pp n (App _ e1 e2) = parensIf (n > 2) $ sep [pp 2 e1, pp 3 e2]
+      pp n (App _ e1 e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       -- pp p l (Constr _ x _ ps as) = parensIf (p > 2) $ text x <+> foldr (<+>) empty (map (pp p l) (ps ++ as))
       pp _ e = text $ concat ["* ", show e, " *"]
-  
+
       nestedPi :: [Bind] -> Expr -> Doc
-      nestedPi bs e = text "forall " <> sep (map (parens . prettyPrint) bs) <> text ", " <> prettyPrint e
+      nestedPi bs e = text "forall" <+> hsep (map (parens . prettyPrint) bs) <> comma <+> prettyPrint e
 
       nestedLam :: [Bind] -> Expr -> Doc
-      nestedLam bs e = text "fun " <> sep (map (parens . prettyPrint) bs) <> text " => " <> prettyPrint e
+      nestedLam bs e = text "fun" <+> hsep (map (parens . prettyPrint) bs) <+> implies <+> prettyPrint e
 
 instance Pretty Declaration where
-  prettyPrint (Definition _ x (Just e1) e2) = text "define " <> text x <> text " : " <> prettyPrint e1 <> text " := " <> prettyPrint e2
-  prettyPrint (Definition _ x Nothing e2) = text "define " <> text x <> text " := " <> prettyPrint e2
-  prettyPrint (Assumption _ x e) = text "assume " <> text x <> text " : " <> prettyPrint e
-  prettyPrint (Inductive _ x ps e cs) = text "data " <> text x <> sep (map (parens . prettyPrint) ps) <> text " : " <> prettyPrint e <> text " := " <> sep (map ((text "|" <+>) . prettyPrint) cs)
-  
+  prettyPrint (Definition _ x (Just e1) e2) =
+    hsep [text "define", text x, colon, prettyPrint e1, defEq, prettyPrint e2]
+  prettyPrint (Definition _ x Nothing e2) =
+    hsep [text "define", text x, defEq, prettyPrint e2]
+  prettyPrint (Assumption _ x e) =
+    hsep [text "assume", text x, colon, prettyPrint e]
+  prettyPrint (Inductive _ x ps e cs) =
+    sep $ indName : map (nest 2 . (bar <+>) . prettyPrint) cs
+      where indName = hsep [text "data", text x, sep (map (parens . prettyPrint) ps), colon, prettyPrint e, defEq]
 instance Pretty Constructor where
-  prettyPrint c = text (constrName c) <> text " : " <> prettyPrint (constrType c)
+  prettyPrint c =
+    hsep [text (constrName c), colon, prettyPrint (constrType c)]
 
 instance Pretty [Declaration] where
-  prettyPrint = sep . map ((<> text ".\n") . prettyPrint)
+  prettyPrint = vcat . map ((<> dot) . prettyPrint)
