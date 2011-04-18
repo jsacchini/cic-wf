@@ -29,7 +29,7 @@ import Data.Typeable
 
 import qualified Syntax.Abstract as A
 import qualified Syntax.Internal as I
-import Syntax.Name
+import Syntax.Common
 import Syntax.Position
 import Utils.Misc
 
@@ -60,13 +60,13 @@ fakeBindsIn xs = local $ (map (flip I.Bind I.tProp) xs++)
 
 instance Scope A.Bind where
   scope (A.Bind r xs e) = fmap (A.Bind r xs) (scope e)
-  scope (A.NoBind e) = fmap A.NoBind (scope e)
+  -- scope (A.NoBind e) = fmap A.NoBind (scope e)
 
 
-instance (Scope a, HasNames a) => Scope [a] where
+instance Scope [A.Bind] where
   scope [] = return []
   scope (x:xs) = do s <- scope x
-                    ss <- local (fakeBinds (getNames x)++) $ scope xs
+                    ss <- fakeBindsIn (A.bindNames x) $ scope xs
                     return (s:ss)
 
 
@@ -79,15 +79,19 @@ instance Scope A.Expr where
   -- scope t@(EVar _ _) = return t
   scope (A.Pi r bs e) =
     do bs' <- scope bs
-       e' <- local (newBinds++) $ scope e
+       e' <- fakeBindsIn newBinds $ scope e
        return $ A.Pi r bs' e'
-         where newBinds = fakeBinds $ reverse $ concatMap getNames bs
+         where newBinds = reverse $ concatMap A.bindNames bs
+  scope (A.Arrow r e1 e2) =
+    do e1' <- scope e1
+       e2' <- local (fakeBinds [""]++) $ scope e2
+       return $ A.Arrow r e1' e2'
   scope (A.Lam r bs e) =
     do bs' <- scope bs
-       e' <- local (newBinds++) $ scope e
+       e' <- fakeBindsIn newBinds $ scope e
        l <- ask
        return $ A.Lam r bs' e'
-         where newBinds = fakeBinds $ reverse $ concatMap getNames bs
+         where newBinds = reverse $ concatMap A.bindNames bs
   scope t@(A.App r e1 e2) =
     scopeApp f (as ++ [(r,e2)])
       where (f, as) = getFuncArgs e1
@@ -96,8 +100,8 @@ instance Scope A.Expr where
                 where (f, as) = getFuncArgs e1
             getFuncArgs e = (e, [])
   scope t@(A.Var r x) =
-    do l <- ask
-       case findIndex (==x) (map getName l) of
+    do xs <- getLocalNames
+       case findIndex (==x) xs of
          Just n -> return $ A.Bound r x n
          Nothing ->
            do g <- lookupGlobal x
@@ -135,8 +139,8 @@ instance Scope A.Expr where
 
 scopeApp :: (MonadTCM tcm) => A.Expr -> [(Range, A.Expr)] -> tcm A.Expr
 scopeApp e@(A.Var r x) args =
-  do l <- ask
-     case findIndex (==x) (map getName l) of
+  do xs <- getLocalNames
+     case findIndex (==x) xs of
        Just n -> return $ mkFunc (A.Bound r x n) args
        Nothing ->
          do g <- lookupGlobal x
@@ -169,14 +173,13 @@ instance Scope A.Declaration where
     scope (A.Assumption r x t) =
       do t' <- scope t
          return $ A.Assumption r x t'
-    scope t@(A.Import _) = return t
-    scope (A.Inductive r x ps e cs) =
-      do ps' <- scope ps
-         e' <- local (bindPars++) $ scope e
-         cs' <- local (bindParsInd++) $ scope cs
-         return $ A.Inductive r x ps' e' cs'
-           where bindPars = fakeBinds $ concatMap getNames ps
-                 bindParsInd = bindPars ++ fakeBinds [x]
+    -- scope (A.Inductive r x ps e cs) =
+    --   do ps' <- scope ps
+    --      e' <- local (bindPars++) $ scope e
+    --      cs' <- local (bindParsInd++) $ mapM scope cs
+    --      return $ A.Inductive r x ps' e' cs'
+    --        where bindPars = fakeBinds $ concatMap A.bindNames ps
+    --              bindParsInd = bindPars ++ fakeBinds [x]
 
 
 instance Scope A.Constructor where

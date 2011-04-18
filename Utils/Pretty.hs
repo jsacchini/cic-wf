@@ -30,3 +30,6 @@ implies = PP.text "=>"
 
 bar :: Doc
 bar = PP.char '|'
+
+arrow :: Doc
+arrow = PP.text "->"

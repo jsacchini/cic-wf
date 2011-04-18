@@ -11,13 +11,14 @@ import Utils.Impossible
 
 -- import qualified "mtl" Control.Monad.Error as EE
 import qualified Control.Exception as E
-import "mtl" Control.Monad.Reader
-import "mtl" Control.Monad.Error
+import Control.Monad.Reader
+import Control.Monad.Error
 
 import Data.Function
 
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
+import Syntax.Common
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
@@ -56,6 +57,11 @@ infer (A.Pi _ bs t) = do (bs', s1) <- inferBinds bs
                          (t', r2) <- local (reverse bs'++) $ infer t
                          s2 <- local (reverse bs'++) $ isSort r2
                          return (Pi bs' t', Sort $ max s1 s2)
+infer (A.Arrow _ e1 e2) = do (t1, r1) <- infer e1
+                             s1 <- isSort r1
+                             (t2, r2) <- local (bindNoName t1:) $ infer e2
+                             s2 <- local (bindNoName t1:) $ isSort r2
+                             return (Pi [bindNoName t1] t2, Sort $ max s1 s2)
 infer (A.Bound _ x n) =
   do l <- ask
      when (n >= length l) $ liftIO $ putStrLn $ concat [show n, " ", show (length l)]
@@ -89,10 +95,10 @@ inferBind (A.Bind r xs e) =
      return (mkBinds xs t 0, s)
        where mkBinds [] _ _ = []
              mkBinds (x:xs) t k = Bind x (I.lift k 0 t) : mkBinds xs t (k + 1)
-inferBind (A.NoBind e) =
-  do (t, r) <- infer e
-     s <- isSort r
-     return ([NoBind t], s)
+-- inferBind (A.NoBind e) =
+--   do (t, r) <- infer e
+--      s <- isSort r
+--      return ([NoBind t], s)
 
 inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm ([Bind], Sort)
 inferBinds [] = return ([], Prop)
@@ -102,19 +108,19 @@ inferBinds (b:bs) = do -- liftIO $ putStrLn $ "inferBinds "  ++ show (b:bs)
                        return (bs1 ++ bss1, max s1 s2)
 
 
-inferDecl :: (MonadTCM tcm) => A.Declaration -> tcm Global
+inferDecl :: (MonadTCM tcm) => A.Declaration -> tcm (Name, Global)
 inferDecl (A.Definition _ x (Just e1) e2) =
   do (t1, r1) <- infer e1
      _ <- isSort r1
      t2 <- check e2 t1
-     return $ Definition (flatten t2) (flatten t1)
+     return $ (x, Definition (flatten t2) (flatten t1))
 inferDecl (A.Definition _ x Nothing e) =
   do (t, u) <- infer e
-     return $ Definition (flatten u) (flatten t)
+     return $ (x, Definition (flatten u) (flatten t))
 inferDecl (A.Assumption _ x e) =
   do (t, r) <- infer e
      _ <- isSort r
-     return $ Assumption (flatten t)
+     return $ (x, Assumption (flatten t))
 inferDecl _ = error "not yet"
 
 

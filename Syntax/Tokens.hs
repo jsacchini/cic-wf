@@ -10,7 +10,7 @@ data Keyword = KwForall | KwFun | KwProp | KwLet | KwDefine | KwImport
 
 data Symbol = SymbLeftParen | SymbRightParen | SymbArrow | SymbImplies
             | SymbComma | SymbColonEq | SymbDot | SymbColon | SymbDoubleColon
-            | SymbBar
+            | SymbBar | SymbPos | SymbNeg | SymbSPos | SymbNeut
             deriving(Eq,Show)
 
 -- TokType and TokIdent have a pair argument because Happy would only allows
@@ -42,7 +42,11 @@ symbol p s =
                       ("." , SymbDot),
                       (":" , SymbColon),
                       ("::", SymbDoubleColon),
-                      ("|" , SymbBar)]
+                      ("|" , SymbBar),
+                      ("+" , SymbPos),
+                      ("-" , SymbNeg),
+                      ("++", SymbSPos),
+                      ("@" , SymbNeut)]
 
 ident :: Position -> String -> Token
 ident p s =

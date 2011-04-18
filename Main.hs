@@ -33,7 +33,7 @@ import Control.Monad.State
 import qualified Syntax.Abstract as A
 import qualified Syntax.Internal as I
 import Syntax.Lexer
-import Syntax.Name
+import Syntax.Common
 import Syntax.Tokens
 import Syntax.ParseMonad
 import Syntax.Parser
@@ -79,8 +79,8 @@ main =
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
                                liftIO $ putStrLn $ "scoped " ++ show d'
-                               g <- inferDecl d'
-                               addGlobal (getName d) g
+                               (x,g) <- inferDecl d'
+                               addGlobal x g
           typeCheckFile :: [A.Declaration] -> TCM ()
           typeCheckFile ds = do forM_ ds typeCheckDecl
                                 liftIO $ putStrLn "========================"

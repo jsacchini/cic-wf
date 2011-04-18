@@ -9,8 +9,8 @@
 -}
 module Utils.Fresh where
 
-import "mtl" Control.Monad.State
-import "mtl" Control.Monad.Reader
+import Control.Monad.State
+import Control.Monad.Reader
 
 class BuildFresh i a where
     nextFresh :: a -> (i,a)

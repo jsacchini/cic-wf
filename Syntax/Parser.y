@@ -11,7 +11,7 @@ import Syntax.Tokens
 import Syntax.Lexer
 import Syntax.ParseMonad
 import Syntax.Position
-import Syntax.Name
+import Syntax.Common
 import Syntax.Alex
 import qualified Syntax.Abstract as A
 
@@ -43,6 +43,10 @@ import qualified Syntax.Abstract as A
   '=>'             { TokSymbol SymbImplies $$ }
   '->'             { TokSymbol SymbArrow $$ }
   '|'              { TokSymbol SymbBar $$ }
+  '+'              { TokSymbol SymbPos $$ }
+  '-'              { TokSymbol SymbNeg $$ }
+  '++'             { TokSymbol SymbSPos $$ }
+  '@'              { TokSymbol SymbNeut $$ }
   typeN            { TokType $$ }
   ident            { TokIdent $$ }
 
@@ -61,13 +65,21 @@ Decl
          { A.Definition (fuseRange $1 $5) (snd $2) $3 $5 }
   | 'assume' ident ':' Exp
          { A.Assumption (fuseRange $1 $4) (snd $2) $4 }
-  | 'data' ident Telescope ':' Exp ':=' Constructors
+  | 'data' ident Parameters ':' Exp ':=' Constructors
          { A.Inductive (fuseRange $1 $7) (snd $2) $3 $5 $7 }
 
-Telescope :: { A.Telescope }
-Telescope : Bindings1            { $1 }
-          | {- empty -}          { [] }
+Parameters :: { [A.Parameter] }
+Parameters : Parameters Par            { $1 }
+           | {- empty -}               { [] }
 
+Par :: { A.Parameter }
+Par : '(' BindName Polarity ':' Exp ')'    { A.Parameter (fuseRange $1 $6) (snd $2) $3 $5 }
+
+Polarity :: { Polarity }
+Polarity : '+'            { Pos }
+         | '-'            { Neg }
+         | '++'           { SPos }
+         | '@'            { Neut }
 
 -- For the first constructor, the '|' before its definition is optional
 Constructors :: { [A.Constructor] }
@@ -91,7 +103,7 @@ Exp :: { A.Expr }
 Exp : 'forall' Binding ',' Exp   { A.Pi (fuseRange $1 $4) $2 $4 }
     | 'fun' Binding '=>' Exp     { A.Lam (fuseRange $1 $4) $2 $4 }
     | Exp1 Rest                  { case $2 of
-                                     Just e -> A.Pi (fuseRange $1 e) [A.NoBind $1] e
+                                     Just e -> A.Arrow (fuseRange $1 e) $1 e
                                      Nothing -> $1 }
 
 Exp1 :: { A.Expr }

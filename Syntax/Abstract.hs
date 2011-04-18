@@ -13,12 +13,12 @@ module Syntax.Abstract where
 import Utils.Impossible
 
 import Data.Function
-import Data.Foldable hiding (notElem, concat, foldr)
+import Data.Foldable hiding (notElem, concat, foldr, all)
 import Data.Monoid
 
 import Text.PrettyPrint.HughesPJ
 
-import Syntax.Name
+import Syntax.Common
 import Syntax.Position
 
 import Utils.Pretty
@@ -36,7 +36,7 @@ data Expr =
   Ann Range Expr Expr       -- ^ annotated term with type
   | Sort Range Sort
   | Pi Range [Bind] Expr    -- ^ Dependent type. var name, type, term
-  | Arrow Range Expr Expr         -- ^ Non-dependent type
+  | Arrow Range Expr Expr   -- ^ Non-dependent type
   | Var Range Name
   | Bound Range Name Int    -- ^ name is just a hint
   | EVar Range (Maybe Int)  -- ^ existential variable
@@ -48,6 +48,21 @@ data Expr =
   | Constr Range CName (IName, Int) [Expr] [Expr]
   | Ind Range IName
   deriving(Show) -- for debugging only
+
+instance Eq Expr where
+  (Sort _ s1) == (Sort _ s2) = s1 == s2
+  (Pi _ bs1 t1) == (Pi _ bs2 t2) = length bs1 == length bs2 &&
+                                   all (uncurry (==)) (zip bs1 bs2) &&
+                                   t1 == t2
+  (Arrow _ e1 e2) == (Arrow _ e3 e4) = e1 == e3 && e2 == e4
+  (Bound _ x1 n1) == (Bound _ x2 n2) = x1 == x2 && n1 == n2
+  (Var _ x1) == (Var _ x2) = x1 == x2
+  (Lam _ bs1 t1) == (Lam _ bs2 t2) = length bs1 == length bs2 &&
+                                     all (uncurry (==)) (zip bs1 bs2) &&
+                                     t1 == t2
+  (App _ e1 e2) == (App _ e3 e4) = e1 == e3 && e2 == e4
+  (Ind _ i1) == (Ind _ i2) = i1 == i2
+  _ == _ = False
 
 data MatchExpr = MkMatch {
   matchRange    :: Range,
@@ -66,17 +81,17 @@ data Branch = Branch {
   brBody      :: Expr
   } deriving(Show)
 
-data Declaration = Definition Range Name (Maybe Expr) Expr
-                 | Assumption Range Name Expr
-                 | Import FilePath
-                 | Inductive Range IName Parameters Expr [Constructor]
-                 deriving(Show)
+data Declaration =
+  Definition Range Name (Maybe Expr) Expr
+  | Assumption Range Name Expr
+  -- | Import FilePath
+  | Inductive Range IName [Parameter] Expr [Constructor]
+  deriving(Show)
 
-instance HasName Declaration where
-  getName (Definition _ x _ _) = x
-  getName (Assumption _ x _) = x
-  getName (Inductive _ x _ _ _) = x
-  getName (Import _) = error "to be implemented (getName Import)"
+declName :: Declaration -> Name
+declName (Definition _ x _ _) = x
+declName (Assumption _ x _) = x
+declName (Inductive _ x _ _ _) = x
 
 data Constructor = Constructor {
   constrRange :: Range,
@@ -85,21 +100,27 @@ data Constructor = Constructor {
   constrId    :: Int
   } deriving(Show)
 
-instance HasNames Constructor where
-  getNames c = [constrName c]
 
+data Parameter =
+  Parameter {
+    parRange :: Range,
+    parName :: Name,
+    parPol :: Polarity,
+    parType :: Expr
+    }
+  deriving(Show)
 
-type Parameters = Telescope
+data Bind =
+  Bind { bindRange :: Range,
+         bindNames :: [Name],
+         bindExpr  :: Expr
+       } -- ^ @x y : A@. List must be non-empty
+         -- an empty name means "_" (See parser)
+       deriving(Show)
 
-data Bind = Bind Range [Name] Expr       -- ^ @x y : A@. List must be non-empty
-                                         -- an empty name means "_" (See parser)
-          | NoBind Expr                  -- _ : A. We use the Range of expr
-          -- BindDef Range Name Expr Expr
-          deriving(Show)
+instance Eq Bind where
+  (Bind _ xs1 e1) == (Bind _ xs2 e2) = xs1 == xs2 && e1 == e2
 
-instance HasNames Bind where
-  getNames (Bind _ xs _) = xs
-  getNames (NoBind _) = ["_"]
 
 type Telescope = [Bind]
 
@@ -123,19 +144,14 @@ instance HasRange Expr where
 
 instance HasRange Bind where
   getRange (Bind r _ _) = r
-  getRange (NoBind e) = getRange e
+  -- getRange (NoBind e) = getRange e
 
 instance HasRange Constructor where
   getRange (Constructor r _ _ _) = r
 
 
--- Instances of Show and Pretty
--- For bound variables, the pretty printer will use the name contained as a hint
--- directly.
--- Functions uniqNames and uniqNamesList can be used to turn hints in bound
--- names into unique names
--- show should only be called on closed expressions
--- for open expressions, use ppExpr
+-- | Instances of Show and Pretty. For bound variables, the pretty printer will
+--   use the name contained as a hint directly.
 
 instance Show Sort where
   show Prop = "Prop"
@@ -152,15 +168,17 @@ instance Pretty Name where
 instance Pretty Bind where
   prettyPrint (Bind _ xs e) = ppNames  <+> colon <+> prettyPrint e
                               where ppNames = hsep (map prettyPrint xs)
-  prettyPrint (NoBind e) = text "_" <+> colon <+> prettyPrint e
+  -- prettyPrint (NoBind e) = text "_" <+> colon <+> prettyPrint e
 
 instance Pretty Expr where
   prettyPrintDec = pp
     where
       pp :: Int -> Expr -> Doc
-      pp n (Ann _ e1 e2) = parensIf (n > 1) $ pp 2 e1 <+> doubleColon <+> pp 0 e2
+      pp n (Ann _ e1 e2) = parensIf (n > 1) $ hsep [pp 2 e1, doubleColon,
+                                                    pp 0 e2]
       pp _ (Sort _ s) = prettyPrint s
       pp n (Pi _ bs e) = parensIf (n > 0) $ nestedPi bs e
+      pp n (Arrow _ e1 e2) = parensIf (n > 0) $ hsep [pp 0 e1, arrow, pp 0 e2]
       pp _ (Var _ x) = text x -- text $ "[" ++ x ++ "]"
       pp _ (Bound _ x _) = text x -- text "<" ++ x ">"
       pp _ (EVar _ Nothing) = text "_"
@@ -171,10 +189,14 @@ instance Pretty Expr where
       pp _ e = text $ concat ["* ", show e, " *"]
 
       nestedPi :: [Bind] -> Expr -> Doc
-      nestedPi bs e = text "forall" <+> hsep (map (parens . prettyPrint) bs) <> comma <+> prettyPrint e
+      nestedPi bs e = hsep [text "forall",
+                            hsep (map (parens . prettyPrint) bs) <> comma, 
+                            prettyPrint e]
 
       nestedLam :: [Bind] -> Expr -> Doc
-      nestedLam bs e = text "fun" <+> hsep (map (parens . prettyPrint) bs) <+> implies <+> prettyPrint e
+      nestedLam bs e = hsep [text "fun",
+                             hsep (map (parens . prettyPrint) bs), implies,
+                             prettyPrint e]
 
 instance Pretty Declaration where
   prettyPrint (Definition _ x (Just e1) e2) =
@@ -185,7 +207,17 @@ instance Pretty Declaration where
     hsep [text "assume", text x, colon, prettyPrint e]
   prettyPrint (Inductive _ x ps e cs) =
     sep $ indName : map (nest 2 . (bar <+>) . prettyPrint) cs
-      where indName = hsep [text "data", text x, sep (map (parens . prettyPrint) ps), colon, prettyPrint e, defEq]
+      where indName = hsep [text "data", text x,
+                            sep (map (parens . prettyPrint) ps), colon,
+                            prettyPrint e, defEq]
+
+instance Pretty Polarity where
+  prettyPrint = text . show
+
+instance Pretty Parameter where
+  prettyPrint (Parameter _ x pol tp) = parens $ hsep [ text x, prettyPrint pol,
+                                                       colon, prettyPrint tp ]
+
 instance Pretty Constructor where
   prettyPrint c =
     hsep [text (constrName c), colon, prettyPrint (constrType c)]

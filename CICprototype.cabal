@@ -16,7 +16,7 @@ Executable cic
                      parsec >= 2,
                      pretty -any,
                      haskeline >= 0.6,
-                     mtl == 1.*,
+                     mtl == 2.*,
                      containers -any,
                      haskell98 >= 1.0,
                      array -any,
@@ -33,7 +33,7 @@ Executable cic
                      Syntax.Alex
                      Syntax.ParseMonad
                      Syntax.Tokens
-                     Syntax.Name
+                     Syntax.Common
                      Syntax.Scope
                      Utils.Fresh
                      Utils.Misc
@@ -51,7 +51,7 @@ Executable cic-parsetest
                      parsec >= 2,
                      pretty -any,
                      haskeline >= 0.6,
-                     mtl == 1.*,
+                     mtl == 2.*,
                      containers -any,
                      haskell98 >= 1.0,
                      array -any,

@@ -24,7 +24,7 @@ import Syntax.Internal as I
 import qualified Syntax.Abstract as A
 import Kernel.TCM
 import Syntax.Position
-import Syntax.Name
+import Syntax.Common
 import Syntax.Scope (fakeBindsIn)
 import Utils.Misc
 
@@ -35,9 +35,16 @@ instance Reify Sort A.Sort where
   reify Prop = return A.Prop
   reify (Type n) = return $ A.Type n
 
+freshName :: [Name] -> Name -> Name
+freshName xs y | y `notElem` xs = y
+               | otherwise = addSuffix 0
+                 where addSuffix n | (y++show n) `notElem` xs = y++show n
+                                   | otherwise = addSuffix (n+1)
+
 pickFreshName :: (MonadTCM tcm) => Name -> tcm Name
-pickFreshName x  = do l <- ask
-                      return $ freshName (map getName l) x
+pickFreshName x | null x    = return "_"
+                | otherwise = do xs <- getLocalNames
+                                 return $ freshName xs x
 
 pickFreshNames :: (MonadTCM tcm) => [Name] -> tcm [Name]
 pickFreshNames []     = return []
@@ -45,62 +52,70 @@ pickFreshNames (x:xs) = do x' <- pickFreshName x
                            xs' <- fakeBindsIn [x'] $ pickFreshNames xs
                            return $ x' : xs'
 
--- instance Reify Bind (Name, A.Expr) where
---   reify (Bind x t) = do e <- reify t
---                         x' <- pickFreshName x
---                         return $ (x', e)
 
--- Ugly
--- instance Reify ([Bind],Term) ([Name], [A.Bind]) where
---   reify [] = return ([],[])
---   reify (b:bs) = do (x, b') <- reify b
---                     (xs, bs') <- local (Bind x (Sort Prop):) $ reify bs
---                     return (x:xs, b':bs')
+reifyPiBinds :: (MonadTCM tcm) => [Bind] -> Term -> tcm A.Expr
+reifyPiBinds = rP []
+  where
+    rP :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> Term -> tcm A.Expr
+    rP [] [] t                  = reify t
+    rP bs [] t                  = do e <- reify t
+                                     return $ A.Pi noRange (reverse bs) e
+    rP [] bs@(Bind x t1:bs') t2
+      | notFree bs' t2 =
+        do liftIO $ putStrLn $ "notFree 1 " ++ show bs ++ " -> " ++ show t2
+           e1 <- reify t1
+           e2 <- fakeBindsIn [""] $ rP [] bs' t2
+           return $ A.Arrow noRange e1 e2
+      | otherwise     =
+          do liftIO $ putStrLn $ "otherwise 1 " ++ show bs ++ " -> " ++ show t2
+             e1 <- reify t1
+             x' <- pickFreshName x
+             fakeBindsIn [x'] $ rP [A.Bind noRange [x'] e1] bs' t2
+    rP bs1@(A.Bind _ xs e1:bs1') bs2@(Bind y t1:bs2') t2
+      | notFree bs2' t2 =
+        do e2 <- rP [] bs2 t2
+           return $ A.Pi noRange (reverse bs1) e2
+      | otherwise     =
+          do e1' <- reify t1
+             y' <- pickFreshName y
+             if e1 == e1'
+               then fakeBindsIn [y'] $ rP (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
+               else fakeBindsIn [y'] $ rP (A.Bind noRange [y'] e1':bs1) bs2' t2
+    notFree :: [Bind] -> Term -> Bool
+    notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
 
-reifyBinds :: (MonadTCM tcm) => [Bind] -> Term -> tcm ([Name], [A.Bind])
-reifyBinds bs t = reify_ (groupBinds $ findFree bs t)
-  where findFree :: [Bind] -> Term -> [Bind]
-        findFree [] t = []
-        findFree (b@(NoBind t1):bs) t = NoBind t1 : findFree bs t
-        findFree (b@(Bind x t1):bs) t
-          | not $ isFreeList 0 (map bind bs ++ [t]) = NoBind t1 : findFree bs t
-          | otherwise                               = b : findFree bs t
-        groupBinds :: [Bind] -> [([Name], Type)]
-        groupBinds = foldr f []
-          where f (NoBind t) rs = ([], t) : rs
-                f (Bind x t) [] = [([x],t)]
-                f (Bind x t) r@((xs,t'):rs) | t == t'   = (x:xs,t') : rs
-                                            | otherwise = ([x],t) : r
-        reify_ :: (MonadTCM tcm) => [([Name], Type)] -> tcm ([Name], [A.Bind])
-        reify_ [] = return ([], [])
-        reify_ ((xs,t):ts) =
-          do xs' <- pickFreshNames xs
-             e <- reify t
-             (ys, bs) <- fakeBindsIn (reverse (mkNameIfEmpty xs')) $ reify_ ts
-             if null xs
-               then return ("_" : ys, A.NoBind e:bs)
-               else return (xs' ++ ys, A.Bind noRange xs' e : bs)
-            where mkNameIfEmpty [] = ["_"]
-                  mkNameIfEmpty xs = xs
+reifyLamBinds :: (MonadTCM tcm) => [Bind] -> Term -> tcm A.Expr
+reifyLamBinds = rL []
+  where
+    rL :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> Term -> tcm A.Expr
+    rL bs [] t                  = do e <- reify t
+                                     return $ A.Lam noRange (reverse bs) e
+    rL [] bs@(Bind x t1:bs') t2 =
+      do e1 <- reify t1
+         x' <- if notFree bs' t2 then return "_" else pickFreshName x
+         fakeBindsIn [x'] $ rL [A.Bind noRange [x'] e1] bs' t2
+    rL bs1@(A.Bind _ xs e1:bs1') bs2@(Bind y t1:bs2') t2 =
+      do e1' <- reify t1
+         y' <- if notFree bs2' t2 then return "_" else pickFreshName y
+         if e1 == e1'
+           then fakeBindsIn [y'] $ rL (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
+           else fakeBindsIn [y'] $ rL (A.Bind noRange [y'] e1':bs1) bs2' t2
+    notFree :: [Bind] -> Term -> Bool
+    notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
+
 
 instance Reify Term A.Expr where
   reify (Sort s) = do s' <- reify s
                       return $ A.Sort noRange s'
-  reify (Pi bs t) = do -- liftIO $ putStrLn $ "printing " ++ show (Pi bs t)
-                       -- liftIO $ putStrLn $ "reifyBinds " ++ show bs
-                       (xs, bs') <- reifyBinds bs t
-                       -- liftIO $ putStrLn $ "reifiedBinds " ++ show bs'
-                       e <- fakeBindsIn (reverse xs) $ reify t
-                       return $ A.Pi noRange bs' e
-  reify (Bound n) = do l <- ask
-                       when (n >= length l) $ get >>= \st -> liftIO $ putStrLn $ "Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
-                       return $ A.Var noRange (getName (l !! n))
-                       -- return $ A.Var noRange "AA"
-                         -- we assume that vars are in bound
+  reify (Pi bs t) = do liftIO $ putStrLn $ "printing " ++ show (Pi bs t)
+                       liftIO $ putStrLn $ "reifyBinds " ++ show bs
+                       reifyPiBinds bs t
+  reify (Bound n) = do xs <- getLocalNames
+                       l <- ask
+                       when (n >= length xs) $ get >>= \st -> liftIO $ putStrLn $ "Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
+                       return $ A.Var noRange (xs !! n)
   reify (Var x) = return $ A.Var noRange x
-  reify (Lam bs t) = do (xs, bs') <- reifyBinds bs t
-                        e <- fakeBindsIn (reverse xs) $ reify t
-                        return $ A.Lam noRange bs' e
+  reify (Lam bs t) = reifyLamBinds bs t
   reify (App t ts) = do e <- reify t
                         es <- mapM reify ts
                         return $ mkApp e es
@@ -108,13 +123,14 @@ instance Reify Term A.Expr where
   reify (Ind i) = return $ A.Ind noRange i
 
 instance Reify Name A.Declaration where
-  reify x = do g <- getGlobal x
-               case g of
-                 I.Definition t1 t2 -> do e1 <- reify t1
-                                          e2 <- reify t2
-                                          return $ A.Definition noRange x (Just e1) e2
-                 I.Assumption t -> do e <- reify t
-                                      return $ A.Assumption noRange x e
+  reify x =
+    do g <- getGlobal x
+       case g of
+         I.Definition t1 t2 -> do e1 <- reify t1
+                                  e2 <- reify t2
+                                  return $ A.Definition noRange x (Just e1) e2
+         I.Assumption t -> do e <- reify t
+                              return $ A.Assumption noRange x e
 
 
 -- | Free bound variables
@@ -135,7 +151,7 @@ instance IsFree Term where
 
 instance IsFree Bind where
   isFree k (Bind _ t) = isFree k t
-  isFree k (NoBind t) = isFree k t
+--  isFree k (NoBind t) = isFree k t
   isFree k (LocalDef _ t1 t2) = isFree k t1 || isFree k t2
 
 isFreeList :: Int -> [Term] -> Bool

@@ -14,7 +14,7 @@ import Data.Function
 import Data.Foldable hiding (notElem, concat, foldr, all)
 import Data.Monoid
 
-import Syntax.Name
+import Syntax.Common
 import Syntax.Position
 import qualified Syntax.Abstract as A
 
@@ -73,34 +73,34 @@ instance Eq Term where
 
 type Type = Term
 
-data Bind = Bind Name Type
-          | NoBind Type
-          | LocalDef Name Term Type
-          deriving(Show)
+data Bind =
+  Bind {
+    bindName :: Name,
+    bindType :: Type
+    }
+  | LocalDef {
+    bindName :: Name,
+    bindDef :: Term,
+    bindType ::Type
+    }
+  deriving(Show)
 
 bind :: Bind -> Type
 bind (Bind _ t) = t
-bind (NoBind t) = t
+-- bind (NoBind t) = t
 bind (LocalDef _ _ t) = t
+
+bindNoName :: Type -> Bind
+bindNoName t = Bind "" t
 
 instance Eq Bind where
   (Bind _ t1) == (Bind _ t2) = t1 == t2
-  (NoBind t1) == (NoBind t2) = t1 == t2
+  -- (NoBind t1) == (NoBind t2) = t1 == t2
   (LocalDef _ t1 t2) == (LocalDef _ t3 t4) = t1 == t3 && t2 == t4
 
 
 class HasType a where
   getType :: a -> Type
-
-instance HasType Bind where
-  getType (Bind _ t) = t
-  getType (NoBind t) = t
-  getType (LocalDef _ _ t) = t
-
-instance HasName Bind where
-  getName (Bind x _) = x
-  getName (NoBind _) = "_"
-  getName (LocalDef x _ _) = x
 
 
 data Global = Definition Type Term
@@ -127,7 +127,7 @@ instance HasType Global where
   getType i@(Inductive {}) = Pi (indPars i ++ indIndices i) (Sort (indSort i))
   getType c@(Constructor {}) = Pi (constrPars c ++ constrArgs c) ind
     where ind = App (Ind (constrInd c)) (par ++ indices)
-          par = map (Var . getName) (constrPars c)
+          par = map (Var . bindName) (constrPars c)
           indices = constrIndices c
 
 

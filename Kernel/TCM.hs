@@ -20,7 +20,7 @@ import "mtl" Control.Monad.Reader
 
 import qualified Syntax.Abstract as A
 import qualified Syntax.Internal as I
-import Syntax.Name
+import Syntax.Common
 import Syntax.Position
 import Utils.MonadUndo
 
@@ -127,3 +127,6 @@ addGlobal x g = do st <- get
                    put $ st { stSignature = Map.insert x g (stSignature st),
                               stDefined = x : stDefined st
                             }
+
+getLocalNames :: (MonadTCM tcm) => tcm [Name]
+getLocalNames = fmap (map I.bindName) ask
