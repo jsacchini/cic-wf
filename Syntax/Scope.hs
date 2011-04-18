@@ -55,6 +55,9 @@ class Scope a where
 fakeBinds :: [Name] -> [I.Bind]
 fakeBinds = map $ flip I.Bind I.tProp
 
+fakeBindsIn :: (MonadTCM tcm) => [Name] -> tcm a -> tcm a
+fakeBindsIn xs = local $ (map (flip I.Bind I.tProp) xs++)
+
 instance Scope A.Bind where
   scope (A.Bind r xs e) = fmap (A.Bind r xs) (scope e)
   scope (A.NoBind e) = fmap A.NoBind (scope e)

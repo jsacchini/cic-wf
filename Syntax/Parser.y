@@ -137,8 +137,12 @@ Names : Names1              { let r = reverse $1
                               in (map snd r, fuseRanges $ map fst r) }
 
 Names1 :: { [(Position, Name)] }
-Names1 : ident              { [$1] }
-       | Names1 ident       { $2 : $1 }
+Names1 : ident           { [$1] }
+       | Names1 ident    { $2 : $1 }
+
+BindName :: { (Position, Name) }
+BindName : ident            { let (p, x) = $1
+                              in if x == "_" then (p, "") else (p, x) }
 
 {
 

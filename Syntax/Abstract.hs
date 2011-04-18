@@ -35,7 +35,8 @@ type CName = Name -- ^ constructor names
 data Expr =
   Ann Range Expr Expr       -- ^ annotated term with type
   | Sort Range Sort
-  | Pi Range [Bind] Expr    -- ^ var name, type, term
+  | Pi Range [Bind] Expr    -- ^ Dependent type. var name, type, term
+  | Arrow Range Expr Expr         -- ^ Non-dependent type
   | Var Range Name
   | Bound Range Name Int    -- ^ name is just a hint
   | EVar Range (Maybe Int)  -- ^ existential variable
@@ -90,7 +91,8 @@ instance HasNames Constructor where
 
 type Parameters = Telescope
 
-data Bind = Bind Range [Name] Expr       -- x y : A. List must be non-empty
+data Bind = Bind Range [Name] Expr       -- ^ @x y : A@. List must be non-empty
+                                         -- an empty name means "_" (See parser)
           | NoBind Expr                  -- _ : A. We use the Range of expr
           -- BindDef Range Name Expr Expr
           deriving(Show)

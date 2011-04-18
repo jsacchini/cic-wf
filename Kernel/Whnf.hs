@@ -40,7 +40,7 @@ instance NormalForm Term where
   normalForm (Pi bs t) = do bs' <- mapM normalForm bs
                             t' <- normalForm t
                             return $ Pi bs' t'
-  normalForm t@(Bound _ _) = return t
+  normalForm t@(Bound _) = return t
   normalForm t@(Var x) = do u <- getGlobal x
                             case u of
                               Definition _ t' -> normalForm  t'
@@ -53,8 +53,8 @@ instance NormalForm Term where
                                 Lam bs u -> normalForm $ applyTerms bs u ts
                                 App u1 us -> do ts' <- mapM normalForm ts
                                                 return $ App u1 (us ++ ts')
-                                Bound _ _ -> do ts' <- mapM normalForm ts
-                                                return $ App t1' ts'
+                                Bound _ -> do ts' <- mapM normalForm ts
+                                              return $ App t1' ts'
                                 Var _  -> do ts' <- mapM normalForm ts
                                              return $ App t1' ts'
                                 otherwise -> __IMPOSSIBLE__

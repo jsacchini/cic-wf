@@ -61,9 +61,9 @@ infer (A.Bound _ x n) =
      when (n >= length l) $ liftIO $ putStrLn $ concat [show n, " ", show (length l)]
      case (l !! n) of
        Bind x t -> do w <- whnf (I.lift (n + 1) 0 t)
-                      return (Bound x n, w)
+                      return (Bound n, w)
        LocalDef x t1 t2 -> do w <- whnf (I.lift (n + 1) 0 t2)
-                              return (Bound x n, w)
+                              return (Bound n, w)
 infer (A.Var _ x) = do t <- getGlobal x
                        case t of
                          Definition t _ -> do w <- whnf t
@@ -83,12 +83,16 @@ infer (A.Lam _ bs t) = do (bs', _) <- inferBinds bs
 
 
 inferBind :: (MonadTCM tcm) => A.Bind -> tcm ([Bind], Sort)
-inferBind (A.Bind r xs e) = do (t, r) <- infer e
-                               s <- isSort r
-                               return (map (flip Bind t) xs, s)
-inferBind (A.NoBind e) = do (t, r) <- infer e
-                            s <- isSort r
-                            return ([Bind "" t], s)
+inferBind (A.Bind r xs e) =
+  do (t, r) <- infer e
+     s <- isSort r
+     return (mkBinds xs t 0, s)
+       where mkBinds [] _ _ = []
+             mkBinds (x:xs) t k = Bind x (I.lift k 0 t) : mkBinds xs t (k + 1)
+inferBind (A.NoBind e) =
+  do (t, r) <- infer e
+     s <- isSort r
+     return ([NoBind t], s)
 
 inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm ([Bind], Sort)
 inferBinds [] = return ([], Prop)
@@ -103,14 +107,14 @@ inferDecl (A.Definition _ x (Just e1) e2) =
   do (t1, r1) <- infer e1
      _ <- isSort r1
      t2 <- check e2 t1
-     return $ Definition t2 t1
+     return $ Definition (flatten t2) (flatten t1)
 inferDecl (A.Definition _ x Nothing e) =
   do (t, u) <- infer e
-     return $ Definition u t
+     return $ Definition (flatten u) (flatten t)
 inferDecl (A.Assumption _ x e) =
   do (t, r) <- infer e
      _ <- isSort r
-     return $ Assumption t
+     return $ Assumption (flatten t)
 inferDecl _ = error "not yet"
 
 

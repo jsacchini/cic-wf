@@ -11,7 +11,7 @@ module Syntax.Internal where
 import Utils.Impossible
 
 import Data.Function
-import Data.Foldable hiding (notElem, concat, foldr)
+import Data.Foldable hiding (notElem, concat, foldr, all)
 import Data.Monoid
 
 import Syntax.Name
@@ -43,7 +43,7 @@ type CxtSize = Int
 data Term
     = Sort Sort
     | Pi [Bind] Term
-    | Bound Name Int  -- name is a hint
+    | Bound Int  -- name is a hint
     | Var Name
     | Lam [Bind] Term
     | App Term [Term]
@@ -53,21 +53,53 @@ data Term
     | Ind Name
     deriving(Show)
 
+-- | Equality on terms is only used in the reification to terms, to group
+-- contiguous bindings with the same type
+instance Eq Term where
+  (Sort s1) == (Sort s2) = s1 == s2
+  (Pi bs1 t1) == (Pi bs2 t2) = length bs1 == length bs2 &&
+                               all (uncurry (==)) (zip bs1 bs2) &&
+                               t1 == t2
+  (Bound n1) == (Bound n2) = n1 == n2
+  (Var x1) == (Var x2) = x1 == x2
+  (Lam bs1 t1) == (Lam bs2 t2) = length bs1 == length bs2 &&
+                                 all (uncurry (==)) (zip bs1 bs2) &&
+                                 t1 == t2
+  (App f1 ts1) == (App f2 ts2) = length ts1 == length ts2 &&
+                                 all (uncurry (==)) (zip ts1 ts2) &&
+                                 f1 == f2
+  (Ind i1) == (Ind i2) = i1 == i2
+  _ == _ = False
+
 type Type = Term
 
 data Bind = Bind Name Type
+          | NoBind Type
           | LocalDef Name Term Type
           deriving(Show)
+
+bind :: Bind -> Type
+bind (Bind _ t) = t
+bind (NoBind t) = t
+bind (LocalDef _ _ t) = t
+
+instance Eq Bind where
+  (Bind _ t1) == (Bind _ t2) = t1 == t2
+  (NoBind t1) == (NoBind t2) = t1 == t2
+  (LocalDef _ t1 t2) == (LocalDef _ t3 t4) = t1 == t3 && t2 == t4
+
 
 class HasType a where
   getType :: a -> Type
 
 instance HasType Bind where
   getType (Bind _ t) = t
+  getType (NoBind t) = t
   getType (LocalDef _ _ t) = t
 
 instance HasName Bind where
   getName (Bind x _) = x
+  getName (NoBind _) = "_"
   getName (LocalDef x _ _) = x
 
 
@@ -111,7 +143,7 @@ instance Lift Bind where
 instance Lift Term where
   lift k n t@(Sort _) = t
   lift k n (Pi bs t) = Pi (map (lift k n) bs) (lift k (n + 1) t)
-  lift k n t@(Bound x m) = if m < n then t else Bound x (m + k)
+  lift k n t@(Bound m) = if m < n then t else Bound (m + k)
   lift k n t@(Var _) = t
   lift k n (Lam b u) = Lam (fmap (lift k n) b) (lift k (n + 1) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
@@ -139,9 +171,9 @@ instance SubstTerm Term where
   substN i r t@(Sort _) = t
   substN i r (Pi bs t) = Pi (substN i r bs) (substN (i + len) r t)
                          where len = length bs
-  substN i r t@(Bound x n) | n < i = t
-                           | n == i = lift i 0 r
-                           | otherwise = Bound x (n - 1)
+  substN i r t@(Bound n) | n < i = t
+                         | n == i = lift i 0 r
+                         | otherwise = Bound (n - 1)
   substN i r t@(Var _) = t
   substN i r (Lam bs t) = Lam (substN i r bs) (substN (i + len) r t)
                           where len = length bs
@@ -156,3 +188,31 @@ applyTerms :: [Bind] -> Term -> [Term] -> Term
 applyTerms [] body args = App body args
 applyTerms binds body [] = Lam binds body
 applyTerms (Bind x t:bs) body (a:as) = applyTerms (subst a bs) (substN (length bs) a body) as
+
+
+flatten :: Term -> Term
+flatten t@(Sort _) = t
+flatten (Pi bs t) = Pi (bs ++ bs') t'
+                    where (bs', t') = findBindsPi t
+flatten t@(Bound _) = t
+flatten t@(Var _) = t
+flatten (Lam bs t) = Lam (bs ++ bs') t'
+                     where (bs', t') = findBindsLam t
+flatten (App t ts) = App func (args ++ ts)
+                     where (func, args) = findArgs t
+flatten t@(Ind _) = t
+
+findBindsPi :: Term -> ([Bind], Term)
+findBindsPi (Pi bs t) = (bs ++ bs', t')
+                        where (bs', t') = findBindsPi t
+findBindsPi t = ([], t)
+
+findBindsLam :: Term -> ([Bind], Term)
+findBindsLam (Lam bs t) = (bs ++ bs', t')
+                          where (bs', t') = findBindsLam t
+findBindsLam t = ([], t)
+
+findArgs :: Term -> (Term, [Term])
+findArgs (App t ts) = (func, args++ts)
+                      where (func, args) = findArgs t
+findArgs t = (t, [])

@@ -31,6 +31,7 @@ import Control.Monad.State
 -- import TopLevel.Monad
 
 import qualified Syntax.Abstract as A
+import qualified Syntax.Internal as I
 import Syntax.Lexer
 import Syntax.Name
 import Syntax.Tokens
@@ -90,7 +91,7 @@ main =
                                 xs <- fmap stDefined get
                                 forM_ xs showG
                                   where showG x = do d <- reify x
-                                                     liftIO $ putStrLn $ show $  prettyPrint d
+                                                     liftIO $ putStrLn $ (show $  prettyPrint d) ++  "\n----\n" ++ show d ++ "\n===="
 
 -- main2 :: IO ()
 -- main2 =

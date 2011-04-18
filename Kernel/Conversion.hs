@@ -36,7 +36,7 @@ instance Conversion Term where
          w2 <- whnf t2
          case (w1, w2) of
            (Var x, Var y) -> return (x == y)
-           (Bound _ m, Bound _ n) -> return (m == n)
+           (Bound m, Bound n) -> return (m == n)
            (Sort s1, Sort s2) -> return (s1 == s2)
            (Pi u1 u2, Pi v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
            (Lam u1 u2, Lam v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
