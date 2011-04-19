@@ -7,6 +7,7 @@
 -- * Check if BindName is used in all places where a _ can be used instead
 --   of an actual name.
 
+
 module Syntax.Parser(exprParser,
                      fileParser) where
 
@@ -35,8 +36,6 @@ import qualified Syntax.Abstract as A
   'forall'         { TokKeyword KwForall $$ }
   'fun'            { TokKeyword KwFun $$ }
   'prop'           { TokKeyword KwProp $$ }
-  'let'            { TokKeyword KwLet $$ }
-  'import'         { TokKeyword KwImport $$ }
   'assume'         { TokKeyword KwAssume $$ }
   'define'         { TokKeyword KwDefine $$ }
   'data'           { TokKeyword KwData $$ }
@@ -67,6 +66,8 @@ import qualified Syntax.Abstract as A
   ']'              { TokSymbol SymbRBracket $$ }
   typeN            { TokType $$ }
   ident            { TokIdent $$ }
+
+  number           { TokNumber $$ }
 
 %%
 
@@ -121,18 +122,18 @@ BasicConstr : ident ':' Exp      { let (p,x) = $1
 Exp :: { A.Expr }
 Exp : 'forall' Binding ',' Exp   { A.Pi (fuseRange $1 $4) $2 $4 }
     | 'fun' Binding '=>' Exp     { A.Lam (fuseRange $1 $4) $2 $4 }
-    -- | Exps1 Rest                 { let r = mkApp $1
-    --                                in case $2 of
-    --                                     Just e -> A.Arrow (fuseRange r e) r e
-    --                                     Nothing -> r }
-    | Exp '->' Exp               { A.Arrow (fuseRange $1 $3) $1 $3 }
-    | Exps1                      { mkApp $1 }
+    | Exps1 Rest                 { let r = mkApp $1
+                                   in case $2 of
+                                        Just e -> A.Arrow (fuseRange r e) r e
+                                        Nothing -> r }
+    -- | Exp '->' Exp               { A.Arrow (fuseRange $1 $3) $1 $3 }
+    -- | Exps1                      { mkApp $1 }
     | Case                       { A.Case $1 }
     | Fix                        { A.Fix $1 }
 
-Exps :: { [A.Expr] }
-Exps : Exps Exp          { $2 : $1 }
-     | {- empty -}       { [] }
+-- Exps :: { [A.Expr] }
+-- Exps : Exps Exp          { $2 : $1 }
+--      | {- empty -}       { [] }
 
 Exps1 :: { [A.Expr] }
 Exps1 : Exp1           { [$1] }
@@ -171,10 +172,6 @@ CaseArg : ident ':=' Exp      { ($3, Just (snd $1)) }
 CaseRet :: { Maybe A.Expr }
 CaseRet : '<' Exp '>'     { Just $2 }
         | {- empty -}     { Nothing }
-
-As :: { Maybe Name }
-As : ident ':='           { Just (snd $1) }
-   | {- empty -}          { Nothing }
 
 In :: { Maybe A.CaseIn }
 In : 'in' InContext ident InArgs
@@ -222,7 +219,8 @@ Assigns : Assigns '(' ident ':=' Exp ')'
       | {- empty -}        { [] }
 
 Fix :: { A.FixExpr }
-Fix : 'fix'               { error "complete parser for fix" }
+Fix : 'fix' number ident ':' Exp ':=' Exp
+                      { A.FixExpr (fuseRange $1 $7) (snd $2) (snd $3) $5 $7 }
 
 Bindings :: { [A.Bind] }
 Bindings : Bindings '(' BasicBind ')'    { $3 : $1 }

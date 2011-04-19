@@ -93,7 +93,7 @@ data FixExpr = FixExpr {
    fixRange :: Range,
    fixNum   :: Int,
    fixName  :: Name,
-   fixType  :: Telescope,
+   fixType  :: Expr,
    fixBody  :: Expr
    } deriving(Show)
 
@@ -173,7 +173,6 @@ instance HasRange Expr where
 
 instance HasRange Bind where
   getRange (Bind r _ _) = r
-  -- getRange (NoBind e) = getRange e
 
 instance HasRange Constructor where
   getRange (Constructor r _ _ _) = r
@@ -202,7 +201,6 @@ instance Pretty Name where
 instance Pretty Bind where
   prettyPrint (Bind _ xs e) = ppNames  <+> colon <+> prettyPrint e
                               where ppNames = hsep (map prettyPrint xs)
-  -- prettyPrint (NoBind e) = text "_" <+> colon <+> prettyPrint e
 
 instance Pretty Expr where
   prettyPrintDec = pp
@@ -221,6 +219,7 @@ instance Pretty Expr where
       pp n (App _ e1 e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       -- pp p l (Constr _ x _ ps as) = parensIf (p > 2) $ text x <+> foldr (<+>) empty (map (pp p l) (ps ++ as))
       pp n (Case c) = parensIf (n > 0) $ prettyPrint c
+      pp n (Fix f) = parensIf (n > 0) $ prettyPrint f
       pp _ e = text $ concat ["* ", show e, " *"]
 
       nestedPi :: [Bind] -> Expr -> Doc
@@ -262,6 +261,11 @@ instance Pretty Assign where
 instance Pretty Branch where
   prettyPrint (Branch _ x id args body) =
     hsep $ text x : map text args ++ [implies, prettyPrint body]
+
+instance Pretty FixExpr where
+  prettyPrint (FixExpr _ n x tp body) =
+    hsep [text "fix" <> int n, text x, colon, prettyPrint tp,
+          defEq, prettyPrint body]
 
 instance Pretty Declaration where
   prettyPrint (Definition _ x (Just e1) e2) =

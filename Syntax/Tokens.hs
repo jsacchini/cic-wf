@@ -20,6 +20,7 @@ data Token = TokKeyword Keyword Position
            | TokSymbol Symbol Position
            | TokType (Position,Int)
            | TokIdent (Position,String)
+           | TokNumber (Position,Int)
            | TokEOF
            deriving (Eq,Show)
 
@@ -28,6 +29,9 @@ data Token = TokKeyword Keyword Position
 
 typeKeyword :: Position -> String -> Token
 typeKeyword p s = TokType (p, read $ drop 4 s)
+
+number :: Position -> String -> Token
+number p s = TokNumber (p, read s)
 
 symbol :: (Position -> String -> Token)
 symbol p s =
