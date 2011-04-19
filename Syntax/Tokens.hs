@@ -4,13 +4,14 @@ import Syntax.Position
 
 -- Keywords. Type is separated, since it has an argument
 data Keyword = KwForall | KwFun | KwProp | KwLet | KwDefine | KwImport
-             | KwAssume | KwRefine | KwMatch | KwAs | KwIn | KwReturn | KwWith
-             | KwEnd | KwData | KwFix
+             | KwAssume | KwRefine | KwCase | KwAs | KwIn | KwReturn | KwWith
+             | KwEnd | KwData | KwFix | KwWhere | KwOf
              deriving(Eq,Show)
 
 data Symbol = SymbLeftParen | SymbRightParen | SymbArrow | SymbImplies
             | SymbComma | SymbColonEq | SymbDot | SymbColon | SymbDoubleColon
             | SymbBar | SymbPos | SymbNeg | SymbSPos | SymbNeut
+            | SymbLAngle | SymbRAngle | SymbLBracket | SymbRBracket
             deriving(Eq,Show)
 
 -- TokType and TokIdent have a pair argument because Happy would only allows
@@ -46,7 +47,11 @@ symbol p s =
                       ("+" , SymbPos),
                       ("-" , SymbNeg),
                       ("++", SymbSPos),
-                      ("@" , SymbNeut)]
+                      ("@" , SymbNeut),
+                      ("<" , SymbLAngle),
+                      (">" , SymbRAngle),
+                      ("[" , SymbLBracket),
+                      ("]" , SymbRBracket)]
 
 ident :: Position -> String -> Token
 ident p s =
@@ -61,11 +66,13 @@ ident p s =
                      ("let"   , TokKeyword KwLet),
                      ("import", TokKeyword KwImport),
                      ("assume", TokKeyword KwAssume),
-                     ("match" , TokKeyword KwMatch),
+                     ("case"  , TokKeyword KwCase),
                      ("as"    , TokKeyword KwAs),
                      ("in"    , TokKeyword KwIn),
                      ("return", TokKeyword KwReturn),
                      ("with"  , TokKeyword KwWith),
-                     ("end"   , TokKeyword KwEnd),
                      ("data"  , TokKeyword KwData),
-                     ("fix"   , TokKeyword KwFix)]
+                     ("fix"   , TokKeyword KwFix),
+                     ("where" , TokKeyword KwWhere),
+                     ("of"    , TokKeyword KwOf),
+                     ("end"   , TokKeyword KwEnd)]

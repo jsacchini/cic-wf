@@ -5,6 +5,11 @@
 
 module Syntax.Common where
 
+import Text.PrettyPrint
+
+import Utils.Pretty
+
+
 -- | Identifiers
 type Name = String
 
@@ -18,4 +23,7 @@ instance Show Polarity where
   show Pos  = "+"
   show Neg  = "-"
   show SPos = "++"
-  show Neut = "o"
+  show Neut = "@"
+
+instance Pretty Polarity where
+  prettyPrint = text . show

@@ -1,9 +1,10 @@
--- A simple lexer using the wrapper "posn" to provide positions
--- Taken mostly from the example in alex
+{
+
+{-# OPTIONS_GHC -fno-warn-deprecated-flags
+                -fno-warn-lazy-unlifted-bindings #-}
 -- TODO
 ---- Nested comments: see examples in alex, GHC lexer, and Agda lexer
 ---- Unicode: see GHC lexer and Agda lexer (the latter seems simpler)
-{
 
 module Syntax.Lexer where
 
@@ -50,6 +51,10 @@ tokens :-
   "-"         { symbol }
   "++"        { symbol }
   "@"         { symbol }
+  "<"         { symbol }
+  ">"         { symbol }
+  "["         { symbol }
+  "]"         { symbol }
 
   @ident      { ident }
 

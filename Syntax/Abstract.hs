@@ -43,8 +43,8 @@ data Expr =
   | Lam Range [Bind] Expr   -- ^ var name, type, body
   | App Range Expr Expr
   | Let Range LetBind Expr
-  | Match Range MatchExpr
-  | Fix Range Int Name Telescope Expr Expr
+  | Case CaseExpr
+  | Fix FixExpr
   | Constr Range CName (IName, Int) [Expr] [Expr]
   | Ind Range IName
   deriving(Show) -- for debugging only
@@ -64,13 +64,21 @@ instance Eq Expr where
   (Ind _ i1) == (Ind _ i2) = i1 == i2
   _ == _ = False
 
-data MatchExpr = MkMatch {
-  matchRange    :: Range,
-  matchArg      :: Expr,
-  matchAsName   :: Maybe Name,
-  matchInName   :: Maybe (IName, [Name]),
-  matchReturn   :: Maybe Expr,
-  matchBranches :: [Branch]
+data CaseExpr = CaseExpr {
+  caseRange    :: Range,
+  caseArg      :: Expr,
+  caseAsName   :: Maybe Name,
+  caseInName   :: Maybe CaseIn,
+  caseWhere    :: Maybe Subst,
+  caseReturn   :: Maybe Expr,
+  caseBranches :: [Branch]
+  } deriving(Show)
+
+data CaseIn = CaseIn {
+  inRange :: Range,
+  inBind  :: [Bind],
+  inInd   :: Name,
+  inArgs  :: [Expr]
   } deriving(Show)
 
 data Branch = Branch {
@@ -80,6 +88,14 @@ data Branch = Branch {
   brArgsNames :: [Name],
   brBody      :: Expr
   } deriving(Show)
+
+data FixExpr = FixExpr {
+   fixRange :: Range,
+   fixNum   :: Int,
+   fixName  :: Name,
+   fixType  :: Telescope,
+   fixBody  :: Expr
+   } deriving(Show)
 
 data Declaration =
   Definition Range Name (Maybe Expr) Expr
@@ -116,11 +132,24 @@ data Bind =
          bindExpr  :: Expr
        } -- ^ @x y : A@. List must be non-empty
          -- an empty name means "_" (See parser)
-       deriving(Show)
+
+instance Show Bind where
+  show (Bind _ x e) = concat ["(", Prelude.concatMap (++" ") x, " : ", show e, ")"]
 
 instance Eq Bind where
   (Bind _ xs1 e1) == (Bind _ xs2 e2) = xs1 == xs2 && e1 == e2
 
+newtype Subst = Subst { unSubst :: [Assign] }
+                deriving(Show)
+
+instance HasRange Subst where
+  getRange = getRange . unSubst
+
+data Assign = Assign {
+  assgnRange :: Range,
+  assgnName :: Name,
+  assgnExpr :: Expr
+  } deriving(Show)
 
 type Telescope = [Bind]
 
@@ -137,8 +166,8 @@ instance HasRange Expr where
   getRange (Lam r _ _) = r
   getRange (App r _ _) = r
   getRange (Let r _ _) = r
-  getRange (Match r _) = r
-  getRange (Fix r _ _ _ _ _) = r
+  getRange (Case c) = caseRange c
+  getRange (Fix f) = fixRange f
   getRange (Constr r _ _ _ _) = r
   getRange (Ind r _) = r
 
@@ -149,6 +178,11 @@ instance HasRange Bind where
 instance HasRange Constructor where
   getRange (Constructor r _ _ _) = r
 
+instance HasRange Branch where
+  getRange = brRange
+
+instance HasRange Assign where
+  getRange = assgnRange
 
 -- | Instances of Show and Pretty. For bound variables, the pretty printer will
 --   use the name contained as a hint directly.
@@ -178,7 +212,7 @@ instance Pretty Expr where
                                                     pp 0 e2]
       pp _ (Sort _ s) = prettyPrint s
       pp n (Pi _ bs e) = parensIf (n > 0) $ nestedPi bs e
-      pp n (Arrow _ e1 e2) = parensIf (n > 0) $ hsep [pp 0 e1, arrow, pp 0 e2]
+      pp n (Arrow _ e1 e2) = parensIf (n > 0) $ hsep [pp 1 e1, arrow, pp 0 e2]
       pp _ (Var _ x) = text x -- text $ "[" ++ x ++ "]"
       pp _ (Bound _ x _) = text x -- text "<" ++ x ">"
       pp _ (EVar _ Nothing) = text "_"
@@ -186,6 +220,7 @@ instance Pretty Expr where
       pp n (Lam _ bs e) = parensIf (n > 0) $ nestedLam bs e
       pp n (App _ e1 e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       -- pp p l (Constr _ x _ ps as) = parensIf (p > 2) $ text x <+> foldr (<+>) empty (map (pp p l) (ps ++ as))
+      pp n (Case c) = parensIf (n > 0) $ prettyPrint c
       pp _ e = text $ concat ["* ", show e, " *"]
 
       nestedPi :: [Bind] -> Expr -> Doc
@@ -198,6 +233,36 @@ instance Pretty Expr where
                              hsep (map (parens . prettyPrint) bs), implies,
                              prettyPrint e]
 
+instance Pretty CaseExpr where
+  prettyPrint (CaseExpr _ arg asn inn subst ret brs) =
+    hsep [maybePPrint ppRet ret, text "case",
+          maybePPrint ppAs asn, prettyPrint arg,
+          maybePPrint ppIn inn, maybePPrint ppSubst subst,
+          text "of", hsep $ map (nest 2 . (bar <+>) . prettyPrint) brs]
+      where
+        ppRet r   = hsep [langle, prettyPrint r, rangle]
+        ppAs a    = hsep [prettyPrint a, defEq]
+        ppIn i    = hsep [text "in", prettyPrint i]
+        ppSubst s | null (unSubst s) = empty
+                  | otherwise        = text "where" <+> prettyPrint s
+
+instance Pretty CaseIn where
+  prettyPrint (CaseIn _ bs i args) =
+    hsep $ context ++ [text i] ++ map prettyPrint args
+      where
+        context | null bs   = [empty]
+                | otherwise = lbrack : map (parens . prettyPrint) bs ++ [rbrack]
+
+instance Pretty Subst where
+  prettyPrint = hsep . map (parens . prettyPrint) . unSubst
+
+instance Pretty Assign where
+  prettyPrint (Assign _ x e) = hsep [text x, defEq, prettyPrint e]
+
+instance Pretty Branch where
+  prettyPrint (Branch _ x id args body) =
+    hsep $ text x : map text args ++ [implies, prettyPrint body]
+
 instance Pretty Declaration where
   prettyPrint (Definition _ x (Just e1) e2) =
     hsep [text "define", text x, colon, prettyPrint e1, defEq, prettyPrint e2]
@@ -208,11 +273,8 @@ instance Pretty Declaration where
   prettyPrint (Inductive _ x ps e cs) =
     sep $ indName : map (nest 2 . (bar <+>) . prettyPrint) cs
       where indName = hsep [text "data", text x,
-                            sep (map (parens . prettyPrint) ps), colon,
+                            hsep (map prettyPrint ps), colon,
                             prettyPrint e, defEq]
-
-instance Pretty Polarity where
-  prettyPrint = text . show
 
 instance Pretty Parameter where
   prettyPrint (Parameter _ x pol tp) = parens $ hsep [ text x, prettyPrint pol,

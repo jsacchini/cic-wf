@@ -9,6 +9,7 @@ data Position = Pn { posFile :: FilePath,
                 deriving(Eq)
 
 data Range = Range { rStart, rEnd :: !Position }
+           | NoRange
 
 class HasRange a where
   getRange :: a -> Range
@@ -36,6 +37,9 @@ instance HasRange a => HasRange [a] where
   getRange [x] = getRange x
   getRange (x:y:ys) = fuseRange (getRange x) (getRange (y:ys))
 
+instance HasRange a => HasRange (Maybe a) where
+  getRange = maybe NoRange getRange
+
 class HasRange t => SetRange t where
   setRange :: Range -> t -> t
 
@@ -55,7 +59,7 @@ initPos :: Position
 initPos = initPosFile ""
 
 noRange :: Range
-noRange = Range noPos noPos
+noRange = NoRange -- Range noPos noPos
 
 noRangeFile :: FilePath -> Range
 noRangeFile f = Range (noPosFile f) (noPosFile f)
@@ -75,9 +79,11 @@ mkRangeLen pos@(Pn f l c) n = Range pos (advancePos pos n)
 -- Combines two ranges
 -- Assumes that the first range is to the left of the second
 fuseRange :: (HasRange a, HasRange b) => a -> b -> Range
-fuseRange x y = Range posl posr
-                where Range posl _ = getRange x
-                      Range _ posr = getRange y
+fuseRange x y = case (getRange x, getRange y) of
+                  (Range posl _ , Range _ posr ) -> Range posl posr
+                  (NoRange      , r@(Range _ _)) -> r
+                  (r@(Range _ _), NoRange      ) -> r
+                  (_            , _            ) -> NoRange
 
 -- fuseRanges only works in non-empty lists
 fuseRanges :: HasRange a => [a] -> Range
