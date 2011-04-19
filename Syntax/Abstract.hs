@@ -49,6 +49,9 @@ data Expr =
   | Ind Range IName
   deriving(Show) -- for debugging only
 
+-- | Equality on expressions is used by the reifier ("InternaltoAbstract")
+--   to join consecutive binds with the same type.
+
 instance Eq Expr where
   (Sort _ s1) == (Sort _ s2) = s1 == s2
   (Pi _ bs1 t1) == (Pi _ bs2 t2) = length bs1 == length bs2 &&

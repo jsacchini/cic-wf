@@ -9,19 +9,28 @@ import Utils.Impossible
 import Syntax.Internal
 import Kernel.TCM
 
-whnf :: (MonadTCM tcm) => Term -> tcm Term
-whnf t@(App f ts) =
-  do w <- whnf f
-     case w of
-       Lam bs u -> whnf $ applyTerms bs u ts
-       u        -> return $ App u ts
-whnf t@(Var x) =
-  do d <- getGlobal x
-     case d of
-       Definition _ u   -> return u
-       Assumption _     -> return t
-       _                -> __IMPOSSIBLE__
-whnf t = return t
+class Whnf a where
+  whnf :: (MonadTCM tcm) => a -> tcm a
+
+instance Whnf Term where
+  whnf t@(App f ts) =
+    do w <- whnf f
+       case w of
+         Lam bs u -> whnf $ applyTerms bs u ts
+         u        -> return $ App u ts
+  whnf t@(Var x) =
+    do d <- getGlobal x
+       case d of
+         Definition _ u   -> return u
+         Assumption _     -> return t
+         _                -> __IMPOSSIBLE__
+  whnf t = return t
+
+instance Whnf Bind where
+  whnf (Bind x t) = do w <- whnf t
+                       return $ Bind x w
+  whnf (LocalDef x t u) = do w <- whnf u  -- we only normalize the type
+                             return $ LocalDef x t w
 
 class NormalForm a where
   normalForm :: (MonadTCM tcm) => a -> tcm a

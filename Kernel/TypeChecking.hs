@@ -19,6 +19,7 @@ import Data.Function
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
 import Syntax.Common
+import Syntax.Position
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
@@ -53,15 +54,17 @@ infer (A.Ann _ t u) = do (u', r) <- infer u
                          w <- whnf u'
                          return (t', w)
 infer (A.Sort _ s) = checkSort s
-infer (A.Pi _ bs t) = do (bs', s1) <- inferBinds bs
-                         (t', r2) <- local (reverse bs'++) $ infer t
-                         s2 <- local (reverse bs'++) $ isSort r2
-                         return (Pi bs' t', Sort $ max s1 s2)
-infer (A.Arrow _ e1 e2) = do (t1, r1) <- infer e1
-                             s1 <- isSort r1
-                             (t2, r2) <- local (bindNoName t1:) $ infer e2
-                             s2 <- local (bindNoName t1:) $ isSort r2
-                             return (Pi [bindNoName t1] t2, Sort $ max s1 s2)
+infer (A.Pi _ bs t) =
+  do (bs', s1) <- inferBinds bs
+     (t', r2) <- local (reverse bs'++) $ infer t
+     s2 <- local (reverse bs'++) $ isSort r2
+     return (buildPi bs' t', Sort $ max s1 s2)
+infer (A.Arrow _ e1 e2) =
+  do (t1, r1) <- infer e1
+     s1 <- isSort r1
+     (t2, r2) <- local (bindNoName t1:) $ infer e2
+     s2 <- local (bindNoName t1:) $ isSort r2
+     return (buildPi [bindNoName t1] t2, Sort $ max s1 s2)
 infer (A.Bound _ x n) =
   do l <- ask
      when (n >= length l) $ liftIO $ putStrLn $ concat [show n, " ", show (length l)]
@@ -79,12 +82,35 @@ infer (A.Var _ x) = do t <- getGlobal x
                          _              -> __IMPOSSIBLE__
 infer (A.Lam _ bs t) = do (bs', _) <- inferBinds bs
                           (t', u) <- local (reverse bs'++) $ infer t
-                          return (Lam bs' t', Pi bs' u)
--- infer (A.App _ t1 t2) = do (t1', r1) <- infer t1
---                            case r1 of
---                              Pi b1 u2 -> do t2' <- check t2 (expr b1)
---                                             return (App t1' t2', subst t2' u2)
---                              otherwise -> throwNotFunction r1
+                          return (buildLam bs' t', buildPi bs' u)
+infer (A.App _ e1 e2) = -- inferApp e1 e2
+  do (t1, r1) <- infer e1
+     case r1 of
+       Pi (b:bs) u2 -> do t2 <- check e2 (bindType b)
+                          w   <- whnf $ buildPi (subst t2 bs) (substN (length bs) t2 u2)
+                          return (buildApp t1 [t2], w)
+       otherwise    -> throwNotFunction r1
+infer e = do liftIO $ putStrLn $ "\n\n----> " ++ show e
+             error "typechecking: not implemented"
+
+
+-- inferApp :: (MonadTCM tcm) => A.Expr -> [A.Expr] -> tcm (Term, Type)
+-- inferApp e1 es =
+--   do (t1, r1) <- infer e1
+--      inferApp_ e1 t1 r1 es
+--     where inferApp_ :: (MonadTCM tcm) => A.Expr -> Term -> Type -> [A.Expr] -> tcm (Term, Type)
+--           inferApp_ e t u []       = return (t, u)
+--           inferApp_ e t u (e1:e1s) =
+--             case u of
+--               Pi (b:bs) u' -> do t1 <- check e1 (bindType b)
+--                                  bs' <- subst t1 bs
+--                                  u'' <- substN (length bs) t1 u'
+--                                  w <- whnf (buildPi bs' u'')
+--                                  inferApp_
+--                                    (App (fuseRange e e1) e e1)
+--                                    (buildApp t t1)
+--                                    w
+--                                    e1s
 
 
 

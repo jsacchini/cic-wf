@@ -14,6 +14,9 @@ data vec (A:Type) : nat -> Type := | vnil : vec A O | vcons : forall n : nat,
 A -> vec A n -> vec A (S n).
 
 -}
-define t1 := fun (A : Type) (x y : A) (z : A) (_ : A) => z.
+define t1 := fun (A : Type) (x y : A) ( _ z : A) (_ : A) => z.
 
 define t2 := forall A : Type, forall (x:A) (y:A), A.
+
+define t3 := fun (A : Type)(B:A->Type) (x y : A) ( _ z _ _ : A) (_ : B z) => z.
+

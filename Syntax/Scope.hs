@@ -49,7 +49,7 @@ constrNotApplied r x = typeError $ ConstructorNotApplied r x
 class Scope a where
   scope :: MonadTCM m => a -> m a
 
-  scope = return -- REMOVE THIS!!
+  scope = error "implement Scope checker" -- REMOVE THIS!!
 
 -- We don't need the real type of the binds for scope checking, just the names
 fakeBinds :: [Name] -> [I.Bind]
@@ -66,7 +66,7 @@ instance Scope A.Bind where
 instance Scope [A.Bind] where
   scope [] = return []
   scope (x:xs) = do s <- scope x
-                    ss <- fakeBindsIn (A.bindNames x) $ scope xs
+                    ss <- fakeBindsIn (reverse (A.bindNames x)) $ scope xs
                     return (s:ss)
 
 
@@ -93,12 +93,15 @@ instance Scope A.Expr where
        return $ A.Lam r bs' e'
          where newBinds = reverse $ concatMap A.bindNames bs
   scope t@(A.App r e1 e2) =
-    scopeApp f (as ++ [(r,e2)])
-      where (f, as) = getFuncArgs e1
+    do args' <- mapM scopeArg args
+       scopeApp func args'
+      where (func, args) = getFuncArgs t
             getFuncArgs (A.App r e1 e2) =
               (f, as ++ [(r,e2)])
                 where (f, as) = getFuncArgs e1
             getFuncArgs e = (e, [])
+            scopeArg (rg, e) = do e' <- scope e
+                                  return (rg, e')
   scope t@(A.Var r x) =
     do xs <- getLocalNames
        case findIndex (==x) xs of

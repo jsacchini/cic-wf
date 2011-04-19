@@ -53,6 +53,21 @@ data Term
     | Ind Name
     deriving(Show)
 
+buildPi :: [Bind] -> Term -> Term
+buildPi [] t = t
+buildPi bs (Pi bs' t) = Pi (bs ++ bs') t
+buildPi bs t = Pi bs t
+
+buildApp :: Term -> [Term] -> Term
+buildApp t [] = t
+buildApp (App t ts) ts' = App t (ts ++ ts')
+buildApp t ts = App t ts
+
+buildLam :: [Bind] -> Term -> Term
+buildLam [] t = t
+buildLam bs (Lam bs' t) = Lam (bs ++ bs') t
+buildLam bs t = Lam bs t
+
 -- | Equality on terms is only used in the reification to terms, to group
 -- contiguous bindings with the same type
 instance Eq Term where
