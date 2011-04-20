@@ -6,11 +6,16 @@ assume True : forall P:Type, P -> P.
 
 
 
-data list (A++ :Type) : Type := | nil : list A | cons : A -> list A -> list A.
+data list (A++ :Type) : Type := | nil : list A -- first constructor
+                                | cons : A -> list A -> list A. -- second
+
+{-
+{-
 
 data nat : Type := O : nat | S : nat -> nat.
 
-data vec (A @ :Type) : nat -> Type := | vnil : vec A O | vcons : forall n : nat,
+
+-}data vec (A @ :Type) : nat -> Type := | vnil : vec A O | vcons : forall n : nat,
 A -> vec A n -> vec A (S n).
 
 
@@ -19,7 +24,7 @@ define t1 := fun (A : Type) (x y : A) (z : A) (_ : A) => z.
 define t2 := forall A : Type, forall (x:A) (y:A), A.
 
 define t3 := case x of x y => Prop end.
-
+-}
 define t4 := < <Type> case x1 of O => nat | S _ => Type end >
              case x1 := x in [] nat x (forall x:A, x) where of
              | O => O
@@ -34,4 +39,4 @@ define t6 := fix 1 pred : nat -> nat :=
                                       | S y => y
                                       end.
 
-define t7 := fun (x:nat) => nat -> nat.
+define t7 := fun (x:nat) => nat -> nat. --last comment

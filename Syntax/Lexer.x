@@ -2,9 +2,9 @@
 
 {-# OPTIONS_GHC -fno-warn-deprecated-flags
                 -fno-warn-lazy-unlifted-bindings #-}
--- TODO
----- Nested comments: see examples in alex, GHC lexer, and Agda lexer
----- Unicode: see GHC lexer and Agda lexer (the latter seems simpler)
+--| TODO
+--
+--  * Unicode support: see GHC lexer and Agda lexer (the latter seems simpler)
 
 module Syntax.Lexer where
 
@@ -13,6 +13,7 @@ import Control.Monad.State
 import Syntax.Tokens
 import Syntax.Alex
 import Syntax.ParseMonad
+import Syntax.Position
 
 }
 
@@ -26,9 +27,9 @@ tokens :-
 
   $white+       ;
 
-  -- One-line and non-nested comments for the moment
-  "--".* ;
-  "{-" ([ [. \n] # \-] | \- [ [. \n] # \}])* ("-")+ "}" ;
+  -- One-line and nested comments
+  "--"       { \_ _ -> skipOneLineComment }
+  "{-"       { \_ _ -> skipNestedComment }
 
 
   -- Type without a number is a synonym of Type0. See Syntax.Tokens.ident
@@ -72,9 +73,46 @@ lexToken =
        AlexSkip inp' len -> put inp' >> lexToken
        AlexToken inp' len act ->
          do put inp'
-            return $ act (lexPos s) (take len (lexInput s))
+            act (lexPos s) (take len (lexInput s))
 
 lexer :: (Token -> Parser a) -> Parser a
 lexer cont = lexToken >>= cont
+
+-- | skip characters till a newline is found.
+--   We use the fact that Parser = AlexInput
+skipOneLineComment :: Parser Token
+skipOneLineComment =
+  do s <- get
+     skip_ s
+     lexToken
+    where skip_ :: AlexInput -> Parser ()
+          skip_ inp =
+            case alexGetChar inp of
+              Just ('\n', inp') -> put inp'
+              Just (c   , inp') -> skip_ inp'
+              Nothing           -> put inp
+
+skipNestedComment :: Parser Token
+skipNestedComment =
+  do s <- get
+     skip_ 1 s
+     lexToken
+    where
+      skip_ :: Int -> AlexInput -> Parser ()
+      skip_ 0 inp = put inp
+      skip_ n (AlexInput { lexPos = p,
+                           lexInput = ('{':'-':s) }) =
+        skip_ (n + 1) (AlexInput { lexPos = advancePos p 2,
+                                   lexInput = s,
+                                   lexPrevChar = '-' })
+      skip_ n (AlexInput { lexPos = p,
+                           lexInput = ('-':'}':s) }) =
+        skip_ (n - 1) (AlexInput { lexPos = advancePos p 2,
+                                   lexInput = s,
+                                   lexPrevChar = '}' })
+      skip_ n inp =
+        case alexGetChar inp of
+          Just (c   , inp') -> skip_ n inp'
+          Nothing           -> fail "Open nested comment"
 
 }

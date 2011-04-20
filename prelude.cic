@@ -6,7 +6,8 @@ assume True : forall P:Type, P -> P.
 
 
 {-
-data list (A:Type) : Type := | nil : list A | cons : A -> list A -> list A.
+data list (A:Type) : Type := | nil : list A -- firs constructor
+                             | cons : A -> list A -> list A. -- second
 
 data nat : Type := O : nat | S : nat -> nat.
 
@@ -18,5 +19,4 @@ define t1 := fun (A : Type) (x y : A) ( _ z : A) (_ : A) => z.
 
 define t2 := forall A : Type, forall (x:A) (y:A), A.
 
-define t3 := fun (A : Type)(B:A->Type) (x y : A) ( _ z _ _ : A) (_ : B z) => z.
-
+define t3 := fun (A : Type)(B:A->Type) (x y : A) ( _ z _ _ : A) (_ : B z) => z. -- last comment
