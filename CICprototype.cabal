@@ -12,7 +12,7 @@ extra-source-files: undefined.h
 
 Executable cic
   Main-is:           Main.hs
-  Build-Depends:     base >= 4.1,
+  Build-Depends:     base >= 4.2,
                      parsec >= 2,
                      pretty -any,
                      haskeline >= 0.6,
@@ -47,7 +47,7 @@ Executable cic
 
 Executable cic-parsetest
   Main-is:           ParseTest.hs
-  Build-Depends:     base >= 4.1,
+  Build-Depends:     base >= 4.2,
                      parsec >= 2,
                      pretty -any,
                      haskeline >= 0.6,

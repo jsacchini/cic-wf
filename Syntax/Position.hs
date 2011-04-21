@@ -11,6 +11,12 @@ data Position = Pn { posFile :: FilePath,
 data Range = Range { rStart, rEnd :: !Position }
            | NoRange
 
+
+data Ranged a = Ranged { rgRange :: Range,
+                         rgValue :: a }
+                deriving(Show)
+
+
 class HasRange a where
   getRange :: a -> Range
 

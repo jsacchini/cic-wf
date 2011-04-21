@@ -100,13 +100,14 @@ data Bind =
     }
   deriving(Show)
 
+
 bind :: Bind -> Type
 bind (Bind _ t) = t
 -- bind (NoBind t) = t
 bind (LocalDef _ _ t) = t
 
 bindNoName :: Type -> Bind
-bindNoName t = Bind "" t
+bindNoName t = Bind (Id "") t
 
 instance Eq Bind where
   (Bind _ t1) == (Bind _ t2) = t1 == t2

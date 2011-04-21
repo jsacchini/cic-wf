@@ -52,8 +52,8 @@ class Scope a where
   scope = error "implement Scope checker" -- REMOVE THIS!!
 
 -- We don't need the real type of the binds for scope checking, just the names
-fakeBinds :: [Name] -> [I.Bind]
-fakeBinds = map $ flip I.Bind I.tProp
+fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
+fakeBinds b m = local (map (flip I.Bind I.tProp) (getNames b)++) m
 
 fakeBindsIn :: (MonadTCM tcm) => [Name] -> tcm a -> tcm a
 fakeBindsIn xs = local $ (map (flip I.Bind I.tProp) xs++)
@@ -63,10 +63,10 @@ instance Scope A.Bind where
   -- scope (A.NoBind e) = fmap A.NoBind (scope e)
 
 
-instance Scope [A.Bind] where
+instance (Scope a, HasNames a) => Scope [a] where
   scope [] = return []
   scope (x:xs) = do s <- scope x
-                    ss <- fakeBindsIn (reverse (A.bindNames x)) $ scope xs
+                    ss <- fakeBindsIn (reverse (getNames x)) $ scope xs
                     return (s:ss)
 
 
@@ -84,7 +84,7 @@ instance Scope A.Expr where
          where newBinds = reverse $ concatMap A.bindNames bs
   scope (A.Arrow r e1 e2) =
     do e1' <- scope e1
-       e2' <- local (fakeBinds [""]++) $ scope e2
+       e2' <- fakeBinds noName $ scope e2
        return $ A.Arrow r e1' e2'
   scope (A.Lam r bs e) =
     do bs' <- scope bs
@@ -93,15 +93,10 @@ instance Scope A.Expr where
        return $ A.Lam r bs' e'
          where newBinds = reverse $ concatMap A.bindNames bs
   scope t@(A.App r e1 e2) =
-    do args' <- mapM scopeArg args
+    do args' <- mapM scope args
        scopeApp func args'
-      where (func, args) = getFuncArgs t
-            getFuncArgs (A.App r e1 e2) =
-              (f, as ++ [(r,e2)])
-                where (f, as) = getFuncArgs e1
-            getFuncArgs e = (e, [])
-            scopeArg (rg, e) = do e' <- scope e
-                                  return (rg, e')
+      where
+        (func, args) = A.destroyApp t
   scope t@(A.Var r x) =
     do xs <- getLocalNames
        case findIndex (==x) xs of
@@ -140,27 +135,30 @@ instance Scope A.Expr where
 --     scope (MkBranch cname i args body) = do sbody <- local (args++) (scope body)
 --                                             return $ MkBranch cname i args sbody
 
-scopeApp :: (MonadTCM tcm) => A.Expr -> [(Range, A.Expr)] -> tcm A.Expr
+scopeApp :: (MonadTCM tcm) => A.Expr -> [A.Expr] -> tcm A.Expr
 scopeApp e@(A.Var r x) args =
   do xs <- getLocalNames
      case findIndex (==x) xs of
-       Just n -> return $ mkFunc (A.Bound r x n) args
+       Just n -> return $ A.buildApp (A.Bound r x n) args
        Nothing ->
          do g <- lookupGlobal x
             case g of
-              Just i@(I.Inductive {}) -> return $ mkFunc (A.Ind r x) args
-              -- Just (ConstrDef i id pars args _) -> return $ mkConstr (wrongArg p x) x i (cxtSize params) (cxtSize args)
-              Just _ -> return $ mkFunc e args
+              Just i@(I.Inductive {}) -> return $ A.buildApp (A.Ind r x) args
+              Just (I.Constructor i id parsTp argsTp _) ->
+                  if expLen /= givenLen
+                  then wrongArg cRange x expLen givenLen
+                  else return $ A.Constr cRange x (i,id) cpars cargs
+                where
+                  parLen = length parsTp
+                  argLen = length argsTp
+                  givenLen = length args
+                  expLen = parLen + argLen
+                  (cpars, cargs) = splitAt parLen args
+                  cRange = fuseRange r args
+              Just _ -> return $ A.buildApp e args
               Nothing -> undefinedName r x
-scopeApp e args = return $ mkFunc e args
+scopeApp e args = return $ A.buildApp e args
 
-mkFunc :: A.Expr -> [(Range, A.Expr)] -> A.Expr
-mkFunc = foldr (\(r,e1) y -> A.App r y e1)
--- mkConstr err x i m n = (\p a -> do when (length a/=m+n) $ err (length a) (m+n)
---                                    let a' = reverse $ take (m+n) a
---                                        params = map snd $ take m a'
---                                        args = map snd $ drop m a'
---                                    return $ Constr p x i params args, [])
 
 instance (Scope a) => Scope (Maybe a) where
     scope (Just x) = do s <- scope x
@@ -178,17 +176,20 @@ instance Scope A.Declaration where
          return $ A.Assumption r x t'
     -- scope (A.Inductive r x ps e cs) =
     --   do ps' <- scope ps
-    --      e' <- local (bindPars++) $ scope e
-    --      cs' <- local (bindParsInd++) $ mapM scope cs
+    --      e'  <- fakeBinds (reverse ps) $ scope e
+    --      cs' <- fakeBinds (reverse ps) $ fakeBinds x $ mapM scope cs
     --      return $ A.Inductive r x ps' e' cs'
-    --        where bindPars = fakeBinds $ concatMap A.bindNames ps
-    --              bindParsInd = bindPars ++ fakeBinds [x]
+
+
+instance Scope A.Parameter where
+  scope (A.Parameter r np e) = fmap (A.Parameter r np) (scope e)
 
 
 instance Scope A.Constructor where
   scope (A.Constructor r x e id) =
     do e' <- scope e
        return (A.Constructor r x e' id)
+
 {-
 instance Scope IndExpr where
     scope (MkInd x params arg cs) = do sp <- scope params

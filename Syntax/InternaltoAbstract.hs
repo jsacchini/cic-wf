@@ -25,7 +25,7 @@ import qualified Syntax.Abstract as A
 import Kernel.TCM
 import Syntax.Position
 import Syntax.Common
-import Syntax.Scope (fakeBindsIn)
+import Syntax.Scope (fakeBinds)
 import Utils.Misc
 
 class Reify a b | a -> b where
@@ -37,19 +37,20 @@ instance Reify Sort A.Sort where
 
 freshName :: [Name] -> Name -> Name
 freshName xs y | y `notElem` xs = y
-               | otherwise = addSuffix 0
-                 where addSuffix n | (y++show n) `notElem` xs = y++show n
-                                   | otherwise = addSuffix (n+1)
+               | otherwise = trySuffix 0
+                 where trySuffix n | addSuffix y n `notElem` xs = addSuffix y n
+                                   | otherwise = trySuffix (n+1)
+                       addSuffix (Id x) n = Id $ x ++ show n
 
 pickFreshName :: (MonadTCM tcm) => Name -> tcm Name
-pickFreshName x | null x    = return "_"
+pickFreshName x | isNull x  = return $ Id "_"
                 | otherwise = do xs <- getLocalNames
                                  return $ freshName xs x
 
 pickFreshNames :: (MonadTCM tcm) => [Name] -> tcm [Name]
 pickFreshNames []     = return []
 pickFreshNames (x:xs) = do x' <- pickFreshName x
-                           xs' <- fakeBindsIn [x'] $ pickFreshNames xs
+                           xs' <- fakeBinds x' $ pickFreshNames xs
                            return $ x' : xs'
 
 
@@ -64,13 +65,13 @@ reifyPiBinds = rP []
       | notFree bs' t2 =
         do liftIO $ putStrLn $ "notFree 1 " ++ show bs ++ " -> " ++ show t2
            e1 <- reify t1
-           e2 <- fakeBindsIn [""] $ rP [] bs' t2
+           e2 <- fakeBinds noName $ rP [] bs' t2
            return $ A.Arrow noRange e1 e2
       | otherwise     =
           do liftIO $ putStrLn $ "otherwise 1 " ++ show bs ++ " -> " ++ show t2
              e1 <- reify t1
              x' <- pickFreshName x
-             fakeBindsIn [x'] $ rP [A.Bind noRange [x'] e1] bs' t2
+             fakeBinds x' $ rP [A.Bind noRange [x'] e1] bs' t2
     rP bs1@(A.Bind _ xs e1:bs1') bs2@(Bind y t1:bs2') t2
       | notFree bs2' t2 =
         do e2 <- rP [] bs2 t2
@@ -79,8 +80,8 @@ reifyPiBinds = rP []
           do e1' <- reify t1
              y' <- pickFreshName y
              if e1 == e1'
-               then fakeBindsIn [y'] $ rP (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
-               else fakeBindsIn [y'] $ rP (A.Bind noRange [y'] e1':bs1) bs2' t2
+               then fakeBinds y' $ rP (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
+               else fakeBinds y' $ rP (A.Bind noRange [y'] e1':bs1) bs2' t2
     notFree :: [Bind] -> Term -> Bool
     notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
 
@@ -92,14 +93,14 @@ reifyLamBinds = rL []
                                      return $ A.Lam noRange (reverse bs) e
     rL [] bs@(Bind x t1:bs') t2 =
       do e1 <- reify t1
-         x' <- if notFree bs' t2 then return "_" else pickFreshName x
-         fakeBindsIn [x'] $ rL [A.Bind noRange [x'] e1] bs' t2
+         x' <- if notFree bs' t2 then return (Id "_") else pickFreshName x
+         fakeBinds x' $ rL [A.Bind noRange [x'] e1] bs' t2
     rL bs1@(A.Bind _ xs e1:bs1') bs2@(Bind y t1:bs2') t2 =
       do e1' <- reify t1
-         y' <- if notFree bs2' t2 then return "_" else pickFreshName y
+         y' <- if notFree bs2' t2 then return (Id "_") else pickFreshName y
          if e1 == e1'
-           then fakeBindsIn [y'] $ rL (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
-           else fakeBindsIn [y'] $ rL (A.Bind noRange [y'] e1':bs1) bs2' t2
+           then fakeBinds y' $ rL (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
+           else fakeBinds y' $ rL (A.Bind noRange [y'] e1':bs1) bs2' t2
     notFree :: [Bind] -> Term -> Bool
     notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
 

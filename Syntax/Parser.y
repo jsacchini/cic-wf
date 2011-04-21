@@ -80,11 +80,11 @@ DeclsR : Decl '.'          { [$1] }
 
 Decl :: { A.Declaration }
 Decl
-  : 'define' ident MaybeExp ':=' Exp
+  : 'define' Name MaybeExp ':=' Exp
          { A.Definition (fuseRange $1 $5) (snd $2) $3 $5 }
-  | 'assume' ident ':' Exp
+  | 'assume' Name ':' Exp
          { A.Assumption (fuseRange $1 $4) (snd $2) $4 }
-  | 'data' ident Parameters ':' Exp ':=' Constructors
+  | 'data' Name Parameters ':' Exp ':=' Constructors
          { A.Inductive (fuseRange $1 $7) (snd $2) (reverse $3) $5 $7 }
 
 Parameters :: { [A.Parameter] }
@@ -92,7 +92,11 @@ Parameters : Parameters Par            { $2 : $1 }
            | {- empty -}               { [] }
 
 Par :: { A.Parameter }
-Par : '(' BindName Polarity ':' Exp ')'    { A.Parameter (fuseRange $1 $6) (snd $2) $3 $5 }
+Par : '(' NamesPol ':' Exp ')' { A.Parameter (fuseRange $1 $5) (reverse $2) $4 }
+
+NamesPol :: { [(Name, Polarity)] }
+NamesPol : NamesPol BindName Polarity    { (snd $2,$3) : $1 }
+         | BindName Polarity             { [(snd $1,$2)] }
 
 Polarity :: { Polarity }
 Polarity : '+'            { Pos }
@@ -116,7 +120,7 @@ Constr2 : {- empty -}                { [] }
 -- Constructors are given id 0 by the parser. The actual id is given by the
 -- scope checker.
 BasicConstr :: { A.Constructor }
-BasicConstr : ident ':' Exp      { let (p,x) = $1
+BasicConstr : Name ':' Exp      { let (p,x) = $1
                                    in A.Constructor (fuseRange p $3) x $3 0 }
 
 Exp :: { A.Expr }
@@ -142,7 +146,7 @@ Exps1 : Exp1           { [$1] }
 Exp1 :: { A.Expr }
 Exp1 : '(' Exp ')'   { $2 }
      | Sort          { $1 }
-     | ident         { A.Var (mkRangeLen (fst $1) (length (snd $1))) (snd $1) }
+     | Name          { A.Var (mkRangeLen (fst $1) (length (unName (snd $1)))) (snd $1) }
 
 -- This does not look elegant
 Sort :: { A.Expr }
@@ -166,7 +170,7 @@ Case : CaseRet 'case' CaseArg In WhereSubst 'of' Branches 'end'
                            in A.CaseExpr rg (fst $3) (snd $3) $4 $5 $1 $7 }
 
 CaseArg :: { (A.Expr, Maybe Name) }
-CaseArg : ident ':=' Exp      { ($3, Just (snd $1)) }
+CaseArg : Name ':=' Exp      { ($3, Just (snd $1)) }
         | Exp                 { ($1, Nothing) }
 
 CaseRet :: { Maybe A.Expr }
@@ -174,7 +178,7 @@ CaseRet : '<' Exp '>'     { Just $2 }
         | {- empty -}     { Nothing }
 
 In :: { Maybe A.CaseIn }
-In : 'in' InContext ident InArgs
+In : 'in' InContext Name InArgs
                  { let r4 = reverse $4
                    in Just $ A.CaseIn (fuseRange $1 r4) $2 (snd $3) r4 }
    | {- empty -}
@@ -200,7 +204,7 @@ Branch2 : {- empty -}                { [] }
         | Branch2 '|' BasicBranch    { $3 : $1 }
 
 BasicBranch :: { A.Branch }
-BasicBranch : ident Pattern '=>' Exp WhereSubst
+BasicBranch : Name Pattern '=>' Exp WhereSubst
                              { let rg = maybe (fuseRange (fst $1) $4)
                                               (fuseRange (fst $1)) $5
                                in A.Branch rg (snd $1) 0 (reverse $2) $4 }
@@ -209,17 +213,14 @@ WhereSubst :: { Maybe A.Subst }
 WhereSubst : 'where' Assigns     { Just (A.Subst $2) }
            | {- empty -}         { Nothing }
 
-Pattern :: { [Name] }
-Pattern : Pattern ident   { (snd $2) : $1 }
-        | {- empty -}     { [] }
 
 Assigns :: { [A.Assign] }
-Assigns : Assigns '(' ident ':=' Exp ')'
+Assigns : Assigns '(' Name ':=' Exp ')'
                            { A.Assign (fuseRange $2 $6) (snd $3) $5 : $1 }
       | {- empty -}        { [] }
 
 Fix :: { A.FixExpr }
-Fix : 'fix' number ident ':' Exp ':=' Exp
+Fix : 'fix' number Name ':' Exp ':=' Exp
                       { A.FixExpr (fuseRange $1 $7) (snd $2) (snd $3) $5 $7 }
 
 Bindings :: { [A.Bind] }
@@ -237,17 +238,25 @@ Bindings1 : '(' BasicBind ')'             { [$2] }
 BasicBind :: { A.Bind }
 BasicBind : Names ':' Exp   { A.Bind (fuseRange (snd $1) $3) (fst $1) $3 }
 
+
+Name :: { (Position, Name) }
+Name : ident                { (fst $1, Id (snd $1)) }
+
+Pattern :: { [Name] }
+Pattern : Pattern Name       { snd $2 : $1 }
+        | {- empty -}        { [] }
+
 Names :: { ([Name], Range) }
 Names : Names1              { let r = reverse $1
                               in (map snd r, fuseRanges $ map fst r) }
 
 Names1 :: { [(Position, Name)] }
-Names1 : ident           { [$1] }
-       | Names1 ident    { $2 : $1 }
+Names1 : BindName           { [$1] }
+       | Names1 BindName    { $2 : $1 }
 
 BindName :: { (Position, Name) }
 BindName : ident            { let (p, x) = $1
-                              in if x == "_" then (p, "") else (p, x) }
+                              in if x == "_" then (p, Id "") else (p, Id x) }
 
 {
 

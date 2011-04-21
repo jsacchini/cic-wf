@@ -2,7 +2,7 @@
 
 {-# OPTIONS_GHC -fno-warn-deprecated-flags
                 -fno-warn-lazy-unlifted-bindings #-}
---| TODO
+-- | TODO
 --
 --  * Unicode support: see GHC lexer and Agda lexer (the latter seems simpler)
 
