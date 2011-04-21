@@ -41,6 +41,8 @@ data TypeError
     | UndefinedName Range Name
     | NotInductive Name
     | ConstructorNotApplied Range Name
+    | PatternNotConstructor Name
+    | FixRecursiveArgumentNotPositive Range
     deriving(Show, Typeable)
 
 -- instance Show TypeError where
@@ -130,3 +132,32 @@ addGlobal x g = do st <- get
 
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
 getLocalNames = fmap (map I.bindName) ask
+
+
+--- For testing
+testTCM_ :: TCM a -> IO (Either TCErr a)
+testTCM_ m = runTCM m'
+  where m' = do addGlobal (Id "nat") natInd
+                addGlobal (Id "O")   natO
+                addGlobal (Id "S")   natS
+                m
+
+natInd =
+  I.Inductive { I.indPars    = [],
+                I.indIndices = [],
+                I.indSort    = I.Type 0,
+                I.indConstr  = [Id "O", Id "S"] }
+natO =
+  I.Constructor { I.constrInd     = Id "nat",
+                  I.constrId      = 0,
+                  I.constrPars    = [],
+                  I.constrArgs    = [],
+                  I.constrIndices = [] }
+
+natS =
+  I.Constructor { I.constrInd     = Id "nat",
+                  I.constrId      = 1,
+                  I.constrPars    = [],
+                  I.constrArgs    = [I.Bind noName (I.Bound 0)],
+                  I.constrIndices = [] }
+

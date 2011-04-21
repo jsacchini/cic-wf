@@ -41,6 +41,8 @@ instance HasNames a => HasNames [a] where
 instance HasNames Name where
   getNames n = [n]
 
+instance HasNames a => HasNames (Maybe a) where
+  getNames = maybe [] getNames
 
 -- | Polarities
 data Polarity = Pos

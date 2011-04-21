@@ -37,13 +37,15 @@ data Expr =
   | Pi Range [Bind] Expr    -- ^ Dependent type. var name, type, term
   | Arrow Range Expr Expr   -- ^ Non-dependent type
   | Var Range Name
-  | Bound Range Name Int    -- ^ name is just a hint
   | EVar Range (Maybe Int)  -- ^ existential variable
   | Lam Range [Bind] Expr   -- ^ var name, type, body
   | App Range Expr Expr
   | Let Range LetBind Expr
   | Case CaseExpr
   | Fix FixExpr
+  -- The following constructors are filled by the scope checker, but do not
+  -- appear in a correctly parsed expression
+  | Bound Range Name Int    -- ^ name is just a hint
   | Constr Range CName (IName, Int) [Expr] [Expr]
   | Ind Range IName
   deriving(Show) -- for debugging only
@@ -92,6 +94,9 @@ data CaseIn = CaseIn {
   inInd   :: Name,
   inArgs  :: [Expr]
   } deriving(Show)
+
+instance HasNames CaseIn where
+  getNames = getNames . inBind
 
 data Branch = Branch {
   brRange     :: Range,
@@ -159,16 +164,15 @@ instance HasNames Bind where
 newtype Subst = Subst { unSubst :: [Assign] }
                 deriving(Show)
 
-instance HasRange Subst where
-  getRange = getRange . unSubst
-
 data Assign = Assign {
   assgnRange :: Range,
   assgnName :: Name,
   assgnExpr :: Expr
   } deriving(Show)
 
-type Telescope = [Bind]
+instance HasRange Subst where
+  getRange = getRange . unSubst
+
 
 data LetBind = LetBind Range Name (Maybe Expr) Expr
                deriving(Show)
@@ -177,6 +181,7 @@ instance HasRange Expr where
   getRange (Ann r _ _) = r
   getRange (Sort r _) = r
   getRange (Pi r _ _) = r
+  getRange (Arrow r _ _) = r
   getRange (Var r _) = r
   getRange (Bound r _ _) = r
   getRange (EVar r _) = r
@@ -233,6 +238,8 @@ instance Pretty Expr where
       -- pp p l (Constr _ x _ ps as) = parensIf (p > 2) $ text x <+> foldr (<+>) empty (map (pp p l) (ps ++ as))
       pp n (Case c) = parensIf (n > 0) $ prettyPrint c
       pp n (Fix f) = parensIf (n > 0) $ prettyPrint f
+      pp n (Ind _ x) = prettyPrint x
+      pp n (Constr _ x _ pars args) = prettyPrint x <+> hsep (map prettyPrint (pars ++ args))
       pp _ e = text $ concat ["* ", show e, " *"]
 
       nestedPi :: [Bind] -> Expr -> Doc
@@ -250,7 +257,7 @@ instance Pretty CaseExpr where
     hsep [maybePPrint ppRet ret, text "case",
           maybePPrint ppAs asn, prettyPrint arg,
           maybePPrint ppIn inn, maybePPrint ppSubst subst,
-          text "of", hsep $ map (nest 2 . (bar <+>) . prettyPrint) brs]
+          text "of"] <+> (sep $ map (nest 2 . (bar <+>) . prettyPrint) brs)
       where
         ppRet r   = hsep [langle, prettyPrint r, rangle]
         ppAs a    = hsep [prettyPrint a, defEq]

@@ -25,7 +25,8 @@ instance Show Position where
     -- show _ = ""
 
 instance Show Range where
-    -- show (Range start end) = concat [posFile start, ":",
+    -- show (Range start end) = concat [-- posFile start,
+    --                                  ":",
     --                                  show (posLine start), ":",
     --                                  show (posCol start), "-",
     --                                  show (posLine end), ":",
