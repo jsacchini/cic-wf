@@ -6,6 +6,8 @@ module Kernel.Whnf where
 #include "../undefined.h"
 import Utils.Impossible
 
+import Control.Monad.Reader
+
 import Syntax.Internal
 import Kernel.TCM
 
@@ -31,6 +33,16 @@ instance Whnf Bind where
                        return $ Bind x w
   whnf (LocalDef x t u) = do w <- whnf u  -- we only normalize the type
                              return $ LocalDef x t w
+
+
+unfoldPi :: (MonadTCM tcm) => Type -> tcm ([Bind], Type)
+unfoldPi t =
+  do t' <- whnf t
+     case t' of
+       Pi bs1 t1 -> do (bs2, t2) <- local (reverse bs1++) $ unfoldPi t1
+                       return (bs1 ++ bs2, t2)
+       t1        -> return ([], t1)
+
 
 class NormalForm a where
   normalForm :: (MonadTCM tcm) => a -> tcm a

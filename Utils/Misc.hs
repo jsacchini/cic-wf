@@ -30,3 +30,6 @@ foldInt f n (t:ts) x = foldInt f n ts (f n t x)
 foldrAcc :: (b -> a -> c -> c) -> (b -> a -> b) -> b -> c -> [a] -> c
 foldrAcc f g acc r [] = r
 foldrAcc f g acc r (x:xs) = f acc x (foldrAcc f g (g acc x) r xs)
+
+from :: Int -> [Int]
+from n = n : from (n + 1)

@@ -48,7 +48,7 @@ data Term
     | Lam [Bind] Term
     | App Term [Term]
     -- | Meta MetaId Shift CxtSize
-    -- | Constr Name (Name, Int) [Term] [Term]
+    | Constr Name (Name, Int) [Term] [Term]
     -- | Fix Int Name NamedCxt Type Term
     | Ind Name
     deriving(Show)
@@ -100,6 +100,13 @@ data Bind =
     }
   deriving(Show)
 
+mkBindsSameType_ :: [Name] -> Type -> Int -> [Bind]
+mkBindsSameType_ [] _ _ = []
+mkBindsSameType_ (x:xs) t k = Bind x (lift k 0 t) :
+                              mkBindsSameType_ xs t (k + 1)
+
+mkBindsSameType :: [Name] -> Type -> [Bind]
+mkBindsSameType xs t = mkBindsSameType_ xs t 0
 
 bind :: Bind -> Type
 bind (Bind _ t) = t
@@ -163,6 +170,10 @@ instance Lift Term where
   lift k n t@(Var _) = t
   lift k n (Lam b u) = Lam (fmap (lift k n) b) (lift k (n + 1) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
+  lift k n t@(Ind _) = t
+  lift k n t@(Constr x indId ps as) = Constr x indId ps' as'
+                                      where ps' = map (lift k n) ps
+                                            as' = map (lift k n) as
   -- lift k n t@(Meta i m s) = if m < n then t else Meta i (m+k) s
   -- lift k n (Constr c x ps as) = Constr c x (map (lift k n) ps) (map (lift k n) as)
   -- lift k n (Fix m x bs t e) = Fix m x (liftCxt (flip lift n) k bs) (lift k (n+cxtSize bs) t) (lift k (n+1) e)
@@ -194,6 +205,10 @@ instance SubstTerm Term where
   substN i r (Lam bs t) = Lam (substN i r bs) (substN (i + len) r t)
                           where len = length bs
   substN i r (App t ts) = App (substN i r t) (substN i r ts)
+  substN i r t@(Ind _) = t
+  substN i r (Constr x ind ps as) = Constr x ind ps' as'
+                                    where ps' = map (substN i r) ps
+                                          as' = map (substN i r) as
 
       -- substN i r t@(Meta _ _ _) = t
       -- substN i r (Constr c x ps as) = Constr c x (map (substN i r) ps) (map (substN i r) as)

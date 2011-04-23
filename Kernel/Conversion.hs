@@ -30,6 +30,9 @@ instance Conversion Bind where
   conversion (LocalDef _ t1 t2) (LocalDef _ t3 t4) = conversion t1 t3 `mAnd` conversion t2 t4
   conversion _ _ = return False
 
+instance Conversion Sort where
+  conversion s1 s2 = return (s1 == s2)
+
 instance Conversion Term where
     conversion t1 t2 =
       do w1 <- whnf t1
@@ -37,7 +40,7 @@ instance Conversion Term where
          case (w1, w2) of
            (Var x, Var y) -> return (x == y)
            (Bound m, Bound n) -> return (m == n)
-           (Sort s1, Sort s2) -> return (s1 == s2)
+           (Sort s1, Sort s2) -> conversion s1 s2
            (Pi u1 u2, Pi v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
            (Lam u1 u2, Lam v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
            (App u1 u2, App v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
@@ -45,10 +48,16 @@ instance Conversion Term where
            --                                         else do bps <- sequence (map (uncurry conversion) (zip p1 p2))
            --                                                 bas <- sequence (map (uncurry conversion) (zip a1 a2))
            --                                                 return $ and (bps ++ bas)
+           (Ind x, Ind y) -> return (x == y)
+           (Constr x1 i1 ps1 as1, Constr x2 i2 ps2 as2) ->
+             do bps <- sequence (map (uncurry conversion) (zip ps1 ps2))
+                bas <- sequence (map (uncurry conversion) (zip as1 as2))
+                return $ and (bps ++ bas)
            (_, _) -> return False
 
 
 (===) :: (MonadTCM) tcm => Term -> Term -> tcm ()
 (===) x y = do b <- conversion x y
+               unless b $ liftIO $ putStrLn $ show x ++ "\n==\n" ++ show y
                (unless b $
                  ask >>= \e -> typeError $ NotConvertible e x y)

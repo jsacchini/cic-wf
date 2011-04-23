@@ -85,7 +85,7 @@ Decl
   | 'assume' Name ':' Exp
          { A.Assumption (fuseRange $1 $4) (snd $2) $4 }
   | 'data' Name Parameters ':' Exp ':=' Constructors
-         { A.Inductive (fuseRange $1 $7) (snd $2) (reverse $3) $5 $7 }
+         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) (reverse $3) $5 $7) }
 
 Parameters :: { [A.Parameter] }
 Parameters : Parameters Par            { $2 : $1 }

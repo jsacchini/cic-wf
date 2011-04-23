@@ -113,7 +113,7 @@ instance Reify Term A.Expr where
                        reifyPiBinds bs t
   reify (Bound n) = do xs <- getLocalNames
                        l <- ask
-                       when (n >= length xs) $ get >>= \st -> liftIO $ putStrLn $ "Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
+                       when (n >= length xs) $ get >>= \st -> liftIO $ putStrLn $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
                        return $ A.Var noRange (xs !! n)
   reify (Var x) = return $ A.Var noRange x
   reify (Lam bs t) = reifyLamBinds bs t
@@ -122,6 +122,10 @@ instance Reify Term A.Expr where
                         return $ mkApp e es
                           where mkApp = foldl (A.App noRange)
   reify (Ind i) = return $ A.Ind noRange i
+  reify (Constr x indId ps as) =
+    do ps' <- mapM reify ps
+       as' <- mapM reify as
+       return $ A.Constr noRange x indId ps' as'
 
 instance Reify Name A.Declaration where
   reify x =
@@ -132,6 +136,13 @@ instance Reify Name A.Declaration where
                                   return $ A.Definition noRange x (Just e1) e2
          I.Assumption t -> do e <- reify t
                               return $ A.Assumption noRange x e
+         t@(I.Inductive pars indices sort constr) ->
+           do liftIO $ putStrLn $ "data " ++ show x ++ " : " ++ show t
+              return $ A.Inductive noRange (A.InductiveDef x [] (A.Sort noRange A.Prop) [])
+           -- COMPLETE THIS CASE
+         t@(Constructor _ _ _ _ _) ->
+           do liftIO $ putStrLn $ "constructor " ++ show x ++ " : " ++ show t
+              return $ A.Assumption noRange x (A.Sort noRange A.Prop)
 
 
 -- | Free bound variables
@@ -149,6 +160,7 @@ instance IsFree Term where
   isFree k (Lam (b:bs) t) = isFree k b || isFree (k+1) (Lam bs t)
   isFree k (App f ts) = isFree k f || any (isFree k) ts
   isFree k (Ind _) = False
+  isFree k (Constr _ _ ps as) = or $ map (isFree k) (ps ++ as)
 
 instance IsFree Bind where
   isFree k (Bind _ t) = isFree k t

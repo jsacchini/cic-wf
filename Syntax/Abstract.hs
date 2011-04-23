@@ -118,19 +118,26 @@ data Declaration =
   Definition Range Name (Maybe Expr) Expr
   | Assumption Range Name Expr
   -- | Import FilePath
-  | Inductive Range IName [Parameter] Expr [Constructor]
+  | Inductive Range InductiveDef
   deriving(Show)
 
 declName :: Declaration -> Name
 declName (Definition _ x _ _) = x
 declName (Assumption _ x _) = x
-declName (Inductive _ x _ _ _) = x
+declName (Inductive _ d) = indName d
+
+data InductiveDef = InductiveDef {
+  indName   :: IName,
+  indPars   :: [Parameter],
+  indType   :: Expr,
+  indConstr :: [Constructor]
+  } deriving(Show)
 
 data Constructor = Constructor {
   constrRange :: Range,
   constrName  :: CName,
   constrType  :: Expr,
-  constrId    :: Int
+  constrId    :: Int   -- Not used now. Should be removed
   } deriving(Show)
 
 
@@ -239,7 +246,9 @@ instance Pretty Expr where
       pp n (Case c) = parensIf (n > 0) $ prettyPrint c
       pp n (Fix f) = parensIf (n > 0) $ prettyPrint f
       pp n (Ind _ x) = prettyPrint x
-      pp n (Constr _ x _ pars args) = prettyPrint x <+> hsep (map prettyPrint (pars ++ args))
+      pp n (Constr _ x _ pars args) =
+        parensIf (n > 2) $ prettyPrint x <+> hsep (map (pp lvl) (pars ++ args))
+          where lvl = if length pars + length args == 0 then 0 else 3
       pp _ e = text $ concat ["* ", show e, " *"]
 
       nestedPi :: [Bind] -> Expr -> Doc
@@ -294,11 +303,14 @@ instance Pretty Declaration where
     hsep [text "define", prettyPrint x, defEq, prettyPrint e2]
   prettyPrint (Assumption _ x e) =
     hsep [text "assume", prettyPrint x, colon, prettyPrint e]
-  prettyPrint (Inductive _ x ps e cs) =
-    sep $ indName : map (nest 2 . (bar <+>) . prettyPrint) cs
-      where indName = hsep [text "data", prettyPrint x,
-                            hsep (map prettyPrint ps), colon,
-                            prettyPrint e, defEq]
+  prettyPrint (Inductive _ indDef) = prettyPrint indDef
+
+instance Pretty InductiveDef where
+  prettyPrint (InductiveDef x ps e cs) =
+    sep $ ind : map (nest 2 . (bar <+>) . prettyPrint) cs
+      where ind = hsep [text "data", prettyPrint x,
+                        hsep (map prettyPrint ps), colon,
+                        prettyPrint e, defEq]
 
 instance Pretty Parameter where
   prettyPrint (Parameter _ np tp) =

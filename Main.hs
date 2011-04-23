@@ -59,17 +59,19 @@ main :: IO ()
 main =
   do args <- getArgs
      mapM_ runFile args
-    where runFile f = do h <- openFile f ReadMode
-                         ss <- hGetContents h
-                         case parse fileParser ss of
-                           ParseOk ts -> do putStrLn $ show $ prettyPrint ts
-                                            putStrLn "---------------------"
-                                            r <- runTCM $ typeCheckFile ts
-                                            case r of
-                                              Left err -> putStrLn $ show err
-                                              Right _ -> return ()
-                           ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
-                         hClose h
+    where runFile f =
+            do h <- openFile f ReadMode
+               ss <- hGetContents h
+               case parse fileParser ss of
+                 ParseOk ts ->
+                   do putStrLn $ show $ prettyPrint ts
+                      putStrLn "---------------------"
+                      r <- runTCM $ typeCheckFile ts
+                      case r of
+                        Left err -> putStrLn $ "Error!!!! " ++ show err
+                        Right _ -> return ()
+                 ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
+               hClose h
           parseTokens :: Parser [Token]
           parseTokens = do t <- lexToken
                            case t of
@@ -79,19 +81,20 @@ main =
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
                                liftIO $ putStrLn $ "scoped " ++ show d'
-                               (x,g) <- inferDecl d'
-                               addGlobal x g
+                               gs <- infer d'
+                               forM_ gs (uncurry addGlobal)
           typeCheckFile :: [A.Declaration] -> TCM ()
-          typeCheckFile ds = do forM_ ds typeCheckDecl
-                                liftIO $ putStrLn "========================"
-                                sig <- fmap stSignature get
-                                liftIO $ putStrLn "========================"
-                                liftIO $ putStrLn $ show sig
-                                liftIO $ putStrLn "========================"
-                                xs <- fmap stDefined get
-                                forM_ xs showG
-                                  where showG x = do d <- reify x
-                                                     liftIO $ putStrLn $ (show $  prettyPrint d) ++  "\n----\n" ++ show d ++ "\n===="
+          typeCheckFile ds =
+            do forM_ ds typeCheckDecl
+               liftIO $ putStrLn "========================"
+               sig <- fmap stSignature get
+               liftIO $ putStrLn "========================"
+               liftIO $ putStrLn $ show sig
+               liftIO $ putStrLn "========================"
+               xs <- fmap stDefined get
+               forM_ xs showG
+                 where showG x = do d <- reify x
+                                    liftIO $ putStrLn $ (show $  prettyPrint d) ++  "\n----\n" ++ show d ++ "\n===="
 
 -- main2 :: IO ()
 -- main2 =

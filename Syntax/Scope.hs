@@ -51,10 +51,7 @@ class Scope a where
 
 -- We don't need the real type of the binds for scope checking, just the names
 fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
-fakeBinds b m = local (map (flip I.Bind I.tProp) (getNames b)++) m
-
-fakeBindsIn :: (MonadTCM tcm) => [Name] -> tcm a -> tcm a
-fakeBindsIn xs = local $ (map (flip I.Bind I.tProp) xs++)
+fakeBinds b m = local (map (flip I.Bind I.tProp) (reverse (getNames b))++) m
 
 instance Scope A.Bind where
   scope (A.Bind r xs e) = fmap (A.Bind r xs) (scope e)
@@ -64,7 +61,7 @@ instance Scope A.Bind where
 instance (Scope a, HasNames a) => Scope [a] where
   scope [] = return []
   scope (x:xs) = do s <- scope x
-                    ss <- fakeBindsIn (reverse (getNames x)) $ scope xs
+                    ss <- fakeBinds x $ scope xs
                     return (s:ss)
 
 
@@ -77,19 +74,17 @@ instance Scope A.Expr where
   -- scope t@(EVar _ _) = return t
   scope (A.Pi r bs e) =
     do bs' <- scope bs
-       e' <- fakeBindsIn newBinds $ scope e
+       e' <- fakeBinds bs $ scope e
        return $ A.Pi r bs' e'
-         where newBinds = reverse $ concatMap A.bindNames bs
   scope (A.Arrow r e1 e2) =
     do e1' <- scope e1
        e2' <- fakeBinds noName $ scope e2
        return $ A.Arrow r e1' e2'
   scope (A.Lam r bs e) =
     do bs' <- scope bs
-       e' <- fakeBindsIn newBinds $ scope e
+       e' <- fakeBinds bs $ scope e
        l <- ask
        return $ A.Lam r bs' e'
-         where newBinds = reverse $ concatMap A.bindNames bs
   scope t@(A.App r e1 e2) =
     do args' <- mapM scope args
        scopeApp func args'
@@ -202,12 +197,14 @@ instance Scope A.Declaration where
     scope (A.Assumption r x t) =
       do t' <- scope t
          return $ A.Assumption r x t'
-    scope (A.Inductive r x ps e cs) =
+    scope (A.Inductive r indDef) = fmap (A.Inductive r) (scope indDef)
+
+instance Scope A.InductiveDef where
+  scope (A.InductiveDef x ps e cs) =
       do ps' <- scope ps
          e'  <- fakeBinds (reverse ps) $ scope e
          cs' <- fakeBinds (reverse ps) $ fakeBinds x $ mapM scope cs
-         return $ A.Inductive r x ps' e' cs'
-
+         return $ A.InductiveDef x ps' e' cs'
 
 instance Scope A.Parameter where
   scope (A.Parameter r np e) = fmap (A.Parameter r np) (scope e)

@@ -5,18 +5,22 @@ assume False : forall P:Type, P.
 assume True : forall P:Type, P -> P.
 
 
-{-
+
 data list (A:Type) : Type := | nil : list A -- firs constructor
                              | cons : A -> list A -> list A. -- second
+
+
 
 data nat : Type := O : nat | S : nat -> nat.
 
 data vec (A:Type) : nat -> Type := | vnil : vec A O | vcons : forall n : nat,
 A -> vec A n -> vec A (S n).
 
--}
+
 define t1 := fun (A : Type) (x y : A) ( _ z : A) (_ : A) => z.
 
 define t2 := forall A : Type, forall (x:A) (y:A), A.
 
 define t3 := fun (A : Type)(B:A->Type) (x y : A) ( _ z _ _ : A) (_ : B z) => z. -- last comment
+
+define t4 := fun A : Type0 => fun x y : A => vcons A (S O) x (vcons A O y (vnil A)).

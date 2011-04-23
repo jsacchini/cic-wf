@@ -30,7 +30,7 @@ data TypeError
     = NotConvertible TCEnv I.Term I.Term
     | NotFunction TCEnv I.Term
     | NotSort TCEnv I.Term
-    | NotArity TCEnv I.Term
+    | NotArity Range I.Term
     | NotConstructor TCEnv I.Term
     | InvalidProductRule I.Sort I.Sort
     | IdentifierNotFound Name
@@ -124,6 +124,8 @@ getGlobal x = do sig <- getSignature
                  -- liftIO $ putStrLn $ "getGlobal " ++ x ++ " " ++ show sig
                  return $ sig Map.! x
 
+-- TODO: check that the name is not already defined
+--       Should be done before typechecking a declaration
 addGlobal :: (MonadTCM tcm) => Name -> I.Global -> tcm ()
 addGlobal x g = do st <- get
                    put $ st { stSignature = Map.insert x g (stSignature st),
