@@ -126,6 +126,13 @@ instance Reify Term A.Expr where
     do ps' <- mapM reify ps
        as' <- mapM reify as
        return $ A.Constr noRange x indId ps' as'
+  reify (Fix num f args tp body) =
+    do tp'   <- reify (buildPi args tp)
+       f'    <- pickFreshName f
+       body' <- fakeBinds f' $ reify body
+       return $ A.Fix (A.FixExpr noRange num f tp' body')
+
+
 
 instance Reify Name A.Declaration where
   reify x =

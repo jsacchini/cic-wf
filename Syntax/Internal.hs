@@ -49,14 +49,15 @@ data Term
     | App Term [Term]
     -- | Meta MetaId Shift CxtSize
     | Constr Name (Name, Int) [Term] [Term]
-    -- | Fix Int Name NamedCxt Type Term
+    | Fix Int Name [Bind] Type Term
     | Ind Name
     deriving(Show)
 
 buildPi :: [Bind] -> Term -> Term
 buildPi [] t = t
 buildPi bs (Pi bs' t) = Pi (bs ++ bs') t
-buildPi bs t = Pi bs t
+buildPi bs t | null bs   = t
+             | otherwise = Pi bs t
 
 buildApp :: Term -> [Term] -> Term
 buildApp t [] = t
@@ -232,6 +233,7 @@ flatten (Lam bs t) = Lam (bs ++ bs') t'
 flatten (App t ts) = App func (args ++ ts)
                      where (func, args) = findArgs t
 flatten t@(Ind _) = t
+flatten t@(Fix _ _ _ _ _) = t
 
 findBindsPi :: Term -> ([Bind], Term)
 findBindsPi (Pi bs t) = (bs ++ bs', t')

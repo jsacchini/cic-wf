@@ -9,8 +9,7 @@ module Kernel.TypeChecking where
 #include "../undefined.h"
 import Utils.Impossible
 
--- import qualified "mtl" Control.Monad.Error as EE
-import qualified Control.Exception as E
+import Control.Exception
 import Control.Monad.Reader
 import Control.Monad.Error
 
@@ -25,6 +24,9 @@ import Kernel.Conversion
 import Kernel.TCM
 import Kernel.Whnf
 import Kernel.Inductive
+import Kernel.Fix
+import Kernel.Case
+
 
 checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term, Type)
 checkSort A.Prop = return (tProp, tType 0)
@@ -120,25 +122,8 @@ instance Infer A.Expr (Term, Type) where
               args' <- check args (foldr subst targs pars')
               return (Constr x (indName, id) pars' args',
                       buildApp (Ind indName) (pars' ++ foldr subst indices (pars' ++ args')))
-  infer e = do liftIO $ putStrLn $ "\n\n----> " ++ show e
-               error "typechecking: not implemented"
-
-
-
--- inferBind :: (MonadTCM tcm) => A.Bind -> tcm ([Bind], Sort)
--- inferBind (A.Bind r xs e) =
---   do (t, r) <- infer e
---      s <- isSort r
---      return (mkBinds xs t 0, s)
---        where mkBinds [] _ _ = []
---              mkBinds (x:xs) t k = Bind x (I.lift k 0 t) : mkBinds xs t (k + 1)
-
--- inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm ([Bind], Sort)
--- inferBinds [] = return ([], Prop)
--- inferBinds (b:bs) = do -- liftIO $ putStrLn $ "inferBinds "  ++ show (b:bs)
---                        (bs1, s1) <- inferBind b
---                        (bss1, s2) <- local (reverse bs1++) $ inferBinds bs
---                        return (bs1 ++ bss1, max s1 s2)
+  infer (A.Fix f) = infer f
+  infer (A.Case c) = infer c
 
 
 -- | Only inductive definitions return more than one global
