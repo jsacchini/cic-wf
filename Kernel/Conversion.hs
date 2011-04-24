@@ -37,6 +37,10 @@ instance Conversion Term where
     conversion t1 t2 =
       do w1 <- whnf t1
          w2 <- whnf t2
+         traceTCM_ ["\nCONVERSION CHECKING:\n",
+                    show t1, " -> ", show w1,
+                    "\n == \n",
+                    show t2, " -> ", show w2, "\n***************"]
          case (w1, w2) of
            (Var x, Var y) -> return (x == y)
            (Bound m, Bound n) -> return (m == n)
@@ -58,6 +62,6 @@ instance Conversion Term where
 
 (===) :: (MonadTCM) tcm => Term -> Term -> tcm ()
 (===) x y = do b <- conversion x y
-               unless b $ liftIO $ putStrLn $ show x ++ "\n==\n" ++ show y
+               unless b $ liftIO $ putStrLn $ "\n**ERROR IN CONVERSION**\n" ++ show x ++ "\n==\n" ++ show y
                (unless b $
                  ask >>= \e -> typeError $ NotConvertible e x y)

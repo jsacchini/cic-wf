@@ -136,6 +136,14 @@ getLocalNames :: (MonadTCM tcm) => tcm [Name]
 getLocalNames = fmap (map I.bindName) ask
 
 
+--- For debugging
+traceTCM :: (MonadTCM tcm) => String -> tcm ()
+traceTCM = liftIO . putStr
+
+traceTCM_ :: (MonadTCM tcm) => [String] -> tcm ()
+traceTCM_ = traceTCM . concat
+
+
 --- For testing
 testTCM_ :: TCM a -> IO (Either TCErr a)
 testTCM_ m = runTCM m'

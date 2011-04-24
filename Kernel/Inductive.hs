@@ -42,7 +42,7 @@ instance Infer A.InductiveDef [(Name, Global)] where
        cs         <- mapM (local (reverse pars'++) . flip check (name, pars', args, s3)) constrs
        liftIO $ putStrLn $ "\n CONSTRUCTORS " ++ show cs
        return $ (name, Inductive pars' args s3 constrNames) : fillIds cs
-         where fillIds cs = map (\(id, (x, c)) -> (x, c { constrId = id })) (zip (from 0) cs)
+         where fillIds cs = map (\(id, (x, c)) -> (x, c { constrId = id })) (zip [0..] cs)
                constrNames = map A.constrName constrs
 
 -- | Checks that a type is an arity.

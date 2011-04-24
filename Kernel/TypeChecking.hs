@@ -33,9 +33,11 @@ checkSort A.Prop = return (tProp, tType 0)
 checkSort (A.Type n) = return (tType n, tType (n + 1))
 
 isSort :: (MonadTCM tcm) => Term -> tcm Sort
-isSort (Sort s) = return s
-isSort t = do xs <- ask
-              typeError $ NotSort xs t
+isSort t = do t' <- whnf t
+              case t' of
+                Sort s -> return s
+                _      -> do xs <- ask
+                             typeError $ NotSort xs t
 
 -- We assume that in the global environment, types are normalized
 
@@ -145,7 +147,12 @@ instance Infer A.Declaration [(Name, Global)] where
 instance Check A.Expr Type Term where
   check t u = do (t', r) <- infer t
                  b <- conversion r u
-                 unless b $ liftIO $ putStrLn $ show r ++ "\n==\n" ++ show u
+                 r__ <- whnf r
+                 u__ <- whnf u
+                 unless b $ traceTCM_ ["\nCHECK TYPE CONVERSION\n",
+                                       show r, " -> ", show r__,
+                                       "\n==\n",
+                                       show u, " -> ", show u__, "\n********\n"]
                  unless b $ throwNotConvertible r u
                  return t'
 
