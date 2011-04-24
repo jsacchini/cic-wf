@@ -26,3 +26,10 @@ define t3 := fun (A : Type)(B:A->Type) (x y : A) ( _ z _ _ : A) (_ : B z) => z. 
 define t4 := fun A : Type0 => fun x y : A => vcons A (S O) x (vcons A O y (vnil A)).
 
 define t5 := fix 1 f : nat -> nat := fun x : nat => S (f x).
+
+define t6 := fun x : nat =>
+             < fun x : nat => nat >
+             case x of
+             | O => S O
+             | S y => S y
+             end.

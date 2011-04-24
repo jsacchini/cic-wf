@@ -50,14 +50,28 @@ data Term
     -- | Meta MetaId Shift CxtSize
     | Constr Name (Name, Int) [Term] [Term]
     | Fix Int Name [Bind] Type Term
+    | Case CaseTerm
     | Ind Name
     deriving(Show)
+
+data CaseTerm = CaseTerm {
+  caseArg :: Term,
+  caseNmInd :: Name,
+  caseTpRet :: Type,
+  caseBranches :: [Branch]
+  } deriving(Show)
+
+data Branch = Branch {
+  brName :: Name,
+  brConstrId :: Int,
+  brArgNames :: [Name],
+  brBody :: Term
+  } deriving(Show)
 
 buildPi :: [Bind] -> Term -> Term
 buildPi [] t = t
 buildPi bs (Pi bs' t) = Pi (bs ++ bs') t
-buildPi bs t | null bs   = t
-             | otherwise = Pi bs t
+buildPi bs t = Pi bs t
 
 buildApp :: Term -> [Term] -> Term
 buildApp t [] = t
@@ -68,6 +82,17 @@ buildLam :: [Bind] -> Term -> Term
 buildLam [] t = t
 buildLam bs (Lam bs' t) = Lam (bs ++ bs') t
 buildLam bs t = Lam bs t
+
+bound :: Int -> Int -> [Term]
+bound m n = map Bound [m..n]
+
+dom :: [Bind] -> [Term]
+dom bs = reverse $ bound 0 (length bs - 1)
+
+renameBinds :: [Bind] -> [Name] -> [Bind]
+renameBinds [] [] = []
+renameBinds (Bind _ t:bs) (x:xs)         = Bind x t : renameBinds bs xs
+renameBinds (LocalDef _ t1 t2:bs) (x:xs) = LocalDef x t1 t2 : renameBinds bs xs
 
 -- | Equality on terms is only used in the reification to terms, to group
 -- contiguous bindings with the same type
@@ -217,6 +242,7 @@ instance SubstTerm Term where
 
 
 applyTerms :: [Bind] -> Term -> [Term] -> Term
+applyTerms [] body [] = body
 applyTerms [] body args = App body args
 applyTerms binds body [] = Lam binds body
 applyTerms (Bind x t:bs) body (a:as) = applyTerms (subst a bs) (substN (length bs) a body) as

@@ -131,7 +131,22 @@ instance Reify Term A.Expr where
        f'    <- pickFreshName f
        body' <- fakeBinds f' $ reify body
        return $ A.Fix (A.FixExpr noRange num f tp' body')
+  reify (Case c) = fmap A.Case $ reify c
 
+
+instance Reify CaseTerm A.CaseExpr where
+  reify (CaseTerm arg nmInd tpRet branches) =
+    do arg' <- reify arg
+       ret' <- reify tpRet
+       branches' <- mapM reify branches
+       return $
+         A.CaseExpr noRange arg' Nothing Nothing Nothing (Just ret') branches'
+
+instance Reify Branch A.Branch where
+  reify (Branch nmConstr idConstr nmArgs body) =
+    do nmArgs' <- pickFreshNames nmArgs
+       body' <- fakeBinds nmArgs' $ reify body
+       return $ A.Branch noRange nmConstr idConstr nmArgs' body'
 
 
 instance Reify Name A.Declaration where
@@ -168,6 +183,17 @@ instance IsFree Term where
   isFree k (App f ts) = isFree k f || any (isFree k) ts
   isFree k (Ind _) = False
   isFree k (Constr _ _ ps as) = or $ map (isFree k) (ps ++ as)
+  isFree k (Fix _ _ bs tp body) = isFree k (buildPi bs tp) || isFree (k+1) body
+  isFree k (Case c) = isFree k c
+
+instance IsFree CaseTerm where
+  isFree k (CaseTerm arg nmInd tpRet branches) =
+    isFree k arg || isFree k tpRet || or (map (isFree k) branches)
+
+instance IsFree Branch where
+  isFree k (Branch nmConstr _ nmArgs body) =
+    isFree (k + length nmArgs) body
+
 
 instance IsFree Bind where
   isFree k (Bind _ t) = isFree k t
