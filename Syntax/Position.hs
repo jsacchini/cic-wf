@@ -1,7 +1,6 @@
-module Syntax.Position where
+-- | Positions and ranges are used to print information about where errors occur
 
-import Data.Function
-import System.FilePath
+module Syntax.Position where
 
 data Position = Pn { posFile :: FilePath,
                      posLine :: Int,
@@ -74,14 +73,14 @@ noRangeFile f = Range (noPosFile f) (noPosFile f)
 
 movePos :: Position -> Char -> Position
 movePos (Pn f l c) '\t' = Pn f l (((c+7) `div` 8)*8+1)
-movePos (Pn f l c) '\n' = Pn f (l+1) 1
+movePos (Pn f l _) '\n' = Pn f (l+1) 1
 movePos (Pn f l c) _    = Pn f l (c+1)
 
 advancePos :: Position -> Int -> Position
 advancePos (Pn f l c) n = Pn f l (c + n)
 
 mkRangeLen :: Position -> Int -> Range
-mkRangeLen pos@(Pn f l c) n = Range pos (advancePos pos n)
+mkRangeLen pos n = Range pos (advancePos pos n)
 
 -- Combines two ranges
 -- Assumes that the first range is to the left of the second

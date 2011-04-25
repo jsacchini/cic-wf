@@ -1,16 +1,9 @@
-{-# LANGUAGE PackageImports, TypeSynonymInstances, DeriveDataTypeable,
-  FlexibleInstances, CPP
- #-}
-
 module Kernel.Conversion where
 
 import Control.Monad
-import "mtl" Control.Monad.Reader
-import "mtl" Control.Monad.State
-import Control.Exception
+import Control.Monad.Reader
 
-import Data.Typeable
-
+import Syntax.Common
 import Syntax.Internal
 import Kernel.Whnf
 import Kernel.TCM
@@ -53,10 +46,10 @@ instance Conversion Term where
            --                                                 bas <- sequence (map (uncurry conversion) (zip a1 a2))
            --                                                 return $ and (bps ++ bas)
            (Ind x, Ind y) -> return (x == y)
-           (Constr x1 i1 ps1 as1, Constr x2 i2 ps2 as2) ->
-             do bps <- sequence (map (uncurry conversion) (zip ps1 ps2))
-                bas <- sequence (map (uncurry conversion) (zip as1 as2))
-                return $ and (bps ++ bas)
+           (Constr x1 _ ps1 as1, Constr x2 _ ps2 as2) ->
+             do bps <- mapM (uncurry conversion) (zip ps1 ps2)
+                bas <- mapM (uncurry conversion) (zip as1 as2)
+                return $ x1 == x2 && and (bps ++ bas)
            (_, _) -> return False
 
 

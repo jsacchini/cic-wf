@@ -1,35 +1,14 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, GADTs, MultiParamTypeClasses,
-  FlexibleContexts, FunctionalDependencies, UndecidableInstances
- #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP, FlexibleInstances
+  #-}
 
--- Internal representation of Terms
+-- | Internal representation of Terms
 
 module Syntax.Internal where
 
 #include "../undefined.h"
 import Utils.Impossible
 
-import Data.Function
-import Data.Foldable hiding (notElem, concat, foldr, all)
-import Data.Monoid
-
 import Syntax.Common
-import Syntax.Position
-import qualified Syntax.Abstract as A
-
-import Utils.Misc
-
-data Sort
-    = Type Int
-    | Prop
-    deriving(Eq, Show)
-
-instance Ord Sort where
-  compare Prop Prop = EQ
-  compare Prop (Type _) = LT
-  compare (Type _) Prop = GT
-  compare (Type m) (Type n) = compare m n
 
 tType :: Int -> Term
 tType = Sort . Type
@@ -89,10 +68,15 @@ bound m n = map Bound [m..n]
 dom :: [Bind] -> [Term]
 dom bs = reverse $ bound 0 (length bs - 1)
 
+-- | Changes the names of binds (used to print names similar to the ones given
+--   by the user.
+--
+--   Expects lists of the same size.
 renameBinds :: [Bind] -> [Name] -> [Bind]
 renameBinds [] [] = []
 renameBinds (Bind _ t:bs) (x:xs)         = Bind x t : renameBinds bs xs
 renameBinds (LocalDef _ t1 t2:bs) (x:xs) = LocalDef x t1 t2 : renameBinds bs xs
+renameBinds _ _ = __IMPOSSIBLE__
 
 -- | Equality on terms is only used in the reification to terms, to group
 -- contiguous bindings with the same type
@@ -140,13 +124,12 @@ bind (Bind _ t) = t
 bind (LocalDef _ _ t) = t
 
 bindNoName :: Type -> Bind
-bindNoName t = Bind (Id "") t
+bindNoName = Bind $ Id ""
 
 instance Eq Bind where
   (Bind _ t1) == (Bind _ t2) = t1 == t2
-  -- (NoBind t1) == (NoBind t2) = t1 == t2
   (LocalDef _ t1 t2) == (LocalDef _ t3 t4) = t1 == t3 && t2 == t4
-
+  _ == _ = False
 
 class HasType a where
   getType :: a -> Type
@@ -183,24 +166,23 @@ instance HasType Global where
 class Lift a where
   lift :: Int -> Int -> a -> a
 
-  lift _ _ = error "Default impl of Lift" -- REMOVE THIS
-
 instance Lift Bind where
   lift k n (Bind x t) = Bind x (lift k n t)
   lift k n (LocalDef x t1 t2) = LocalDef x (lift k n t1) (lift k n t2)
 
 instance Lift Term where
-  lift k n t@(Sort _) = t
+  lift _ _ t@(Sort _) = t
   lift k n (Pi bs t) = Pi (map (lift k n) bs) (lift k (n + 1) t)
   lift k n t@(Bound m) = if m < n then t else Bound (m + k)
-  lift k n t@(Var _) = t
+  lift _ _ t@(Var _) = t
   lift k n (Lam b u) = Lam (fmap (lift k n) b) (lift k (n + 1) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
-  lift k n t@(Ind _) = t
-  lift k n t@(Constr x indId ps as) = Constr x indId ps' as'
+  lift _ _ t@(Ind _) = t
+  lift k n (Constr x indId ps as) = Constr x indId ps' as'
                                       where ps' = map (lift k n) ps
                                             as' = map (lift k n) as
-  -- lift k n t@(Meta i m s) = if m < n then t else Meta i (m+k) s
+  lift _ _ _ = error "Complete lift"
+-- lift k n t@(Meta i m s) = if m < n then t else Meta i (m+k) s
   -- lift k n (Constr c x ps as) = Constr c x (map (lift k n) ps) (map (lift k n) as)
   -- lift k n (Fix m x bs t e) = Fix m x (liftCxt (flip lift n) k bs) (lift k (n+cxtSize bs) t) (lift k (n+1) e)
 
@@ -221,21 +203,21 @@ instance SubstTerm [Bind] where
     LocalDef x (substN n r t1) (substN n r t2) : substN (n + 1) r bs
 
 instance SubstTerm Term where
-  substN i r t@(Sort _) = t
+  substN _ _ t@(Sort _) = t
   substN i r (Pi bs t) = Pi (substN i r bs) (substN (i + len) r t)
                          where len = length bs
   substN i r t@(Bound n) | n < i = t
                          | n == i = lift i 0 r
                          | otherwise = Bound (n - 1)
-  substN i r t@(Var _) = t
+  substN _ _ t@(Var _) = t
   substN i r (Lam bs t) = Lam (substN i r bs) (substN (i + len) r t)
                           where len = length bs
   substN i r (App t ts) = App (substN i r t) (substN i r ts)
-  substN i r t@(Ind _) = t
+  substN _ _ t@(Ind _) = t
   substN i r (Constr x ind ps as) = Constr x ind ps' as'
                                     where ps' = map (substN i r) ps
                                           as' = map (substN i r) as
-
+  substN _ _ _ = error "Complete substN"
       -- substN i r t@(Meta _ _ _) = t
       -- substN i r (Constr c x ps as) = Constr c x (map (substN i r) ps) (map (substN i r) as)
       -- substN i r (Fix n x bs t e) = Fix n x (substCxt_ i r bs) (substN (i+cxtSize bs) r t) (substN (i+1) r e)
@@ -245,21 +227,18 @@ applyTerms :: [Bind] -> Term -> [Term] -> Term
 applyTerms [] body [] = body
 applyTerms [] body args = App body args
 applyTerms binds body [] = Lam binds body
-applyTerms (Bind x t:bs) body (a:as) = applyTerms (subst a bs) (substN (length bs) a body) as
+applyTerms (Bind _ _:bs) body (a:as) = applyTerms (subst a bs) (substN (length bs) a body) as
+applyTerms (LocalDef _ _ _:_) _ _ = __IMPOSSIBLE__
 
 
 flatten :: Term -> Term
-flatten t@(Sort _) = t
 flatten (Pi bs t) = Pi (bs ++ bs') t'
                     where (bs', t') = findBindsPi t
-flatten t@(Bound _) = t
-flatten t@(Var _) = t
 flatten (Lam bs t) = Lam (bs ++ bs') t'
                      where (bs', t') = findBindsLam t
 flatten (App t ts) = App func (args ++ ts)
                      where (func, args) = findArgs t
-flatten t@(Ind _) = t
-flatten t@(Fix _ _ _ _ _) = t
+flatten t = t
 
 findBindsPi :: Term -> ([Bind], Term)
 findBindsPi (Pi bs t) = (bs ++ bs', t')

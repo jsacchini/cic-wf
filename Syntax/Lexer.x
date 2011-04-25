@@ -69,8 +69,8 @@ lexToken =
   do s <- get
      case alexScan s 0 of  -- 0 is the state of the lexer. Not used now
        AlexEOF -> return TokEOF
-       AlexError inp' -> parseErrorAt (lexPos s) ("Lexical error") -- rest of input ingnored at the moment
-       AlexSkip inp' len -> put inp' >> lexToken
+       AlexError _ -> parseErrorAt (lexPos s) ("Lexical error") -- rest of input ingnored at the moment
+       AlexSkip inp' _ -> put inp' >> lexToken
        AlexToken inp' len act ->
          do put inp'
             act (lexPos s) (take len (lexInput s))
@@ -89,7 +89,7 @@ skipOneLineComment =
           skip_ inp =
             case alexGetChar inp of
               Just ('\n', inp') -> put inp'
-              Just (c   , inp') -> skip_ inp'
+              Just (_   , inp') -> skip_ inp'
               Nothing           -> put inp
 
 skipNestedComment :: Parser Token
@@ -112,7 +112,7 @@ skipNestedComment =
                                    lexPrevChar = '}' })
       skip_ n inp =
         case alexGetChar inp of
-          Just (c   , inp') -> skip_ n inp'
+          Just (_   , inp') -> skip_ n inp'
           Nothing           -> fail "Open nested comment"
 
 }

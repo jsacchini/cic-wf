@@ -1,5 +1,4 @@
-{-# LANGUAGE MultiParamTypeClasses, PackageImports, FlexibleInstances,
-  UndecidableInstances
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, UndecidableInstances
   #-}
 
 {-| A common interface for monads which allow some kind of fresh name

@@ -1,24 +1,12 @@
-{-# LANGUAGE PackageImports, FlexibleInstances, TypeSynonymInstances,
-  GeneralizedNewtypeDeriving, FlexibleContexts, FunctionalDependencies,
-  MultiParamTypeClasses,
-  CPP
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses
   #-}
 
 module Kernel.Case where
 
-#include "../undefined.h"
-import Utils.Impossible
-
-import Control.Exception
 import Control.Monad.Reader
-import Control.Monad.Error
 
-import Data.Function
-
-import Syntax.Internal hiding (lift)
-import Syntax.Internal as I
 import Syntax.Common
-import Syntax.Position
+import Syntax.Internal
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
@@ -27,11 +15,10 @@ import {-# SOURCE #-} Kernel.TypeChecking
 
 
 instance Infer A.CaseExpr (Term, Type) where
-  infer (A.CaseExpr r arg Nothing Nothing Nothing (Just ret) branches) =
+  infer (A.CaseExpr _ arg Nothing Nothing Nothing (Just ret) branches) =
     do (arg', tpArg) <- infer arg
-       tpArg' <- whnf tpArg
        (nmInd, (pars, inds)) <- getInductiveType tpArg
-       Inductive tpPars tpInds sortInd _ <- getGlobal nmInd
+       Inductive _ tpInds _ _ <- getGlobal nmInd
        let tpArgGen = buildApp (Ind nmInd) (pars ++ dom tpInds)
        (ret', tpRet) <- infer ret
        checkReturnType tpRet (tpInds ++ [Bind (Id "x") tpArgGen])
@@ -56,7 +43,7 @@ instance Infer A.CaseExpr (Term, Type) where
                                  _ <- isSort u
                                  return ()
                   _        -> error "case 2"
-
+  infer _ = error "To be implemented (infer of Case)"
 
 -- | 'checkBranches' @nmInd tpRet pars branches@ typechecks @branches@, where
 --
@@ -70,11 +57,11 @@ instance Infer A.CaseExpr (Term, Type) where
 --   ensured by the scope checker).
 checkBranches :: (MonadTCM tcm) =>
                  Name -> Type -> [Term] -> [A.Branch] -> tcm [Branch]
-checkBranches nmInd tpRet pars bs = check_ bs
+checkBranches nmInd tpRet pars = check_
   where
     check_ [] = return []
-    check_ (A.Branch r nmConstr idConstr nmArgs body : bs) =
-      do (Constructor _ _ tpPars tpArgs inds) <- getGlobal nmConstr
+    check_ (A.Branch _ nmConstr idConstr nmArgs body : bs) =
+      do (Constructor _ _ _ tpArgs inds) <- getGlobal nmConstr
          -- type of branch = Π Δ_i *. P us_i * (C ps dom(Δ_i))
          let tpArgs' = renameBinds (foldr subst tpArgs pars) nmArgs
              inds'   = foldr subst inds pars

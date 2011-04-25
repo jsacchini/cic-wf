@@ -1,5 +1,5 @@
-{-# LANGUAGE PackageImports, UndecidableInstances, MultiParamTypeClasses,
-  FunctionalDependencies, FlexibleInstances, GeneralizedNewtypeDeriving
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances,
+    UndecidableInstances, GeneralizedNewtypeDeriving
   #-}
 
 module Utils.MonadUndo (
@@ -9,9 +9,8 @@ module Utils.MonadUndo (
         module Control.Monad.State
     ) where
 import Prelude hiding (catch)
-import "mtl" Control.Monad.Reader
-import "mtl" Control.Monad.State
-import "mtl" Control.Monad.Identity
+import Control.Monad.Reader
+import Control.Monad.State
 
 import System.Console.Haskeline
 
@@ -47,23 +46,24 @@ instance (Monad m) => MonadState s (UndoT s m) where
             return (current ur)
     put x = UndoT $ do
               ur <- get
-              put (History { current = x, undos = current ur : undos ur,
-                             redos = [] })
+              put History { current = x, undos = current ur : undos ur,
+                            redos = [] }
 
 instance (Monad m) => MonadUndo s (UndoT s m) where
     undo = UndoT $ do
         ur <- get
         case undos ur of
             []     -> return False
-            (u:us) -> do put (History { current = u, undos = us,
-                                        redos = current ur : redos ur })
+            (u:us) -> do put History { current = u, undos = us,
+                                       redos = current ur : redos ur }
                          return True
     redo = UndoT $ do
         ur <- get
         case redos ur of
             []     -> return False
-            (r:rs) -> do put (History { current = r, undos = current ur : undos ur,
-                                        redos = rs })
+            (r:rs) -> do put History { current = r,
+                                       undos = current ur : undos ur,
+                                       redos = rs }
                          return True
     history = UndoT get
     checkpoint = UndoT $ do
@@ -72,14 +72,16 @@ instance (Monad m) => MonadUndo s (UndoT s m) where
     noUndo (UndoT x) = UndoT $ do old <- get
                                   a <- x
                                   new <- get
-                                  put (History { current = current new, undos = undos old,
-                                                 redos = [] })
+                                  put History { current = current new,
+                                                undos = undos old,
+                                                redos = [] }
                                   return a
     oneStep (UndoT x) = UndoT $ do old <- get
                                    a <- x
                                    new <- get
-                                   put (History { current = current new, undos = current old : undos old,
-                                                  redos = [] })
+                                   put History { current = current new,
+                                                 undos = current old : undos old,
+                                                 redos = [] }
                                    return a
 
 evalUndoT :: (Monad m) => UndoT s m a -> s -> m a

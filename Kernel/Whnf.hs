@@ -1,5 +1,5 @@
-{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances, TypeSynonymInstances,
-  CPP #-}
+{-# LANGUAGE CPP
+  #-}
 
 module Kernel.Whnf where
 
@@ -15,7 +15,7 @@ class Whnf a where
   whnf :: (MonadTCM tcm) => a -> tcm a
 
 instance Whnf Term where
-  whnf t@(App f ts) =
+  whnf (App f ts) =
     do w <- whnf f
        case w of
          Lam bs u -> whnf $ applyTerms bs u ts
@@ -66,17 +66,18 @@ instance NormalForm Term where
                             case u of
                               Definition _ t' -> normalForm  t'
                               Assumption _    -> return t
+                              _               -> __IMPOSSIBLE__
   normalForm (Lam bs t) = do bs' <- mapM normalForm bs
                              t' <- normalForm t
                              return $ Lam bs' t'
   normalForm (App t1 ts) = do t1' <- normalForm t1
                               case t1' of
-                                Lam bs u -> normalForm $ applyTerms bs u ts
+                                Lam bs u  -> normalForm $ applyTerms bs u ts
                                 App u1 us -> do ts' <- mapM normalForm ts
                                                 return $ App u1 (us ++ ts')
-                                Bound _ -> do ts' <- mapM normalForm ts
-                                              return $ App t1' ts'
-                                Var _  -> do ts' <- mapM normalForm ts
-                                             return $ App t1' ts'
-                                otherwise -> __IMPOSSIBLE__
-
+                                Bound _   -> do ts' <- mapM normalForm ts
+                                                return $ App t1' ts'
+                                Var _     -> do ts' <- mapM normalForm ts
+                                                return $ App t1' ts'
+                                _         -> __IMPOSSIBLE__
+  normalForm _ = error "Complete normalForm"

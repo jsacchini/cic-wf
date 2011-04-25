@@ -1,3 +1,5 @@
+-- | Tokens returned by the lexer.
+
 module Syntax.Tokens where
 
 import Syntax.Position
@@ -39,45 +41,47 @@ symbol p s =
   case lookup s symbolList of
     Just c  -> return $ TokSymbol c p
     Nothing -> error "Lexer error: symbol not found"
-  where symbolList = [("(" , SymbLeftParen),
-                      (")" , SymbRightParen),
-                      ("->", SymbArrow),
-                      ("=>", SymbImplies),
-                      ("," , SymbComma),
-                      (":=", SymbColonEq),
-                      ("." , SymbDot),
-                      (":" , SymbColon),
-                      ("::", SymbDoubleColon),
-                      ("|" , SymbBar),
-                      ("+" , SymbPos),
-                      ("-" , SymbNeg),
-                      ("++", SymbSPos),
-                      ("@" , SymbNeut),
-                      ("<" , SymbLAngle),
-                      (">" , SymbRAngle),
-                      ("[" , SymbLBracket),
-                      ("]" , SymbRBracket)]
+  where symbolList =
+          [("(" , SymbLeftParen),
+           (")" , SymbRightParen),
+           ("->", SymbArrow),
+           ("=>", SymbImplies),
+           ("," , SymbComma),
+           (":=", SymbColonEq),
+           ("." , SymbDot),
+           (":" , SymbColon),
+           ("::", SymbDoubleColon),
+           ("|" , SymbBar),
+           ("+" , SymbPos),
+           ("-" , SymbNeg),
+           ("++", SymbSPos),
+           ("@" , SymbNeut),
+           ("<" , SymbLAngle),
+           (">" , SymbRAngle),
+           ("[" , SymbLBracket),
+           ("]" , SymbRBracket)]
 
 ident :: Position -> String -> Parser Token
-ident p s =
+ident pos s =
   case lookup s identList of
-    Just c  -> return $ c p
-    Nothing -> return $ TokIdent (p,s)
-  where identList = [("forall", TokKeyword KwForall),
-                     ("fun"   , TokKeyword KwFun),
-                     ("Type"  , \p -> TokType (p,0)), -- with no number
-                     ("Prop"  , TokKeyword KwProp),
-                     ("define", TokKeyword KwDefine),
-                     ("let"   , TokKeyword KwLet),
-                     ("import", TokKeyword KwImport),
-                     ("assume", TokKeyword KwAssume),
-                     ("case"  , TokKeyword KwCase),
-                     ("as"    , TokKeyword KwAs),
-                     ("in"    , TokKeyword KwIn),
-                     ("return", TokKeyword KwReturn),
-                     ("with"  , TokKeyword KwWith),
-                     ("data"  , TokKeyword KwData),
-                     ("fix"   , TokKeyword KwFix),
-                     ("where" , TokKeyword KwWhere),
-                     ("of"    , TokKeyword KwOf),
-                     ("end"   , TokKeyword KwEnd)]
+    Just c  -> return $ c pos
+    Nothing -> return $ TokIdent (pos,s)
+  where identList =
+          [("forall", TokKeyword KwForall),
+           ("fun"   , TokKeyword KwFun),
+           ("Type"  , flip (curry TokType) 0), -- if Type has no number
+           ("Prop"  , TokKeyword KwProp),
+           ("define", TokKeyword KwDefine),
+           ("let"   , TokKeyword KwLet),
+           ("import", TokKeyword KwImport),
+           ("assume", TokKeyword KwAssume),
+           ("case"  , TokKeyword KwCase),
+           ("as"    , TokKeyword KwAs),
+           ("in"    , TokKeyword KwIn),
+           ("return", TokKeyword KwReturn),
+           ("with"  , TokKeyword KwWith),
+           ("data"  , TokKeyword KwData),
+           ("fix"   , TokKeyword KwFix),
+           ("where" , TokKeyword KwWhere),
+           ("of"    , TokKeyword KwOf),
+           ("end"   , TokKeyword KwEnd)]

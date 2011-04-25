@@ -146,13 +146,13 @@ Exps1 : Exp1           { [$1] }
 Exp1 :: { A.Expr }
 Exp1 : '(' Exp ')'   { $2 }
      | Sort          { $1 }
-     | Name          { A.Var (mkRangeLen (fst $1) (length (unName (snd $1)))) (snd $1) }
+     | Name          { A.Ident (mkRangeLen (fst $1) (length (unName (snd $1)))) (snd $1) }
 
 -- This does not look elegant
 Sort :: { A.Expr }
-Sort : 'prop'  { A.Sort (mkRangeLen $1 4) A.Prop }
+Sort : 'prop'  { A.Sort (mkRangeLen $1 4) Prop }
      | typeN   { let (pos, lvl) = $1
-                 in  A.Sort (mkRangeLen pos (4 + length (show lvl))) (A.Type lvl) }
+                 in  A.Sort (mkRangeLen pos (4 + length (show lvl))) (Type lvl) }
 
 
 MaybeExp :: { Maybe A.Expr }

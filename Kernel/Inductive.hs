@@ -1,16 +1,9 @@
-{-# LANGUAGE CPP, PackageImports, FlexibleInstances, MultiParamTypeClasses
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses
   #-}
 
 module Kernel.Inductive where
 
-#include "../undefined.h"
-import Utils.Impossible
-
-import Control.Exception
 import Control.Monad.Reader
-import Control.Monad.Error
-
-import Data.Function
 
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
@@ -42,52 +35,52 @@ instance Infer A.InductiveDef [(Name, Global)] where
        cs         <- mapM (local (reverse pars'++) . flip check (name, pars', args, s3)) constrs
        liftIO $ putStrLn $ "\n CONSTRUCTORS " ++ show cs
        return $ (name, Inductive pars' args s3 constrNames) : fillIds cs
-         where fillIds cs = map (\(id, (x, c)) -> (x, c { constrId = id })) (zip [0..] cs)
+         where fillIds cs = map (\(idConstr, (x, c)) -> (x, c { constrId = idConstr })) (zip [0..] cs)
                constrNames = map A.constrName constrs
 
 -- | Checks that a type is an arity.
 --   Code is ugly
 isArity :: (MonadTCM tcm) => Range -> Type -> tcm ([Bind], Sort)
-isArity rg t =
+isArity _ t =
   do (bs1, t1) <- unfoldPi t
      case t1 of
        Sort s -> return (bs1, s)
-       t1'    -> error "Not arity. replace by error in TCErr"
+       _      -> error "Not arity. replace by error in TCErr"
 
 
 instance Infer A.Parameter ([I.Bind], Sort) where
-  infer (A.Parameter r names tp) =
+  infer (A.Parameter _ names tp) =
     do (tp', s) <- infer tp
        s' <- isSort s
        return (mkBindsSameType (map fst names) tp', s')
 
 
 instance Check A.Constructor (Name, [Bind], [Bind], Sort) (Name, Global) where
-  check (A.Constructor r name tp _)
-        (indName, indPars, indIndices, indSort) =
+  check (A.Constructor _ name tp _)
+        (nmInd, parsInd, indicesInd, sortInd) =
     do (tp', s) <- local (indBind:) $  infer tp
        s' <- isSort s
-       mUnless (conversion indSort s') $ error "Error in constructor. Make up value for TCErr"
+       unlessM (conversion sortInd s') $ error "Error in constructor. Make up value for TCErr"
        liftIO $ putStrLn $ "Constr checking: " ++ show tp ++ " --> " ++ show tp'
-       (args, indices) <- local (indBind:) $ isConstrType indName numPars (subst (Ind indName) tp')
-       return (name, Constructor indName 0 indPars args indices)
+       (args, indices) <- local (indBind:) $ isConstrType nmInd numPars (subst (Ind nmInd) tp')
+       return (name, Constructor nmInd 0 parsInd args indices)
                      -- id is filled elsewhere
-      where numPars = length indPars
+      where numPars = length parsInd
             indType
-              | length indPars + length indIndices == 0 = Sort indSort
-              | otherwise = Pi (indPars ++ indIndices) (Sort indSort)
-            indBind = Bind indName indType
+              | length parsInd + length indicesInd == 0 = Sort sortInd
+              | otherwise = Pi (parsInd ++ indicesInd) (Sort sortInd)
+            indBind = Bind nmInd indType
 
 -- TODO: check that inductive type are applied to the parameters in order
 --       check polarities of arguments and strict positivity of the inductive
 --       type
 isConstrType :: (MonadTCM tcm) => Name -> Int -> Type -> tcm ([Bind], [Term])
-isConstrType indName numPars tp =
+isConstrType nmInd numPars tp =
   do (bs1, tp') <- unfoldPi tp
      tp1 <- whnf tp'
      case tp1 of
-       App (Ind i) args -> do when (i /= indName) $ error "Not constructor 1"
+       App (Ind i) args -> do when (i /= nmInd) $ error "Not constructor 1"
                               return (bs1, drop numPars args)
-       Ind i            -> do when (i /= indName) $ error "Not constructor 1'"
+       Ind i            -> do when (i /= nmInd) $ error "Not constructor 1'"
                               return (bs1, [])
        t'               -> error $ "Not constructor 2. Make up value in TCErr " ++ show t'

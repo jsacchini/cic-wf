@@ -1,6 +1,4 @@
-{-# LANGUAGE PackageImports, FlexibleInstances, TypeSynonymInstances,
-  GeneralizedNewtypeDeriving, FlexibleContexts, MultiParamTypeClasses,
-  DeriveDataTypeable, RankNTypes, FunctionalDependencies
+{-# LANGUAGE FlexibleContexts, TypeSynonymInstances, DeriveDataTypeable
   #-}
 
 module Kernel.TCM where
@@ -8,17 +6,14 @@ module Kernel.TCM where
 import Prelude hiding (catch)
 import Control.Exception
 
-
-import Data.List
 import Data.Typeable
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Control.Applicative
-import "mtl" Control.Monad.Reader
+import Control.Monad.Reader
 
-import qualified Syntax.Abstract as A
 import qualified Syntax.Internal as I
 import Syntax.Common
 import Syntax.Position
@@ -32,7 +27,7 @@ data TypeError
     | NotSort TCEnv I.Term
     | NotArity Range I.Term
     | NotConstructor TCEnv I.Term
-    | InvalidProductRule I.Sort I.Sort
+    | InvalidProductRule Sort Sort
     | IdentifierNotFound Name
     | ConstantError String
     -- Scope checking
@@ -43,6 +38,7 @@ data TypeError
     | ConstructorNotApplied Range Name
     | PatternNotConstructor Name
     | FixRecursiveArgumentNotPositive Range
+    | AlreadyDefined Name
     deriving(Show, Typeable)
 
 -- instance Show TypeError where
@@ -119,9 +115,15 @@ lookupGlobal :: (MonadTCM tcm) => Name -> tcm (Maybe I.Global)
 lookupGlobal x = do sig <- getSignature
                     return $ Map.lookup x sig
 
+isGlobal :: (MonadTCM tcm) => Name -> tcm Bool
+isGlobal x = fmap (Map.member x) getSignature
+
+checkIfDefined :: (MonadTCM tcm) => Name -> tcm ()
+checkIfDefined x = isGlobal x >>= flip when (throw (AlreadyDefined x))
+
+
 getGlobal :: (MonadTCM tcm) => Name -> tcm I.Global
 getGlobal x = do sig <- getSignature
-                 -- liftIO $ putStrLn $ "getGlobal " ++ x ++ " " ++ show sig
                  return $ sig Map.! x
 
 -- TODO: check that the name is not already defined
@@ -134,6 +136,12 @@ addGlobal x g = do st <- get
 
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
 getLocalNames = fmap (map I.bindName) ask
+
+-- We don't need the real type of the binds for scope checking, just the names
+-- Maybe should be moved to another place
+fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
+fakeBinds b = local (map (flip I.Bind I.tProp) (reverse (getNames b))++)
+
 
 
 --- For debugging
@@ -152,11 +160,13 @@ testTCM_ m = runTCM m'
                 addGlobal (Id "S")   natS
                 m
 
+natInd :: I.Global
 natInd =
   I.Inductive { I.indPars    = [],
                 I.indIndices = [],
-                I.indSort    = I.Type 0,
+                I.indSort    = Type 0,
                 I.indConstr  = [Id "O", Id "S"] }
+natO :: I.Global
 natO =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 0,
@@ -164,6 +174,7 @@ natO =
                   I.constrArgs    = [],
                   I.constrIndices = [] }
 
+natS :: I.Global
 natS =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 1,

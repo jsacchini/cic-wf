@@ -1,3 +1,5 @@
+-- | Misc functions.
+
 module Utils.Misc where
 
 import Control.Monad
@@ -16,11 +18,13 @@ mAnd x y = do bx <- x
               by <- y
               return $ bx && by
 
-mWhen :: (Monad m) => m Bool -> m () -> m ()
-mWhen c n = do b <- c
+
+-- This two functions could be eliminated
+whenM :: (Monad m) => m Bool -> m () -> m ()
+whenM c n = do b <- c
                when b n
-mUnless :: (Monad m) => m Bool -> m () -> m ()
-mUnless c n = do b <- c
+unlessM :: (Monad m) => m Bool -> m () -> m ()
+unlessM c n = do b <- c
                  unless b n
 
 foldInt :: (Int -> a -> b -> b) -> Int -> [a] -> b -> b
@@ -28,7 +32,7 @@ foldInt _ _ [] x = x
 foldInt f n (t:ts) x = foldInt f n ts (f n t x)
 
 foldrAcc :: (b -> a -> c -> c) -> (b -> a -> b) -> b -> c -> [a] -> c
-foldrAcc f g acc r [] = r
+foldrAcc _ _ _   r [] = r
 foldrAcc f g acc r (x:xs) = f acc x (foldrAcc f g (g acc x) r xs)
 
 -- Replaced by [n..]

@@ -1,14 +1,14 @@
-{-# LANGUAGE FunctionalDependencies, MultiParamTypeClasses, FlexibleContexts,
-    FlexibleInstances, TypeSynonymInstances
+{-# LANGUAGE FunctionalDependencies, MultiParamTypeClasses,
+    TypeSynonymInstances, FlexibleInstances, FlexibleContexts
   #-}
 
 module Kernel.TypeChecking where
 
 import qualified Syntax.Abstract as A
+import Syntax.Common
 import Syntax.Internal
 
 import Kernel.TCM
-import Kernel.Conversion
 
 class Infer a b | a -> b where
   infer :: (MonadTCM tcm) => a -> tcm b

@@ -1,13 +1,10 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, PackageImports,
-  FlexibleInstances, UndecidableInstances #-}
-
--- | Not very interesting now...
+-- | Some common datatypes that are used by both "Syntax.Abstract" and
+--   "Syntax.Internal"
 
 module Syntax.Common where
 
 import Text.PrettyPrint
 
-import Syntax.Position
 import Utils.Pretty
 
 
@@ -58,3 +55,20 @@ instance Show Polarity where
 
 instance Pretty Polarity where
   prettyPrint = text . show
+
+-- | Sorts
+
+data Sort
+    = Type Int
+    | Prop
+    deriving(Eq)
+
+instance Show Sort where
+  show Prop = "Prop"
+  show (Type n) = "Type" ++ show n
+
+instance Ord Sort where
+  compare Prop Prop = EQ
+  compare Prop (Type _) = LT
+  compare (Type _) Prop = GT
+  compare (Type m) (Type n) = compare m n

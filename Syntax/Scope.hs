@@ -1,37 +1,30 @@
-{-# LANGUAGE PackageImports, FlexibleContexts, MultiParamTypeClasses,
-  FlexibleInstances, UndecidableInstances, DeriveDataTypeable,
-  TypeSynonymInstances
- #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP
+  #-}
 
--- | Scope checking of Declaration and Expr
+-- | Scope checking of Declaration and Expr.
+--
 -- It replaces
 -- * Var x           --> Bound n  for bound variables
 -- * Var i           --> Ind i    for inductive types
 -- * App (Var c ...) --> Constr c j ...   for constructors, checking they are
 --                                        fully applied
+--
+-- We also check that names of global declarations are not defined
 
-
-module Syntax.Scope -- (scope,
-                    --  ScopeError(..),
-                    --  ScopeMonad,
-                    --  Scope)
-       where
+module Syntax.Scope(scope) where
 
 #include "../undefined.h"
 import Utils.Impossible
 
-import "mtl" Control.Monad.Reader
+import Control.Monad.Reader
 import Control.Exception
 
 import Data.List
-import Data.Typeable
 
 import qualified Syntax.Abstract as A
 import qualified Syntax.Internal as I
 import Syntax.Common
 import Syntax.Position
-import Utils.Misc
 
 import Kernel.TCM
 
@@ -49,13 +42,8 @@ constrNotApplied r x = typeError $ ConstructorNotApplied r x
 class Scope a where
   scope :: MonadTCM m => a -> m a
 
--- We don't need the real type of the binds for scope checking, just the names
-fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
-fakeBinds b m = local (map (flip I.Bind I.tProp) (reverse (getNames b))++) m
-
 instance Scope A.Bind where
   scope (A.Bind r xs e) = fmap (A.Bind r xs) (scope e)
-  -- scope (A.NoBind e) = fmap A.NoBind (scope e)
 
 
 instance (Scope a, HasNames a) => Scope [a] where
@@ -83,21 +71,20 @@ instance Scope A.Expr where
   scope (A.Lam r bs e) =
     do bs' <- scope bs
        e' <- fakeBinds bs $ scope e
-       l <- ask
        return $ A.Lam r bs' e'
-  scope t@(A.App r e1 e2) =
+  scope t@(A.App _ _ _) =
     do args' <- mapM scope args
        scopeApp func args'
       where
         (func, args) = A.destroyApp t
-  scope t@(A.Var r x) =
+  scope t@(A.Ident r x) =
     do xs <- getLocalNames
        case findIndex (==x) xs of
          Just n -> return $ A.Bound r x n
          Nothing ->
            do g <- lookupGlobal x
               case g of
-                Just i@(I.Inductive {}) -> return $ A.Ind r x
+                Just (I.Inductive {}) -> return $ A.Ind r x
                 Just c@(I.Constructor {}) ->
                   do when (numArgs /= 0) $ constrNotApplied r x
                      return $ A.Constr r x indId [] []
@@ -108,11 +95,9 @@ instance Scope A.Expr where
                 Nothing -> undefinedName r x
   scope (A.Case c) = fmap A.Case (scope c)
   scope (A.Fix f) = fmap A.Fix (scope f)
-  scope t@(A.Constr _ _ _ _ _) = __IMPOSSIBLE__
-  scope t@(A.Bound _ _ _) = __IMPOSSIBLE__
-  scope t@(A.Ind _ _) = __IMPOSSIBLE__
-  scope t = do liftIO $ putStrLn $ "\n****\n" ++ show t ++ "\n****\n"
-               error "implement!"
+  scope (A.Constr _ _ _ _ _) = __IMPOSSIBLE__
+  scope (A.Bound _ _ _) = __IMPOSSIBLE__
+  scope (A.Ind _ _) = __IMPOSSIBLE__
 
 
 instance Scope A.FixExpr where
@@ -132,14 +117,14 @@ instance Scope A.CaseExpr where
        return $ A.CaseExpr r arg' asName inName' subst ret' bs'
 
 instance Scope A.CaseIn where
-  scope ci@(A.CaseIn r bs ind args) =
+  scope (A.CaseIn r bs ind args) =
     do bs' <- scope bs
        g <- lookupGlobal ind
        case g of
-         Just i@(I.Inductive {}) -> do args' <- mapM (\x -> fakeBinds bs $ scope x) args
-                                       return $ A.CaseIn r bs' ind args'
-         Just _                  -> throw $ NotInductive ind
-         Nothing                 -> throw $ UndefinedName noRange ind
+         Just (I.Inductive {}) -> do args' <- mapM (fakeBinds bs . scope) args
+                                     return $ A.CaseIn r bs' ind args'
+         Just _                -> throw $ NotInductive ind
+         Nothing               -> throw $ UndefinedName noRange ind
 
 
 -- TODO: check that all branch belong to the same inductive type, and that all
@@ -148,10 +133,10 @@ instance Scope A.Branch where
   scope (A.Branch r name _ pattern body) =
     do g <- lookupGlobal name
        case g of
-         Just c@(I.Constructor ind id _ targs _) ->
+         Just (I.Constructor _ idConstr _ targs _) ->
            do when (lenPat /= lenArgs) $ wrongArg r name lenPat lenArgs
               body' <- fakeBinds pattern $ scope body
-              return $ A.Branch r name id pattern body'
+              return $ A.Branch r name idConstr pattern body'
              where lenPat  = length pattern
                    lenArgs = length targs
          Just _ -> throw $ PatternNotConstructor name
@@ -159,18 +144,18 @@ instance Scope A.Branch where
 
 
 scopeApp :: (MonadTCM tcm) => A.Expr -> [A.Expr] -> tcm A.Expr
-scopeApp e@(A.Var r x) args =
+scopeApp e@(A.Ident r x) args =
   do xs <- getLocalNames
      case findIndex (==x) xs of
        Just n -> return $ A.buildApp (A.Bound r x n) args
        Nothing ->
          do g <- lookupGlobal x
             case g of
-              Just i@(I.Inductive {}) -> return $ A.buildApp (A.Ind r x) args
-              Just (I.Constructor i id parsTp argsTp _) ->
+              Just (I.Inductive {}) -> return $ A.buildApp (A.Ind r x) args
+              Just (I.Constructor i idConstr parsTp argsTp _) ->
                   if expLen /= givenLen
                   then wrongArg cRange x expLen givenLen
-                  else return $ A.Constr cRange x (i,id) cpars cargs
+                  else return $ A.Constr cRange x (i,idConstr) cpars cargs
                 where
                   parLen = length parsTp
                   argLen = length argsTp
@@ -193,9 +178,11 @@ instance Scope A.Declaration where
     scope (A.Definition r x t u) =
       do t' <- scope t
          u' <- scope u
+         checkIfDefined x
          return $ A.Definition r x t' u'
     scope (A.Assumption r x t) =
       do t' <- scope t
+         checkIfDefined x
          return $ A.Assumption r x t'
     scope (A.Inductive r indDef) = fmap (A.Inductive r) (scope indDef)
 
@@ -204,6 +191,7 @@ instance Scope A.InductiveDef where
       do ps' <- scope ps
          e'  <- fakeBinds (reverse ps) $ scope e
          cs' <- fakeBinds (reverse ps) $ fakeBinds x $ mapM scope cs
+         checkIfDefined x
          return $ A.InductiveDef x ps' e' cs'
 
 instance Scope A.Parameter where
@@ -211,7 +199,8 @@ instance Scope A.Parameter where
 
 
 instance Scope A.Constructor where
-  scope (A.Constructor r x e id) =
+  scope (A.Constructor r x e idConstr) =
     do e' <- scope e
-       return (A.Constructor r x e' id)
+       checkIfDefined x
+       return (A.Constructor r x e' idConstr)
 
