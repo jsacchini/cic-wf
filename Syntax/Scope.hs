@@ -29,14 +29,18 @@ import Syntax.Position
 import Kernel.TCM
 
 
+-- This is the same as "Kernel.TCM.typeError"
+scopeError :: (MonadTCM tcm) => TypeError -> tcm a
+scopeError = throw . TCErr
+
 wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
-wrongArg r x m n = typeError $ WrongNumberOfArguments r x m n
+wrongArg r x m n = scopeError $ WrongNumberOfArguments r x m n
 
 undefinedName :: (MonadTCM tcm) => Range -> Name -> tcm a
-undefinedName r x = typeError $ UndefinedName r x
+undefinedName r x = scopeError $ UndefinedName r x
 
 constrNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
-constrNotApplied r x = typeError $ ConstructorNotApplied r x
+constrNotApplied r x = scopeError $ ConstructorNotApplied r x
 
 -- We reuse the type-checking monad for scope checking
 class Scope a where
@@ -102,7 +106,7 @@ instance Scope A.Expr where
 
 instance Scope A.FixExpr where
   scope (A.FixExpr r recArg x tp body) =
-    do when (recArg <= 0) $ throw $ FixRecursiveArgumentNotPositive r
+    do when (recArg <= 0) $ scopeError $ FixRecursiveArgumentNotPositive r
        tp' <- scope tp
        body' <- fakeBinds x $ scope body
        return $ A.FixExpr r recArg x tp' body'
@@ -123,8 +127,8 @@ instance Scope A.CaseIn where
        case g of
          Just (I.Inductive {}) -> do args' <- mapM (fakeBinds bs . scope) args
                                      return $ A.CaseIn r bs' ind args'
-         Just _                -> throw $ NotInductive ind
-         Nothing               -> throw $ UndefinedName noRange ind
+         Just _                -> scopeError $ NotInductive ind
+         Nothing               -> scopeError $ UndefinedName noRange ind
 
 
 -- TODO: check that all branch belong to the same inductive type, and that all
@@ -139,8 +143,8 @@ instance Scope A.Branch where
               return $ A.Branch r name idConstr pattern body'
              where lenPat  = length pattern
                    lenArgs = length targs
-         Just _ -> throw $ PatternNotConstructor name
-         Nothing -> throw $ UndefinedName r name
+         Just _ -> scopeError $ PatternNotConstructor name
+         Nothing -> scopeError $ UndefinedName r name
 
 
 scopeApp :: (MonadTCM tcm) => A.Expr -> [A.Expr] -> tcm A.Expr

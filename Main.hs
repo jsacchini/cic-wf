@@ -41,7 +41,7 @@ main =
                       putStrLn "---------------------"
                       r <- runTCM $ typeCheckFile ts
                       case r of
-                        Left err -> putStrLn $ "Error!!!! " ++ show err
+                        Left err -> putStrLn $ "\nError!!!! " ++ show err
                         Right _ -> return ()
                  ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
                hClose h

@@ -98,7 +98,7 @@ initialTCEnv :: TCEnv
 initialTCEnv = []
 
 typeError :: (MonadTCM tcm) => TypeError -> tcm a
-typeError = throw
+typeError = throw . TCErr
 
 throwNotConvertible :: (MonadTCM tcm) => I.Term -> I.Term -> tcm a
 throwNotConvertible t u = do e <- ask
