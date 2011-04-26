@@ -93,3 +93,9 @@ instance Pretty Annot where
 
 instance Show Annot where
   show = show . prettyPrint
+
+-- | Kind of term : bare, position or sized
+data Kind =
+  BareTerm
+  | PositionTerm
+  | SizedTerm

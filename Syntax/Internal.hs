@@ -119,12 +119,10 @@ mkBindsSameType :: [Name] -> Type -> [Bind]
 mkBindsSameType xs t = mkBindsSameType_ xs t 0
 
 bind :: Bind -> Type
-bind (Bind _ t) = t
--- bind (NoBind t) = t
-bind (LocalDef _ _ t) = t
+bind = bindType
 
 bindNoName :: Type -> Bind
-bindNoName = Bind $ Id ""
+bindNoName = Bind noName
 
 instance Eq Bind where
   (Bind _ t1) == (Bind _ t2) = t1 == t2

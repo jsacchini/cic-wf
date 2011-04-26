@@ -67,14 +67,14 @@ tokens :-
 
 lexToken :: Parser Token
 lexToken =
-  do s <- get
-     case alexScan s 0 of  -- 0 is the state of the lexer. Not used now
+  do inp <- getLexerInput
+     case alexScan inp 0 of  -- 0 is the state of the lexer. Not used now
        AlexEOF -> return TokEOF
-       AlexError _ -> parseErrorAt (lexPos s) ("Lexical error") -- rest of input ingnored at the moment
-       AlexSkip inp' _ -> put inp' >> lexToken
+       AlexError _ -> parseErrorAt (lexPos inp) ("Lexical error") -- rest of input ingnored at the moment
+       AlexSkip inp' _ -> putLexerInput inp' >> lexToken
        AlexToken inp' len act ->
-         do put inp'
-            act (lexPos s) (take len (lexInput s))
+         do putLexerInput inp'
+            act (lexPos inp) (take len (lexInput inp))
 
 lexer :: (Token -> Parser a) -> Parser a
 lexer cont = lexToken >>= cont
@@ -84,23 +84,24 @@ lexer cont = lexToken >>= cont
 skipOneLineComment :: Parser Token
 skipOneLineComment =
   do s <- get
-     skip_ s
+     put (s { lexerInput = skip_ (lexerInput s) })
      lexToken
-    where skip_ :: AlexInput -> Parser ()
+    where skip_ :: AlexInput -> AlexInput
           skip_ inp =
             case alexGetChar inp of
-              Just ('\n', inp') -> put inp'
+              Just ('\n', inp') -> inp'
               Just (_   , inp') -> skip_ inp'
-              Nothing           -> put inp
+              Nothing           -> inp
 
 skipNestedComment :: Parser Token
 skipNestedComment =
   do s <- get
-     skip_ 1 s
+     inp' <- skip_ 1 (lexerInput s)
+     put (s { lexerInput = inp' })
      lexToken
     where
-      skip_ :: Int -> AlexInput -> Parser ()
-      skip_ 0 inp = put inp
+      skip_ :: Int -> AlexInput -> Parser AlexInput
+      skip_ 0 inp = return inp
       skip_ n (AlexInput { lexPos = p,
                            lexInput = ('{':'-':s) }) =
         skip_ (n + 1) (AlexInput { lexPos = advancePos p 2,

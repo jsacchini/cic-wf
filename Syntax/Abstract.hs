@@ -4,7 +4,7 @@
 -- | Abstract syntax returned by the parser.
 --
 --   We reuse the datatype 'Expr' and related for later phases (in particular,
---   for scope checking). Constructors 'Bound', 'Ind', 'Constr' are not used by
+--   for scope checking). Constructors 'Bound', 'Constr' are not used by
 --   the parser.
 
 module Syntax.Abstract where

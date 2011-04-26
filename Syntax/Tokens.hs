@@ -63,7 +63,7 @@ symbol p s =
            ("]" , SymbRBracket)]
 
 identStar :: Position -> String -> Parser Token
-identStar pos s = do tok <- ident pos s
+identStar pos s = do tok <- ident pos (take (length s - 1) s) -- remove the '*'
                      case tok of
                        TokIdent (p',s') -> return $ TokIdentStar (p',s')
                        _                -> fail "Lexical error tokstar"

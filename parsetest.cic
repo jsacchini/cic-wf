@@ -37,12 +37,12 @@ define t4 := fun (x:nat) =>
 
 assume t5 : Type0 -> Type1 -> (Type2 -> Type3) -> Type4.
 
-{-
-define t6 := fix 1 pred : nat -> nat :=
+
+define t6 := fix 1 pred : nat* -> nat :=
                fun x : nat => < nat > case x of
                                       | O => O
                                       | S y => y
                                       end.
--}
+
 
 define t7 := fun (x:nat) => nat -> nat. --last comment

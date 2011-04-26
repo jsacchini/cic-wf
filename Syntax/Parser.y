@@ -21,6 +21,8 @@ import Syntax.Common
 import Syntax.Alex
 import qualified Syntax.Abstract as A
 
+import Utils.Misc
+
 }
 
 
@@ -66,6 +68,7 @@ import qualified Syntax.Abstract as A
   ']'              { TokSymbol SymbRBracket $$ }
   typeN            { TokType $$ }
   ident            { TokIdent $$ }
+  identStar        { TokIdentStar $$ }
 
   number           { TokNumber $$ }
 
@@ -147,6 +150,8 @@ Exp1 :: { A.Expr }
 Exp1 : '(' Exp ')'   { $2 }
      | Sort          { $1 }
      | Name          { A.Ident (mkRangeLen (fst $1) (length (unName (snd $1)))) (snd $1) }
+     | identStar     {% unlessM starAllowed (fail $ "position type not allowed" ++ show (fst $1)) >> return (A.Ind (mkRangeLen (fst $1) (length (snd $1))) Star (Id (snd $1))) }
+
 
 -- This does not look elegant
 Sort :: { A.Expr }
@@ -220,8 +225,14 @@ Assigns : Assigns '(' Name ':=' Exp ')'
       | {- empty -}        { [] }
 
 Fix :: { A.FixExpr }
-Fix : 'fix' number Name ':' Exp ':=' Exp
-                      { A.FixExpr (fuseRange $1 $7) (snd $2) (snd $3) $5 $7 }
+Fix : 'fix' number Name ':' startPosType Exp endPosType ':=' Exp
+                      { A.FixExpr (fuseRange $1 $9) (snd $2) (snd $3) $6 $9 }
+
+startPosType :: { () }
+startPosType : {- empty -}       {% allowStar }
+
+endPosType :: { () }
+endPosType : {- empty -}         {% forbidStar }
 
 Bindings :: { [A.Bind] }
 Bindings : Bindings '(' BasicBind ')'    { $3 : $1 }
@@ -262,7 +273,7 @@ BindName : ident            { let (p, x) = $1
 
 -- Required by Happy.
 happyError :: Parser a
-happyError = do s <- get
+happyError = do s <- getLexerInput
                 parseErrorAt (lexPos s) "Parser error"
 
 -- Note that mkApp receives arguments in reverse order
