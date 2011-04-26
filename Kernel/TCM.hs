@@ -30,15 +30,6 @@ data TypeError
     | InvalidProductRule Sort Sort
     | IdentifierNotFound Name
     | ConstantError String
-    -- Scope checking
-    | WrongNumberOfArguments Range Name Int Int
-    | WrongFixNumber Range Name Int
-    | UndefinedName Range Name
-    | NotInductive Name
-    | ConstructorNotApplied Range Name
-    | PatternNotConstructor Name
-    | FixRecursiveArgumentNotPositive Range
-    | AlreadyDefined Name
     deriving(Show, Typeable)
 
 -- instance Show TypeError where
@@ -115,12 +106,6 @@ lookupGlobal :: (MonadTCM tcm) => Name -> tcm (Maybe I.Global)
 lookupGlobal x = do sig <- getSignature
                     return $ Map.lookup x sig
 
-isGlobal :: (MonadTCM tcm) => Name -> tcm Bool
-isGlobal x = fmap (Map.member x) getSignature
-
-checkIfDefined :: (MonadTCM tcm) => Name -> tcm ()
-checkIfDefined x = isGlobal x >>= flip when (throw (AlreadyDefined x))
-
 
 getGlobal :: (MonadTCM tcm) => Name -> tcm I.Global
 getGlobal x = do sig <- getSignature
@@ -134,8 +119,8 @@ addGlobal x g = do st <- get
                               stDefined = x : stDefined st
                             }
 
-getLocalNames :: (MonadTCM tcm) => tcm [Name]
-getLocalNames = fmap (map I.bindName) ask
+-- getLocalNames :: (MonadTCM tcm) => tcm [Name]
+-- getLocalNames = fmap (map I.bindName) ask
 
 -- We don't need the real type of the binds for scope checking, just the names
 -- Maybe should be moved to another place

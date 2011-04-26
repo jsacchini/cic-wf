@@ -49,7 +49,7 @@ data Expr =
                              -- * Parameters (of the inductive type)
                              --
                              -- * Actual arguments of the constructor
-  | Ind Range IName
+  | Ind Range Annot IName
   deriving(Show) -- for debugging only
 
 -- | Equality on expressions is used by the reifier ("InternaltoAbstract")
@@ -67,7 +67,7 @@ instance Eq Expr where
                                      all (uncurry (==)) (zip bs1 bs2) &&
                                      t1 == t2
   (App _ e1 e2) == (App _ e3 e4) = e1 == e3 && e2 == e4
-  (Ind _ i1) == (Ind _ i2) = i1 == i2
+  (Ind _ a1 i1) == (Ind _ a2 i2) = a1 == a2 && i1 == i2
   _ == _ = False
 
 
@@ -206,7 +206,7 @@ instance HasRange Expr where
   getRange (Case c) = caseRange c
   getRange (Fix f) = fixRange f
   getRange (Constr r _ _ _ _) = r
-  getRange (Ind r _) = r
+  getRange (Ind r _ _) = r
 
 instance HasRange Bind where
   getRange (Bind r _ _) = r
@@ -259,7 +259,7 @@ instance Pretty Expr where
       pp n (App _ e1 e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       pp n (Case c) = parensIf (n > 0) $ prettyPrint c
       pp n (Fix f) = parensIf (n > 0) $ prettyPrint f
-      pp _ (Ind _ x) = prettyPrint x
+      pp _ (Ind _ a x) = hcat [prettyPrint x, langle, prettyPrint a, rangle]
       pp n (Constr _ x _ pars args) =
         parensIf (n > 2) $ prettyPrint x <+> hsep (map (pp lvl) (pars ++ args))
           where lvl = if length pars + length args == 0 then 0 else 3

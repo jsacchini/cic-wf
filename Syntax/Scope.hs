@@ -26,25 +26,27 @@ import qualified Syntax.Internal as I
 import Syntax.Common
 import Syntax.Position
 
-import Kernel.TCM
+import Syntax.ScopeMonad
 
 
 -- This is the same as "Kernel.TCM.typeError"
-scopeError :: (MonadTCM tcm) => TypeError -> tcm a
-scopeError = throw . TCErr
+scopeError :: (ScopeMonad sm) => ScopeError -> sm a
+scopeError = throw
 
-wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
+wrongArg :: (ScopeMonad sm) => Range -> Name -> Int -> Int -> sm a
 wrongArg r x m n = scopeError $ WrongNumberOfArguments r x m n
 
-undefinedName :: (MonadTCM tcm) => Range -> Name -> tcm a
+undefinedName :: (ScopeMonad sm) => Range -> Name -> sm a
 undefinedName r x = scopeError $ UndefinedName r x
 
-constrNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
+constrNotApplied :: (ScopeMonad sm) => Range -> Name -> sm a
 constrNotApplied r x = scopeError $ ConstructorNotApplied r x
+
+
 
 -- We reuse the type-checking monad for scope checking
 class Scope a where
-  scope :: MonadTCM m => a -> m a
+  scope :: ScopeMonad sm => a -> sm a
 
 instance Scope A.Bind where
   scope (A.Bind r xs e) = fmap (A.Bind r xs) (scope e)
@@ -88,7 +90,7 @@ instance Scope A.Expr where
          Nothing ->
            do g <- lookupGlobal x
               case g of
-                Just (I.Inductive {}) -> return $ A.Ind r x
+                Just (I.Inductive {}) -> return $ A.Ind r Empty x
                 Just c@(I.Constructor {}) ->
                   do when (numArgs /= 0) $ constrNotApplied r x
                      return $ A.Constr r x indId [] []
@@ -99,9 +101,16 @@ instance Scope A.Expr where
                 Nothing -> undefinedName r x
   scope (A.Case c) = fmap A.Case (scope c)
   scope (A.Fix f) = fmap A.Fix (scope f)
+  -- Ind can appear after parsing for position types (only annotated with star)
+  scope e@(A.Ind r Star x) =
+    do g <- lookupGlobal x
+       case g of
+         Just (I.Inductive {}) -> return e
+         Just _                -> scopeError $ NotInductive x
+         Nothing               -> scopeError $ UndefinedName r x
+  scope (A.Ind _ _ _) = __IMPOSSIBLE__
   scope (A.Constr _ _ _ _ _) = __IMPOSSIBLE__
   scope (A.Bound _ _ _) = __IMPOSSIBLE__
-  scope (A.Ind _ _) = __IMPOSSIBLE__
 
 
 instance Scope A.FixExpr where
@@ -147,7 +156,7 @@ instance Scope A.Branch where
          Nothing -> scopeError $ UndefinedName r name
 
 
-scopeApp :: (MonadTCM tcm) => A.Expr -> [A.Expr] -> tcm A.Expr
+scopeApp :: (ScopeMonad sm) => A.Expr -> [A.Expr] -> sm A.Expr
 scopeApp e@(A.Ident r x) args =
   do xs <- getLocalNames
      case findIndex (==x) xs of
@@ -155,7 +164,7 @@ scopeApp e@(A.Ident r x) args =
        Nothing ->
          do g <- lookupGlobal x
             case g of
-              Just (I.Inductive {}) -> return $ A.buildApp (A.Ind r x) args
+              Just (I.Inductive {}) -> return $ A.buildApp (A.Ind r Empty x) args
               Just (I.Constructor i idConstr parsTp argsTp _) ->
                   if expLen /= givenLen
                   then wrongArg cRange x expLen givenLen

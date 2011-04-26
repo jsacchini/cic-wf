@@ -103,7 +103,7 @@ instance Infer A.Expr (Term, Type) where
                             w   <- whnf $ buildPi (subst t2 bs) (substN (length bs) t2 u2)
                             return (buildApp t1 [t2], w)
          _            -> throwNotFunction r1
-  infer (A.Ind _ x) =
+  infer (A.Ind _ _ x) =
     do t <- getGlobal x
        case t of
          Inductive pars indices sort _ ->

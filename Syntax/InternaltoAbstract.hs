@@ -20,17 +20,16 @@ import Control.Monad.State
 
 import Syntax.Internal as I
 import qualified Syntax.Abstract as A
-import Kernel.TCM
+import Syntax.ScopeMonad
 import Syntax.Position
 import Syntax.Common
-import Syntax.Scope
 import Utils.Misc
 
 class Reify a b | a -> b where
-  reify :: (MonadTCM tcm) => a -> tcm b
+  reify :: (ScopeMonad sm) => a -> sm b
 
 
-freshName :: (MonadTCM tcm) => Name -> tcm Name
+freshName :: (ScopeMonad sm) => Name -> sm Name
 freshName x | isNull x  = return $ Id "_"
             | otherwise = do xs <- getLocalNames
                              return $ doFreshName xs x
@@ -42,17 +41,17 @@ freshName x | isNull x  = return $ Id "_"
                 addSuffix (Id x) n = Id $ x ++ show n
 
 
-freshNameList :: (MonadTCM tcm) => [Name] -> tcm [Name]
+freshNameList :: (ScopeMonad sm) => [Name] -> sm [Name]
 freshNameList []     = return []
 freshNameList (x:xs) = do x' <- freshName x
                           xs' <- fakeBinds x' $ freshNameList xs
                           return $ x' : xs'
 
 
-reifyPiBinds :: (MonadTCM tcm) => [Bind] -> Term -> tcm A.Expr
+reifyPiBinds :: (ScopeMonad sm) => [Bind] -> Term -> sm A.Expr
 reifyPiBinds = rP []
   where
-    rP :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> Term -> tcm A.Expr
+    rP :: (ScopeMonad sm) => [A.Bind] -> [Bind] -> Term -> sm A.Expr
     rP [] [] t                  = reify t
     rP bs [] t                  = do e <- reify t
                                      return $ A.Pi noRange (reverse bs) e
@@ -81,10 +80,10 @@ reifyPiBinds = rP []
     notFree :: [Bind] -> Term -> Bool
     notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
 
-reifyLamBinds :: (MonadTCM tcm) => [Bind] -> Term -> tcm A.Expr
+reifyLamBinds :: (ScopeMonad sm) => [Bind] -> Term -> sm A.Expr
 reifyLamBinds = rL []
   where
-    rL :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> Term -> tcm A.Expr
+    rL :: (ScopeMonad sm) => [A.Bind] -> [Bind] -> Term -> sm A.Expr
     rL bs [] t                  = do e <- reify t
                                      return $ A.Lam noRange (reverse bs) e
     rL [] (Bind x t1:bs') t2 =
@@ -104,12 +103,12 @@ reifyLamBinds = rL []
 
 instance Reify Term A.Expr where
   reify (Sort s) = return $ A.Sort noRange s
-  reify (Pi bs t) = do traceTCM $ "printing " ++ show (Pi bs t)
-                       traceTCM $ "reifyBinds " ++ show bs
+  reify (Pi bs t) = do traceSM $ "printing " ++ show (Pi bs t)
+                       traceSM $ "reifyBinds " ++ show bs
                        reifyPiBinds bs t
   reify (Bound n) = do xs <- getLocalNames
                        l <- ask
-                       when (n >= length xs) $ get >>= \st -> traceTCM $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
+                       when (n >= length xs) $ get >>= \st -> traceSM $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
                        return $ A.Ident noRange (xs !! n)
   reify (Var x) = return $ A.Ident noRange x
   reify (Lam bs t) = reifyLamBinds bs t
@@ -117,7 +116,7 @@ instance Reify Term A.Expr where
                         es <- mapM reify ts
                         return $ mkApp e es
                           where mkApp = foldl (A.App noRange)
-  reify (Ind i) = return $ A.Ind noRange i
+  reify (Ind i) = return $ A.Ind noRange Empty i
   reify (Constr x indId ps as) =
     do ps' <- mapM reify ps
        as' <- mapM reify as
@@ -155,11 +154,11 @@ instance Reify Name A.Declaration where
          I.Assumption t -> do e <- reify t
                               return $ A.Assumption noRange x e
          t@(I.Inductive {}) ->
-           do traceTCM $ "data " ++ show x ++ " : " ++ show t
+           do traceSM $ "data " ++ show x ++ " : " ++ show t
               return $ A.Inductive noRange (A.InductiveDef x [] (A.Sort noRange Prop) [])
            -- COMPLETE THIS CASE
          t@(Constructor _ _ _ _ _) ->
-           do traceTCM $ "constructor " ++ show x ++ " : " ++ show t
+           do traceSM $ "constructor " ++ show x ++ " : " ++ show t
               return $ A.Assumption noRange x (A.Sort noRange Prop)
 
 
