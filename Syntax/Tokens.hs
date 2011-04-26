@@ -21,9 +21,10 @@ data Symbol = SymbLeftParen | SymbRightParen | SymbArrow | SymbImplies
 -- us to access one argument of a token
 data Token = TokKeyword Keyword Position
            | TokSymbol Symbol Position
-           | TokType (Position,Int)
-           | TokIdent (Position,String)
-           | TokNumber (Position,Int)
+           | TokType (Position, Int)
+           | TokIdent (Position, String)
+           | TokIdentStar (Position, String)
+           | TokNumber (Position, Int)
            | TokEOF
            deriving (Eq,Show)
 
@@ -60,6 +61,12 @@ symbol p s =
            (">" , SymbRAngle),
            ("[" , SymbLBracket),
            ("]" , SymbRBracket)]
+
+identStar :: Position -> String -> Parser Token
+identStar pos s = do tok <- ident pos s
+                     case tok of
+                       TokIdent (p',s') -> return $ TokIdentStar (p',s')
+                       _                -> fail "Lexical error tokstar"
 
 ident :: Position -> String -> Parser Token
 ident pos s =

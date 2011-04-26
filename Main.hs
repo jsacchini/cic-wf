@@ -12,7 +12,6 @@ import Control.Monad.State
 import qualified Syntax.Abstract as A
 import Syntax.ParseMonad
 import Syntax.Parser
-import Syntax.ScopeMonad
 import Syntax.Scope
 
 import Utils.Pretty
@@ -42,13 +41,13 @@ main =
                       putStrLn "---------------------"
                       r <- runTCM $ typeCheckFile ts
                       case r of
-                        Left err -> putStrLn $ "\nError!!!! " ++ show err
+                        Left err -> putStrLn $ "Error!!!! " ++ show err
                         Right _ -> return ()
                  ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
                hClose h
                putStrLn "\n *** FIN ***"
           typeCheckDecl :: A.Declaration -> TCM ()
-          typeCheckDecl d = do d' <- runScopeM $ scope d
+          typeCheckDecl d = do d' <- scope d
                                liftIO $ putStrLn $ "scoped " ++ show d'
                                gs <- infer d'
                                forM_ gs (uncurry addGlobal)
@@ -62,6 +61,6 @@ main =
                liftIO $ putStrLn "========================"
                xs <- fmap stDefined get
                forM_ xs showG
-                 where showG x = do d <- runScopeM $ reify x
+                 where showG x = do d <- reify x
                                     liftIO $ putStrLn $ show (prettyPrint d) ++  "\n----\n" ++ show d ++ "\n===="
 

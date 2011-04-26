@@ -58,6 +58,7 @@ tokens :-
   "]"         { symbol }
 
   @ident      { ident }
+  @ident "*"  { identStar }
 
   @number     { number }
 {
