@@ -1,5 +1,6 @@
 {-# LANGUAGE FunctionalDependencies, MultiParamTypeClasses,
-    TypeSynonymInstances, FlexibleInstances, FlexibleContexts
+    TypeSynonymInstances, FlexibleInstances, FlexibleContexts,
+    UndecidableInstances
   #-}
 
 module Kernel.TypeChecking where
@@ -19,7 +20,7 @@ class Check a b c | a -> b c where
 
 instance Infer A.Bind ([Bind], Sort)
 
-instance (Infer a ([Bind], Sort)) => Infer [a] ([Bind], Sort)
+instance (HasBind b, Infer a ([b], Sort)) => Infer [a] ([b], Sort)
 
 instance Infer A.Expr (Term, Type)
 

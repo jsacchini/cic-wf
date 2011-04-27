@@ -25,6 +25,7 @@ import qualified Syntax.Abstract as A
 import qualified Syntax.Internal as I
 import Syntax.Common
 import Syntax.Position
+import Syntax.Size
 
 import Kernel.TCM
 
@@ -38,7 +39,7 @@ undefinedName r x = typeError $ UndefinedName r x
 constrNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
 constrNotApplied r x = typeError $ ConstructorNotApplied r x
 
--- We reuse the type-checking monad for scope checking
+-- | We reuse the type-checking monad for scope checking
 class Scope a where
   scope :: MonadTCM m => a -> m a
 
@@ -96,6 +97,7 @@ instance Scope A.Expr where
   scope (A.Case c) = fmap A.Case (scope c)
   scope (A.Fix f) = fmap A.Fix (scope f)
   -- Ind can appear after parsing for position types (only annotated with star)
+  -- We just check that the identifier is actually an inductive type
   scope e@(A.Ind r Star x) =
     do g <- lookupGlobal x
        case g of

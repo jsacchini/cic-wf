@@ -48,3 +48,31 @@ instance Pretty Size where
 
 instance Show Size where
   show = show . prettyPrint
+
+-- | Annotations
+
+data Annot =
+  Empty
+  | Star
+  | Size Size
+
+instance Eq Annot where
+  Empty    == Empty    = True
+  Star     == Star     = True
+  Size s1  == Size s2  = s1 == s2
+  _        == _        = False
+
+instance Pretty Annot where
+  prettyPrint Empty = text ""
+  prettyPrint Star  = text "*"
+  prettyPrint (Size s) = prettyPrint s
+
+instance Show Annot where
+  show = show . prettyPrint
+
+-- | Kind of term : bare, position or sized
+data Kind =
+  BareTerm
+  | PositionTerm
+  | SizedTerm
+

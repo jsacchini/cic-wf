@@ -9,6 +9,7 @@ module Syntax.Internal where
 import Utils.Impossible
 
 import Syntax.Common
+import Syntax.Size
 
 tType :: Int -> Term
 tType = Sort . Type
@@ -30,7 +31,7 @@ data Term
     | Constr Name (Name, Int) [Term] [Term]
     | Fix Int Name [Bind] Type Term
     | Case CaseTerm
-    | Ind Name
+    | Ind Annot Name
     deriving(Show)
 
 data CaseTerm = CaseTerm {
@@ -93,7 +94,7 @@ instance Eq Term where
   (App f1 ts1) == (App f2 ts2) = length ts1 == length ts2 &&
                                  all (uncurry (==)) (zip ts1 ts2) &&
                                  f1 == f2
-  (Ind i1) == (Ind i2) = i1 == i2
+  (Ind a1 i1) == (Ind a2 i2) = a1 == a2 && i1 == i2
   _ == _ = False
 
 type Type = Term
@@ -110,12 +111,22 @@ data Bind =
     }
   deriving(Show)
 
-mkBindsSameType_ :: [Name] -> Type -> Int -> [Bind]
-mkBindsSameType_ [] _ _ = []
-mkBindsSameType_ (x:xs) t k = Bind x (lift k 0 t) :
-                              mkBindsSameType_ xs t (k + 1)
+class HasBind a where
+  getBind :: a -> Bind
 
-mkBindsSameType :: [Name] -> Type -> [Bind]
+instance HasBind Bind where
+  getBind = id
+
+instance HasBind (Polarized Bind) where
+  getBind = unPol
+
+mkBindsSameType_ :: [(Name, Polarity)] -> Type -> Int -> [Polarized Bind]
+mkBindsSameType_ [] _ _ = []
+mkBindsSameType_ ((x,pol):xs) t k = Pol { unPol = Bind x (lift k 0 t), 
+                                          polarity = pol }:
+                                    mkBindsSameType_ xs t (k + 1)
+
+mkBindsSameType :: [(Name, Polarity)] -> Type -> [Polarized Bind]
 mkBindsSameType xs t = mkBindsSameType_ xs t 0
 
 bind :: Bind -> Type
@@ -129,14 +140,11 @@ instance Eq Bind where
   (LocalDef _ t1 t2) == (LocalDef _ t3 t4) = t1 == t3 && t2 == t4
   _ == _ = False
 
-class HasType a where
-  getType :: a -> Type
-
 
 data Global = Definition Type Term
             | Assumption Type
             | Inductive {
-              indPars :: [Bind],
+              indPars :: [Polarized Bind],
               indIndices :: [Bind],
               indSort :: Sort,
               indConstr :: [Name]
@@ -151,14 +159,31 @@ data Global = Definition Type Term
               }
               deriving(Show)
 
-instance HasType Global where
-  getType (Definition t _) = t
-  getType (Assumption t) = t
-  getType i@(Inductive {}) = Pi (indPars i ++ indIndices i) (Sort (indSort i))
-  getType c@(Constructor {}) = Pi (constrPars c ++ constrArgs c) ind
-    where ind = App (Ind (constrInd c)) (par ++ indices)
-          par = map (Var . bindName) (constrPars c)
-          indices = constrIndices c
+-- class HasType a where
+--   getType :: a -> Type
+
+-- instance HasType Global where
+--   getType (Definition t _) = t
+--   getType (Assumption t) = t
+--   getType i@(Inductive {}) = Pi (indPars i ++ indIndices i) (Sort (indSort i))
+--   getType c@(Constructor {}) = Pi (constrPars c ++ constrArgs c) ind
+--     where ind = App (Ind (constrInd c)) (par ++ indices)
+--           par = map (Var . bindName) (constrPars c)
+--           indices = constrIndices c
+
+class HasSize a where
+  modifySize :: (Size -> Size) -> a -> a
+--  getSizes :: a -> [Size]
+
+
+
+class Erase a where
+  erase :: a -> a
+  eraseStage :: Int -> a -> a
+
+instance Erase Term where
+  erase _ = error "complete me!"
+  eraseStage _ _ = error "complete me!"
 
 
 class Lift a where
@@ -175,7 +200,7 @@ instance Lift Term where
   lift _ _ t@(Var _) = t
   lift k n (Lam b u) = Lam (fmap (lift k n) b) (lift k (n + 1) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
-  lift _ _ t@(Ind _) = t
+  lift _ _ t@(Ind _ _) = t
   lift k n (Constr x indId ps as) = Constr x indId ps' as'
                                       where ps' = map (lift k n) ps
                                             as' = map (lift k n) as
@@ -211,7 +236,7 @@ instance SubstTerm Term where
   substN i r (Lam bs t) = Lam (substN i r bs) (substN (i + len) r t)
                           where len = length bs
   substN i r (App t ts) = App (substN i r t) (substN i r ts)
-  substN _ _ t@(Ind _) = t
+  substN _ _ t@(Ind _ _) = t
   substN i r (Constr x ind ps as) = Constr x ind ps' as'
                                     where ps' = map (substN i r) ps
                                           as' = map (substN i r) as

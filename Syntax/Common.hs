@@ -5,7 +5,6 @@ module Syntax.Common where
 
 import Text.PrettyPrint
 
-import Syntax.Size
 import Utils.Pretty
 
 
@@ -57,6 +56,10 @@ instance Show Polarity where
 instance Pretty Polarity where
   prettyPrint = text . show
 
+data Polarized a = Pol { polarity :: Polarity,
+                         unPol :: a }
+                   deriving(Show)
+
 -- | Sorts
 
 data Sort
@@ -73,29 +76,3 @@ instance Ord Sort where
   compare Prop (Type _) = LT
   compare (Type _) Prop = GT
   compare (Type m) (Type n) = compare m n
-
--- | Size annotations
-data Annot =
-  Empty
-  | Star
-  | Size Size
-
-instance Eq Annot where
-  Empty   == Empty   = True
-  Star    == Star    = True
-  Size s1 == Size s2 = s1 == s2
-  _       == _       = False
-
-instance Pretty Annot where
-  prettyPrint Empty = text ""
-  prettyPrint Star  = text "*"
-  prettyPrint (Size s) = prettyPrint s
-
-instance Show Annot where
-  show = show . prettyPrint
-
--- | Kind of term : bare, position or sized
-data Kind =
-  BareTerm
-  | PositionTerm
-  | SizedTerm

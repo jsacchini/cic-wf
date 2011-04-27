@@ -19,6 +19,8 @@ import Syntax.Common
 import Syntax.Position
 import Utils.MonadUndo
 
+import Kernel.Constraints
+
 -- Type checking errors
 -- We include scope errors, so we have to catch only one type
 data TypeError

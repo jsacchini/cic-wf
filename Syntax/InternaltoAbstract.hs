@@ -23,6 +23,7 @@ import qualified Syntax.Abstract as A
 import Kernel.TCM
 import Syntax.Position
 import Syntax.Common
+import Syntax.Size
 import Utils.Misc
 
 class Reify a b | a -> b where
@@ -116,7 +117,7 @@ instance Reify Term A.Expr where
                         es <- mapM reify ts
                         return $ mkApp e es
                           where mkApp = foldl (A.App noRange)
-  reify (Ind i) = return $ A.Ind noRange Empty i
+  reify (Ind _ i) = return $ A.Ind noRange Empty i
   reify (Constr x indId ps as) =
     do ps' <- mapM reify ps
        as' <- mapM reify as
@@ -176,7 +177,7 @@ instance IsFree Term where
   isFree k (Lam [] t) = isFree k t
   isFree k (Lam (b:bs) t) = isFree k b || isFree (k+1) (Lam bs t)
   isFree k (App f ts) = isFree k f || any (isFree k) ts
-  isFree _ (Ind _) = False
+  isFree _ (Ind _ _) = False
   isFree k (Constr _ _ ps as) = any (isFree k) (ps ++ as)
   isFree k (Fix _ _ bs tp body) = isFree k (buildPi bs tp) || isFree (k+1) body
   isFree k (Case c) = isFree k c

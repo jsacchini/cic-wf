@@ -17,6 +17,7 @@ import Syntax.Tokens
 import Syntax.Lexer
 import Syntax.ParseMonad
 import Syntax.Position
+import Syntax.Size
 import Syntax.Common
 import Syntax.Alex
 import qualified Syntax.Abstract as A

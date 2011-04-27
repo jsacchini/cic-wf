@@ -20,7 +20,8 @@ Executable cic
                      containers -any,
                      haskell98 >= 1.0,
                      array -any,
-                     filepath -any
+                     filepath -any,
+                     fgl >= 5.4
   Build-Tools:       alex >= 2.0,
                      happy >= 1.18
   extensions:        CPP
@@ -40,6 +41,7 @@ Executable cic
                      Utils.Pretty
                      Utils.Impossible
                      Utils.MonadUndo
+                     Kernel.Constraints
                      Kernel.TCM
                      Kernel.TypeChecking
                      Kernel.Whnf

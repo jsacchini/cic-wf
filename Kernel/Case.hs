@@ -7,6 +7,7 @@ import Control.Monad.Reader
 
 import Syntax.Common
 import Syntax.Internal
+import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
@@ -19,7 +20,7 @@ instance Infer A.CaseExpr (Term, Type) where
     do (arg', tpArg) <- infer arg
        (nmInd, (pars, inds)) <- getInductiveType tpArg
        Inductive _ tpInds _ _ <- getGlobal nmInd
-       let tpArgGen = buildApp (Ind nmInd) (pars ++ dom tpInds)
+       let tpArgGen = buildApp (Ind Empty nmInd) (pars ++ dom tpInds)
        (ret', tpRet) <- infer ret
        checkReturnType tpRet (tpInds ++ [Bind (Id "x") tpArgGen])
        branches' <- checkBranches nmInd ret' pars branches
@@ -30,10 +31,10 @@ instance Infer A.CaseExpr (Term, Type) where
            getInductiveType t =
              do t' <- whnf t
                 case t' of
-                  App (Ind i) args ->
+                  App (Ind _ i) args ->
                     do Inductive tpPars _ _ _ <- getGlobal i -- matching should not fail
                        return (i, splitAt (length tpPars) args)
-                  Ind i            -> return (i, ([], []))
+                  Ind _ i          -> return (i, ([], []))
                   _                -> error $ "case 0. not inductive type " ++ show t
            checkReturnType t bs =
              do t' <- whnf t

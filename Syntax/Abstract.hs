@@ -13,6 +13,7 @@ import Text.PrettyPrint.HughesPJ
 
 import Syntax.Common
 import Syntax.Position
+import Syntax.Size
 
 import Utils.Pretty
 

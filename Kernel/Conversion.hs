@@ -45,7 +45,7 @@ instance Conversion Term where
            --                                         else do bps <- sequence (map (uncurry conversion) (zip p1 p2))
            --                                                 bas <- sequence (map (uncurry conversion) (zip a1 a2))
            --                                                 return $ and (bps ++ bas)
-           (Ind x, Ind y) -> return (x == y)
+           (Ind _ x, Ind _ y) -> return (x == y)
            (Constr x1 _ ps1 as1, Constr x2 _ ps2 as2) ->
              do bps <- mapM (uncurry conversion) (zip ps1 ps2)
                 bas <- mapM (uncurry conversion) (zip as1 as2)

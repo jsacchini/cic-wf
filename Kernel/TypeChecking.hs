@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP, MultiParamTypeClasses, FunctionalDependencies,
-    FlexibleInstances, TypeSynonymInstances, FlexibleContexts
+    FlexibleInstances, TypeSynonymInstances, FlexibleContexts,
+    UndecidableInstances
   #-}
 
 module Kernel.TypeChecking where
@@ -12,6 +13,7 @@ import Control.Monad.Reader
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
 import Syntax.Common
+import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
@@ -53,10 +55,10 @@ instance Infer A.Bind ([Bind], Sort) where
          where mkBinds [] _ _ = []
                mkBinds (y:ys) t k = Bind y (I.lift k 0 t) : mkBinds ys t (k + 1)
 
-instance (Infer a ([Bind], Sort)) => Infer [a] ([Bind], Sort) where
+instance (HasBind b, Infer a ([b], Sort)) => Infer [a] ([b], Sort) where
   infer []     = return ([], Prop)
   infer (x:xs) = do (bs1, s1) <- infer x
-                    (bs2, s2) <- local (reverse bs1++) $ infer xs
+                    (bs2, s2) <- local (reverse (map getBind bs1)++) $ infer xs
                     return (bs1 ++ bs2, max s1 s2)
 
 instance Infer A.Expr (Term, Type) where
@@ -107,7 +109,7 @@ instance Infer A.Expr (Term, Type) where
     do t <- getGlobal x
        case t of
          Inductive pars indices sort _ ->
-           return (Ind x, buildPi (pars ++ indices) (Sort sort))
+           return (Ind Empty x, buildPi (map getBind pars ++ indices) (Sort sort))
          _                             -> __IMPOSSIBLE__
   infer (A.Constr _ x _ pars args) =
     do t <- getGlobal x
@@ -116,7 +118,7 @@ instance Infer A.Expr (Term, Type) where
            do pars' <- check pars tpars
               args' <- check args (foldr subst targs pars')
               return (Constr x (indName, idConstr) pars' args',
-                      buildApp (Ind indName) (pars' ++ foldr subst indices (pars' ++ args')))
+                      buildApp (Ind Empty indName) (pars' ++ foldr subst indices (pars' ++ args')))
          _  -> __IMPOSSIBLE__
   infer (A.Fix f) = infer f
   infer (A.Case c) = infer c
