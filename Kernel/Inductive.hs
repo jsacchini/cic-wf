@@ -64,7 +64,7 @@ instance Check A.Constructor (Name, [Bind], [Bind], Sort) (Name, Global) where
        s' <- isSort s
        unlessM (conversion sortInd s') $ error "Error in constructor. Make up value for TCErr"
        liftIO $ putStrLn $ "Constr checking: " ++ show tp ++ " --> " ++ show tp'
-       (args, indices) <- local (indBind:) $ isConstrType nmInd numPars (subst (Ind Empty nmInd) tp')
+       (args, indices) <- isConstrType nmInd numPars (subst (Ind Empty nmInd) tp')
        return (name, Constructor nmInd 0 parsInd args indices)
                      -- id is filled elsewhere
       where numPars = length parsInd
