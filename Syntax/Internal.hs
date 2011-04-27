@@ -122,7 +122,7 @@ instance HasBind (Polarized Bind) where
 
 mkBindsSameType_ :: [(Name, Polarity)] -> Type -> Int -> [Polarized Bind]
 mkBindsSameType_ [] _ _ = []
-mkBindsSameType_ ((x,pol):xs) t k = Pol { unPol = Bind x (lift k 0 t), 
+mkBindsSameType_ ((x,pol):xs) t k = Pol { unPol = Bind x (lift k 0 t),
                                           polarity = pol }:
                                     mkBindsSameType_ xs t (k + 1)
 
@@ -171,19 +171,48 @@ data Global = Definition Type Term
 --           par = map (Var . bindName) (constrPars c)
 --           indices = constrIndices c
 
-class HasSize a where
-  modifySize :: (Size -> Size) -> a -> a
+class HasAnnot a where
+  modifySize :: (Annot -> Annot) -> a -> a
+  eraseSize :: a -> a
+  eraseStage :: Int -> a -> a
 --  getSizes :: a -> [Size]
 
+  eraseSize = modifySize $ const Empty
+  eraseStage i = modifySize f
+    where f Empty    = Empty
+          f Star     = Star
+          f (Size s) = case base s of
+                         Just j | i == j    -> Star
+                                | otherwise -> Empty
+                         Nothing            -> Empty
+
+instance HasAnnot Term where
+  modifySize f = mSize
+    where
+      mSize (Pi bs t) = Pi (map (modifySize f) bs) (mSize t)
+      mSize t@(Bound _) = t
+      mSize t@(Var _) = t
+      mSize (Lam bs t) = Lam (map (modifySize f) bs) (mSize t)
+      mSize (App t ts) = App (mSize t) (map mSize ts)
+      mSize (Constr nm cid pars args) = Constr nm cid (map mSize pars) (map mSize args)
+      mSize (Fix n x bs t1 t2) = Fix n x (map (modifySize f) bs) (mSize t1) (mSize t2)
+      mSize (Case c) = Case (modifySize f c)
+      mSize (Ind a x) = Ind (f a) x
+
+instance HasAnnot CaseTerm where
+  modifySize f (CaseTerm arg nm ret bs) =
+    CaseTerm (modifySize f arg) nm (modifySize f ret) (map (modifySize f) bs)
+
+instance HasAnnot Branch where
+  modifySize f (Branch nm cid nmArgs body) =
+    Branch nm cid nmArgs (modifySize f body)
+
+instance HasAnnot Bind where
+  modifySize f (Bind nm tp) = Bind nm (modifySize f tp)
+  modifySize f (LocalDef nm t1 t2) = LocalDef nm (modifySize f t1) (modifySize f t2)
 
 
-class Erase a where
-  erase :: a -> a
-  eraseStage :: Int -> a -> a
 
-instance Erase Term where
-  erase _ = error "complete me!"
-  eraseStage _ _ = error "complete me!"
 
 
 class Lift a where
