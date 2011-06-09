@@ -23,7 +23,6 @@ import qualified Syntax.Abstract as A
 import Kernel.TCM
 import Syntax.Position
 import Syntax.Common
-import Syntax.Size
 import Utils.Misc
 
 class Reify a b | a -> b where
@@ -117,7 +116,7 @@ instance Reify Term A.Expr where
                         es <- mapM reify ts
                         return $ mkApp e es
                           where mkApp = foldl (A.App noRange)
-  reify (Ind _ i) = return $ A.Ind noRange Empty i
+  reify (Ind a i) = return $ A.Ind noRange a i
   reify (Constr x indId ps as) =
     do ps' <- mapM reify ps
        as' <- mapM reify as

@@ -1,4 +1,5 @@
-{-# LANGUAGE FlexibleContexts, TypeSynonymInstances, DeriveDataTypeable
+{-# LANGUAGE FlexibleContexts, TypeSynonymInstances, DeriveDataTypeable,
+    MultiParamTypeClasses, FlexibleInstances, UndecidableInstances
   #-}
 
 module Kernel.TCM where
@@ -11,13 +12,16 @@ import Data.Typeable
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import Data.Graph.Inductive
+
 import Control.Applicative
+import Control.Monad.State
 import Control.Monad.Reader
 
 import qualified Syntax.Internal as I
 import Syntax.Common
 import Syntax.Position
-import Utils.MonadUndo
+import Utils.Fresh
 
 import Kernel.Constraints
 
@@ -59,12 +63,24 @@ instance Exception TypeError
 data TCState = TCState
                { stSignature :: Signature,
                  stDefined :: [Name], -- defined names in reverse order
-                 stFresh :: Fresh
+                 stFresh :: Fresh,
+                 stConstraints :: ConstraintSet
                }
                deriving(Show)
 
 type Signature = Map Name I.Global
-type Fresh = Int
+
+-- Fresh
+data Fresh = Fresh { freshStage :: Int }
+             deriving(Show)
+
+instance HasFresh Int Fresh where
+  nextFresh f = (i, f { freshStage = i + 1 })
+    where i = freshStage f
+
+instance HasFresh i Fresh => HasFresh i TCState where
+  nextFresh s = (i, s { stFresh = f })
+    where (i, f) = nextFresh $ stFresh s
 
 -- Local environment
 type TCEnv = [I.Bind]
@@ -93,8 +109,12 @@ runTCM' m = liftM fst $ runReaderT (runStateT m initialTCState) initialTCEnv
 initialTCState :: TCState
 initialTCState = TCState { stSignature = Map.empty,
                            stDefined = [],
-                           stFresh = 0
+                           stFresh = initialFresh,
+                           stConstraints = emptyConstraints
                          }
+
+initialFresh :: Fresh
+initialFresh = Fresh { freshStage = 1 }  -- 0 is mapped to Infty
 
 initialTCEnv :: TCEnv
 initialTCEnv = []
@@ -136,8 +156,14 @@ addGlobal x g = do st <- get
                               stDefined = x : stDefined st
                             }
 
+-- | Returns the number of parameters of an inductive type.
+--   Assumes that the global declaration exists and that is an inductive type
+numParam :: (MonadTCM tcm) => Name -> tcm Int
+numParam x = (length . I.indPars) <$> getGlobal x
+
+
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
-getLocalNames = fmap (map I.bindName) ask
+getLocalNames = map I.bindName <$> ask
 
 -- We don't need the real type of the binds for scope checking, just the names
 -- Maybe should be moved to another place
@@ -145,6 +171,14 @@ fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
 fakeBinds b = local (map (flip I.Bind I.tProp) (reverse (getNames b))++)
 
 
+-- Constraints
+
+addConstraints :: (MonadTCM tcm) => [Constraint] -> tcm ()
+addConstraints cts =
+  do s <- get
+     put $ s { stConstraints = addCts (stConstraints s)  }
+       where addCts g = insEdges cts (insNodes (getNodes cts) g)
+             getNodes = foldr (\(n1,n2,_) r -> (n1,()):(n2,()):r) []
 
 --- For debugging
 traceTCM :: (MonadTCM tcm) => String -> tcm ()

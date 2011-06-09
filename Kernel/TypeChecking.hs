@@ -21,7 +21,7 @@ import Kernel.Whnf
 import Kernel.Inductive()
 import Kernel.Fix()
 import Kernel.Case()
-
+import Utils.Fresh
 
 checkSort :: (MonadTCM tcm) => Sort -> tcm (Term, Type)
 checkSort Prop     = return (tProp, tType 0)
@@ -107,9 +107,10 @@ instance Infer A.Expr (Term, Type) where
          _            -> throwNotFunction r1
   infer (A.Ind _ _ x) =
     do t <- getGlobal x
+       i <- fresh
        case t of
          Inductive pars indices sort _ ->
-           return (Ind Empty x, buildPi (map getBind pars ++ indices) (Sort sort))
+           return (Ind (Size (Svar i)) x, buildPi (map getBind pars ++ indices) (Sort sort))
          _                             -> __IMPOSSIBLE__
   infer (A.Constr _ x _ pars args) =
     do t <- getGlobal x

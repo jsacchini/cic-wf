@@ -48,17 +48,17 @@ main =
                putStrLn "\n *** FIN ***"
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
-                               liftIO $ putStrLn $ "scoped " ++ show d'
+                               -- traceTCM $ "scoped " ++ show d'
                                gs <- infer d'
                                forM_ gs (uncurry addGlobal)
           typeCheckFile :: [A.Declaration] -> TCM ()
           typeCheckFile ds =
             do forM_ ds typeCheckDecl
                liftIO $ putStrLn "========================"
-               sig <- fmap stSignature get
-               liftIO $ putStrLn "========================"
-               liftIO $ print sig
-               liftIO $ putStrLn "========================"
+               -- sig <- fmap stSignature get
+               -- liftIO $ putStrLn "========================"
+               -- liftIO $ print sig
+               -- liftIO $ putStrLn "========================"
                xs <- fmap stDefined get
                forM_ xs showG
                  where showG x = do d <- reify x

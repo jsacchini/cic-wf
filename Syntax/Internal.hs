@@ -189,6 +189,7 @@ class HasAnnot a where
 instance HasAnnot Term where
   modifySize f = mSize
     where
+      mSize t@(Sort _) = t
       mSize (Pi bs t) = Pi (map (modifySize f) bs) (mSize t)
       mSize t@(Bound _) = t
       mSize t@(Var _) = t
