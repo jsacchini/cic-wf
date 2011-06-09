@@ -12,6 +12,7 @@ import Control.Monad.Reader
 
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
+import Syntax.InternaltoAbstract
 import Syntax.Common
 import Syntax.Size
 import qualified Syntax.Abstract as A
@@ -22,6 +23,7 @@ import Kernel.Inductive()
 import Kernel.Fix()
 import Kernel.Case()
 import Utils.Fresh
+import Utils.Pretty
 
 checkSort :: (MonadTCM tcm) => Sort -> tcm (Term, Type)
 checkSort Prop     = return (tProp, tType 0)
@@ -140,6 +142,14 @@ instance Infer A.Declaration [(Name, Global)] where
        _ <- isSort r
        return [(x, Assumption (flatten t))]
   infer (A.Inductive _ indDef) = infer indDef
+  infer (A.Eval _ e) =
+    do (e1, t1) <- infer e
+       r <- reify e1
+       liftIO $ putStrLn $ concat ["eval ", show (prettyPrint r), "."]
+       e1' <- normalForm e1
+       r' <- reify e1'
+       liftIO $ putStrLn $ show (prettyPrint r')
+       return []
 
 instance Check A.Expr Type Term where
   check t u = do (t', r) <- infer t

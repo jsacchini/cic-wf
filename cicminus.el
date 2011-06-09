@@ -41,8 +41,8 @@
 (defconst cicminus-font-lock-keywords-1
   (list
    ;; Built using
-   ;; (regexp-opt '("define" "assume" "data" "forall" "fun" "with" "where" "of" "case" "fix" "end" "in") t)
-   '("\\<\\(assume\\|case\\|d\\(?:ata\\|efine\\)\\|end\\|f\\(?:ix\\|orall\\|un\\)\\|in\\|of\\|w\\(?:here\\|ith\\)\\)\\>" . font-lock-builtin-face)
+   ;; (regexp-opt '("define" "eval" "assume" "data" "forall" "fun" "with" "where" "of" "case" "fix" "end" "in") t)
+   '("\\<\\(assume\\|case\\|d\\(?:ata\\|efine\\)\\|e\\(?:nd\\|val\\)\\|f\\(?:ix\\|orall\\|un\\)\\|in\\|of\\|w\\(?:here\\|ith\\)\\)\\>" . font-lock-builtin-face)
    '("\\('\\w*'\\)" . font-lock-variable-name-face))
   "Highlighting for CIC^-")
 

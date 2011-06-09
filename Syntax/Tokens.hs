@@ -8,7 +8,7 @@ import Syntax.ParseMonad
 -- Keywords. Type is separated, since it has an argument
 data Keyword = KwForall | KwFun | KwProp | KwLet | KwDefine | KwImport
              | KwAssume | KwRefine | KwCase | KwAs | KwIn | KwReturn | KwWith
-             | KwEnd | KwData | KwFix | KwWhere | KwOf
+             | KwEnd | KwData | KwFix | KwWhere | KwOf | KwEval
              deriving(Eq,Show)
 
 data Symbol = SymbLeftParen | SymbRightParen | SymbArrow | SymbImplies
@@ -79,6 +79,7 @@ ident pos s =
            ("Type"  , flip (curry TokType) 0), -- if Type has no number
            ("Prop"  , TokKeyword KwProp),
            ("define", TokKeyword KwDefine),
+           ("eval"  , TokKeyword KwEval),
            ("let"   , TokKeyword KwLet),
            ("import", TokKeyword KwImport),
            ("assume", TokKeyword KwAssume),

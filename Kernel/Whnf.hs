@@ -11,6 +11,9 @@ import Control.Monad.Reader
 import Syntax.Internal
 import Kernel.TCM
 
+import Syntax.InternaltoAbstract
+import Utils.Pretty
+
 class Whnf a where
   whnf :: (MonadTCM tcm) => a -> tcm a
 
@@ -70,14 +73,23 @@ instance NormalForm Term where
   normalForm (Lam bs t) = do bs' <- mapM normalForm bs
                              t' <- normalForm t
                              return $ Lam bs' t'
-  normalForm (App t1 ts) = do t1' <- normalForm t1
-                              case t1' of
-                                Lam bs u  -> normalForm $ applyTerms bs u ts
-                                App u1 us -> do ts' <- mapM normalForm ts
-                                                return $ App u1 (us ++ ts')
-                                Bound _   -> do ts' <- mapM normalForm ts
-                                                return $ App t1' ts'
-                                Var _     -> do ts' <- mapM normalForm ts
-                                                return $ App t1' ts'
-                                _         -> __IMPOSSIBLE__
-  normalForm _ = error "Complete normalForm"
+  normalForm (App t1 ts) =
+    do t1' <- normalForm t1
+       case t1' of
+         Lam bs u  -> normalForm $ applyTerms bs u ts
+         App u1 us -> do ts' <- mapM normalForm ts
+                         return $ App u1 (us ++ ts')
+         Bound _   -> do ts' <- mapM normalForm ts
+                         return $ App t1' ts'
+         Var _     -> do ts' <- mapM normalForm ts
+                         return $ App t1' ts'
+         _         -> __IMPOSSIBLE__
+  normalForm t@(Ind _ _) = return t
+  normalForm (Constr x i ps as) =
+    do ps' <- mapM normalForm ps
+       as' <- mapM normalForm as
+       return $ Constr x i ps' as'
+  normalForm t = do t' <- reify t
+                    liftIO $ putStrLn $ concat ["Normal form of ",
+                                                show (prettyPrint t')]
+                    return t

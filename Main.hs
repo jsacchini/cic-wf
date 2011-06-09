@@ -54,13 +54,13 @@ main =
           typeCheckFile :: [A.Declaration] -> TCM ()
           typeCheckFile ds =
             do forM_ ds typeCheckDecl
-               liftIO $ putStrLn "========================"
-               -- sig <- fmap stSignature get
                -- liftIO $ putStrLn "========================"
-               -- liftIO $ print sig
-               -- liftIO $ putStrLn "========================"
-               xs <- fmap stDefined get
-               forM_ xs showG
-                 where showG x = do d <- reify x
-                                    liftIO $ putStrLn $ show (prettyPrint d) ++  "\n----\n" ++ show d ++ "\n===="
+               -- -- sig <- fmap stSignature get
+               -- -- liftIO $ putStrLn "========================"
+               -- -- liftIO $ print sig
+               -- -- liftIO $ putStrLn "========================"
+               -- xs <- fmap stDefined get
+               -- forM_ xs showG
+               --   where showG x = do d <- reify x
+               --                      liftIO $ putStrLn $ show (prettyPrint d) ++  "\n----\n" ++ show d ++ "\n===="
 

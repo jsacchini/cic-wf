@@ -33,3 +33,5 @@ define t6 := fun x : nat =>
              | O => S O
              | S y => S y
              end.
+
+eval t1 nat O (S O) O (S (S O)) (S (S (S (S O)))).

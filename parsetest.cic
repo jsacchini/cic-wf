@@ -5,7 +5,7 @@ assume False : forall P:Type, P.
 assume True : forall P:Type, P -> P.
 
 
--- data nat : Type := O : nat | S : nat -> nat.
+data nat : Type := O : nat | S : nat -> nat.
 
 
 data list (A++ :Type) : Type := | nil : list A -- first constructor

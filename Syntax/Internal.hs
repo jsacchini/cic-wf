@@ -34,6 +34,12 @@ data Term
     | Ind Annot Name
     deriving(Show)
 
+
+isConstr :: Term -> Bool
+isConstr (Constr _ _ _ _) = True
+isConstr _                = False
+
+
 data CaseTerm = CaseTerm {
   caseArg :: Term,
   caseNmInd :: Name,

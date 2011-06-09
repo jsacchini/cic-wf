@@ -194,6 +194,9 @@ instance Scope A.Declaration where
          checkIfDefined x
          return $ A.Assumption r x t'
     scope (A.Inductive r indDef) = fmap (A.Inductive r) (scope indDef)
+    scope (A.Eval r e) =
+      do e' <- scope e
+         return $ A.Eval r e'
 
 instance Scope A.InductiveDef where
   scope (A.InductiveDef x ps e cs) =
