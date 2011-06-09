@@ -135,7 +135,8 @@ data Declaration =
   Definition Range Name (Maybe Expr) Expr
   | Assumption Range Name Expr
   | Inductive Range InductiveDef
-  | Eval Range Expr
+  | Eval Expr
+  | Check Expr (Maybe Expr)
   deriving(Show)
 
 data InductiveDef = InductiveDef {
@@ -321,8 +322,14 @@ instance Pretty Declaration where
   prettyPrint (Assumption _ x e) =
     hsep [text "assume", prettyPrint x, colon, prettyPrint e]
   prettyPrint (Inductive _ indDef) = prettyPrint indDef
-  prettyPrint (Eval _ e) =
+  prettyPrint (Eval e) =
     hsep [text "eval", prettyPrint e]
+  prettyPrint (Check e1 e2) =
+    hsep [text "check", prettyPrint e1, prettyPrint e2]
+
+instance Pretty (Maybe Expr) where
+  prettyPrint (Just e) = empty <+> colon <+> prettyPrint e
+  prettyPrint Nothing = empty
 
 instance Pretty InductiveDef where
   prettyPrint (InductiveDef x ps e cs) =

@@ -142,7 +142,7 @@ instance Infer A.Declaration [(Name, Global)] where
        _ <- isSort r
        return [(x, Assumption (flatten t))]
   infer (A.Inductive _ indDef) = infer indDef
-  infer (A.Eval _ e) =
+  infer (A.Eval e) =
     do (e1, t1) <- infer e
        r <- reify e1
        liftIO $ putStrLn $ concat ["eval ", show (prettyPrint r), "."]
@@ -151,6 +151,25 @@ instance Infer A.Declaration [(Name, Global)] where
        r' <- reify e1'
        liftIO $ putStrLn $ show (prettyPrint r')
        return []
+  infer (A.Check e1 (Just e2)) =
+    do (t2, r2) <- infer e2
+       _ <- isSort r2
+       t1 <- check e1 t2
+       t2' <- reify t2
+       t1' <- reify t1
+       liftIO $ putStrLn $ concat ["check ", show (prettyPrint t1')]
+       liftIO $ putStrLn $ concat ["  : ", show (prettyPrint t2')]
+       return []
+  infer (A.Check e1 Nothing) =
+    do (t1, u1) <- infer e1
+       u1' <- reify u1
+       t1' <- reify t1
+       liftIO $ putStrLn $ concat ["check ", show (prettyPrint t1')]
+       liftIO $ putStrLn $ concat ["  : ", show (prettyPrint u1')]
+       return []
+
+
+
 
 instance Check A.Expr Type Term where
   check t u = do -- traceTCM_ ["Checking type of\n", show t, "\nagainst\n", show u]

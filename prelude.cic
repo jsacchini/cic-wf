@@ -57,3 +57,6 @@ define mult : nat -> nat -> nat :=
 -- eval plus (S O).
 
 eval mult (S (S (S O))) (S (S O)).
+
+check mult O : nat -> nat.
+

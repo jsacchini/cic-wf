@@ -42,6 +42,7 @@ import Utils.Misc
   'assume'         { TokKeyword KwAssume $$ }
   'define'         { TokKeyword KwDefine $$ }
   'eval'           { TokKeyword KwEval $$ }
+  'check'          { TokKeyword KwCheck $$ }
   'data'           { TokKeyword KwData $$ }
   'case'           { TokKeyword KwCase $$ }
   'in'             { TokKeyword KwIn $$ }
@@ -92,7 +93,9 @@ Decl
   | 'data' Name Parameters ':' Exp ':=' Constructors
          { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) (reverse $3) $5 $7) }
   | 'eval' Exp
-         { A.Eval (getRange $2) $2 }
+         { A.Eval $2 }
+  | 'check' Exp MaybeExp
+         { A.Check $2 $3 }
 
 Parameters :: { [A.Parameter] }
 Parameters : Parameters Par            { $2 : $1 }
