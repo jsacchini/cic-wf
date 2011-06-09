@@ -13,7 +13,7 @@ newtype Name = Id { unName :: String }
                deriving(Eq, Ord)
 
 instance Show Name where
-  show (Id s) = "Id " ++ s
+  show = unName
 
 noName :: Name
 noName = Id ""

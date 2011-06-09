@@ -133,7 +133,7 @@ instance Infer A.Declaration [(Name, Global)] where
     do (t1, r1) <- infer e1
        _ <- isSort r1
        t2 <- check e2 t1
-       return [(x, Definition (flatten t2) (flatten t1))]
+       return [(x, Definition (flatten t1) (flatten t2))]
   infer (A.Definition _ x Nothing e) =
     do (t, u) <- infer e
        return [(x, Definition (flatten u) (flatten t))]
@@ -147,12 +147,14 @@ instance Infer A.Declaration [(Name, Global)] where
        r <- reify e1
        liftIO $ putStrLn $ concat ["eval ", show (prettyPrint r), "."]
        e1' <- normalForm e1
+       traceTCM_ ["Normal form obtained ", show e1']
        r' <- reify e1'
        liftIO $ putStrLn $ show (prettyPrint r')
        return []
 
 instance Check A.Expr Type Term where
-  check t u = do (t', r) <- infer t
+  check t u = do -- traceTCM_ ["Checking type of\n", show t, "\nagainst\n", show u]
+                 (t', r) <- infer t
                  b <- conversion r u
                  r__ <- whnf r
                  u__ <- whnf u

@@ -48,7 +48,7 @@ main =
                putStrLn "\n *** FIN ***"
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
-                               -- traceTCM $ "scoped " ++ show d'
+                               -- traceTCM $ "Scoped " ++ show d'
                                gs <- infer d'
                                forM_ gs (uncurry addGlobal)
           typeCheckFile :: [A.Declaration] -> TCM ()

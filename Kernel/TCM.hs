@@ -182,7 +182,7 @@ addConstraints cts =
 
 --- For debugging
 traceTCM :: (MonadTCM tcm) => String -> tcm ()
-traceTCM = liftIO . putStr
+traceTCM s = liftIO $ putStrLn $ "++ " ++ s ++ " ++"
 
 traceTCM_ :: (MonadTCM tcm) => [String] -> tcm ()
 traceTCM_ = traceTCM . concat

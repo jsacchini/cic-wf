@@ -8,6 +8,8 @@ module Syntax.Internal where
 #include "../undefined.h"
 import Utils.Impossible
 
+import Data.List
+
 import Syntax.Common
 import Syntax.Size
 
@@ -23,7 +25,7 @@ type CxtSize = Int
 data Term
     = Sort Sort
     | Pi [Bind] Term
-    | Bound Int  -- name is a hint
+    | Bound Int
     | Var Name
     | Lam [Bind] Term
     | App Term [Term]
@@ -32,12 +34,14 @@ data Term
     | Fix Int Name [Bind] Type Term
     | Case CaseTerm
     | Ind Annot Name
-    deriving(Show)
 
 
-isConstr :: Term -> Bool
-isConstr (Constr _ _ _ _) = True
-isConstr _                = False
+-- Returns the constructor id or Nothing if it's not a constructor
+isConstr :: Term -> Maybe Int
+isConstr (Constr _ (_,cid) _ _) = Just cid
+isConstr _                      = Nothing
+
+getConstrArgs (Constr _ _ _ as) = as
 
 
 data CaseTerm = CaseTerm {
@@ -45,14 +49,14 @@ data CaseTerm = CaseTerm {
   caseNmInd :: Name,
   caseTpRet :: Type,
   caseBranches :: [Branch]
-  } deriving(Show)
+  }
 
 data Branch = Branch {
   brName :: Name,
   brConstrId :: Int,
   brArgNames :: [Name],
   brBody :: Term
-  } deriving(Show)
+  }
 
 buildPi :: [Bind] -> Term -> Term
 buildPi [] t = t
@@ -115,7 +119,11 @@ data Bind =
     bindDef :: Term,
     bindType ::Type
     }
-  deriving(Show)
+
+instance Show Bind where
+  show (Bind x t) = concat ["(",  show x, " : ", show t, ")"]
+  show (LocalDef x t1 t2) = concat ["(", show x, " := ", show t1, " : ", show t2]
+
 
 class HasBind a where
   getBind :: a -> Bind
@@ -163,7 +171,6 @@ data Global = Definition Type Term
               constrArgs :: [Bind], -- arguments
               constrIndices :: [Term]
               }
-              deriving(Show)
 
 -- class HasType a where
 --   getType :: a -> Type
@@ -229,27 +236,39 @@ instance Lift Bind where
   lift k n (Bind x t) = Bind x (lift k n t)
   lift k n (LocalDef x t1 t2) = LocalDef x (lift k n t1) (lift k n t2)
 
+instance Lift a => Lift [a] where
+  lift k n [] = []
+  lift k n (x : xs) = lift k n x : lift k (n + 1) xs
+
 instance Lift Term where
   lift _ _ t@(Sort _) = t
-  lift k n (Pi bs t) = Pi (map (lift k n) bs) (lift k (n + 1) t)
+  lift k n (Pi bs t) = Pi (lift k n bs) (lift k (n + length bs) t)
   lift k n t@(Bound m) = if m < n then t else Bound (m + k)
   lift _ _ t@(Var _) = t
-  lift k n (Lam b u) = Lam (fmap (lift k n) b) (lift k (n + 1) u)
+  lift k n (Lam bs u) = Lam (lift k n bs) (lift k (n + length bs) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
   lift _ _ t@(Ind _ _) = t
   lift k n (Constr x indId ps as) = Constr x indId ps' as'
                                       where ps' = map (lift k n) ps
                                             as' = map (lift k n) as
-  lift _ _ _ = error "Complete lift"
--- lift k n t@(Meta i m s) = if m < n then t else Meta i (m+k) s
-  -- lift k n (Constr c x ps as) = Constr c x (map (lift k n) ps) (map (lift k n) as)
-  -- lift k n (Fix m x bs t e) = Fix m x (liftCxt (flip lift n) k bs) (lift k (n+cxtSize bs) t) (lift k (n+1) e)
+  lift k n (Fix m x bs t e) =
+    Fix m x (lift k n bs) (lift k (n + length bs) t) (lift k (n + 1) e)
+  lift k n (Case c) = Case (lift k n c)
+
+
+instance Lift CaseTerm where
+  lift k n (CaseTerm arg nm ret branches) =
+    CaseTerm (lift k n arg) nm (lift k n ret) (map (lift k n) branches)
+
+instance Lift Branch where
+  lift k n (Branch nm cid nmArgs body) =
+    Branch nm cid nmArgs (lift k (n + length nmArgs) body)
+
 
 class SubstTerm a where
   subst :: Term -> a -> a
   substN :: Int -> Term -> a -> a
 
-  substN = error "Defaul impl of SubstTerm"  -- REMOVE THIS!
   subst = substN 0
 
 instance SubstTerm [Term] where
@@ -276,18 +295,20 @@ instance SubstTerm Term where
   substN i r (Constr x ind ps as) = Constr x ind ps' as'
                                     where ps' = map (substN i r) ps
                                           as' = map (substN i r) as
-  substN _ _ _ = error "Complete substN"
-      -- substN i r t@(Meta _ _ _) = t
-      -- substN i r (Constr c x ps as) = Constr c x (map (substN i r) ps) (map (substN i r) as)
-      -- substN i r (Fix n x bs t e) = Fix n x (substCxt_ i r bs) (substN (i+cxtSize bs) r t) (substN (i+1) r e)
+  substN i r (Case c) = Case (substN i r c)
+  substN i r (Fix k nm bs tp body) =
+    Fix k nm (substN i r bs) (substN (i + length bs) r tp) (substN (i + 1) r body)
 
 
-applyTerms :: [Bind] -> Term -> [Term] -> Term
-applyTerms [] body [] = body
-applyTerms [] body args = App body args
-applyTerms binds body [] = Lam binds body
-applyTerms (Bind _ _:bs) body (a:as) = applyTerms (subst a bs) (substN (length bs) a body) as
-applyTerms (LocalDef _ _ _:_) _ _ = __IMPOSSIBLE__
+instance SubstTerm CaseTerm where
+  substN i r (CaseTerm arg nm ret branches) =
+    CaseTerm (substN i r arg) nm (substN i r ret) branches'
+      where branches' = map (substN i r) branches
+
+instance SubstTerm Branch where
+  substN i r (Branch nm cid xs body) =
+    Branch nm cid xs (substN (i + length xs) r body)
+
 
 
 flatten :: Term -> Term
@@ -313,3 +334,48 @@ findArgs :: Term -> (Term, [Term])
 findArgs (App t ts) = (func, args++ts)
                       where (func, args) = findArgs t
 findArgs t = (t, [])
+
+
+
+
+------------------------
+--- The instances below are used only for debugging
+
+instance Show Term where
+  show (Sort s) = show s
+  show (Pi bs e) = concat $ "Pi " : map show bs ++ [", ", show e]
+  show (Bound n) = concat ["[", show n, "]"]
+  show (Var x) = show x
+  show (Lam bs e) = concat $ "fun " : map show bs ++ [" => ", show e]
+  show (App e1 es) = "App " ++ show e1 ++ showArgs es
+    where showArgs [] = ""
+          showArgs (e : es) = concat ["(", show e, ") ", showArgs es]
+  show (Case c) = show c
+  show (Fix n x bs tp body) = concat ["fix ", show n, " ", show x, "..."] 
+                              -- show bs,
+                              --        " : ", show tp, " := ", show body]
+  show (Constr x i ps as) = concat $ [show x, " ", -- show i,
+                                      --"(",
+                                      intercalate ", " (map show (ps ++ as))] --, ")"]
+  show (Ind a x) = concat [show x] --, "<", show a, ">"]
+
+instance Show CaseTerm where
+  show (CaseTerm arg nm tp branches) =
+    concat $ [--"<", show tp, ">",
+              "case ", -- on (", show nm, ")  ",
+              show arg] ++
+              map (("| "++) . show) branches
+
+instance Show Branch where
+  show (Branch nm cid args body) =
+    concat [show nm, " : ", show args, " => ", show body]
+
+instance Show Global where
+  show (Assumption tp) = "assume " ++ show tp
+  show (Inductive pars indices sort constr) =
+    concat $ [show pars, " : ", show indices, " -> ", show sort,
+              " := "] ++ map show constr
+  show (Constructor name cid pars args indices) =
+    concat [" | ", show name, " : ", show pars, " ", show args, " --> ",
+            show indices]
+  show (Definition t1 t2) = "define : " ++ show t1 ++ " := " ++ show t2

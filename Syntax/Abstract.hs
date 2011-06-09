@@ -9,6 +9,8 @@
 
 module Syntax.Abstract where
 
+import Data.List (intercalate)
+
 import Text.PrettyPrint.HughesPJ
 
 import Syntax.Common
@@ -51,7 +53,7 @@ data Expr =
                              --
                              -- * Actual arguments of the constructor
   | Ind Range Annot IName
-  deriving(Show) -- for debugging only
+
 
 -- | Equality on expressions is used by the reifier ("InternaltoAbstract")
 --   to join consecutive binds with the same type.
@@ -141,14 +143,15 @@ data InductiveDef = InductiveDef {
   indPars   :: [Parameter],
   indType   :: Expr,
   indConstr :: [Constructor]
-  } deriving(Show)
+  }
+
 
 data Constructor = Constructor {
   constrRange :: Range,
   constrName  :: CName,
   constrType  :: Expr,
   constrId    :: Int   -- Not used now. Should be removed
-  } deriving(Show)
+  }
 
 
 data Parameter =
@@ -157,7 +160,6 @@ data Parameter =
     parNamesPol :: [(Name, Polarity)],
     parType :: Expr
     }
-  deriving(Show)
 
 
 declName :: Declaration -> Name
@@ -340,3 +342,39 @@ instance Pretty Constructor where
 
 instance Pretty [Declaration] where
   prettyPrint = vcat . map ((<> dot) . prettyPrint)
+
+
+
+
+
+------------------------
+--- The instances below are used only for debugging
+
+instance Show Expr where
+  show (Ann _ e1 e2) = concat [show e1, " :: ", show e2]
+  show (Sort _ s) = show s
+  show (Pi _ bs e) = concat $ "Pi " : map show bs ++ [", ", show e]
+  show (Arrow _ e1 e2) = concat ["(", show e1, ") -> (", show e2, ")"]
+  show (Ident _ x) = show x
+  show (Lam _ bs e) = concat $ "fun " : map show bs ++ [" => ", show e]
+  show (App _ e1 e2) = concat [show e1, " (", show e2, ")"]
+  show (Case c) = show c
+  show (Fix f) = show f
+  show (Bound _ x n) = concat [show x, "[", show n, "]"]
+  show (Constr _ x i ps as) = concat $ [show x, show i, "(", intercalate ", " (map show (ps ++ as)), ")"]
+  show (Ind _ a x) = concat [show x, "<", show a, ">"]
+
+
+instance Show InductiveDef where
+  show (InductiveDef name pars tp constr) =
+    concat $ ["Inductive ", show name, " ", show pars, " : ", show tp,
+              " := "] ++ map show constr
+
+instance Show Constructor where
+  show (Constructor _ name tp _) =
+    concat [" | ", show name, " : ", show tp]
+
+instance Show Parameter where
+  show (Parameter _ pol tp) = concatMap showNamePol pol ++ ": " ++ show tp
+    where showNamePol (x, p) = show x ++ show p ++ " "
+

@@ -26,16 +26,16 @@ TODO:
 --   for the inductive type and the constructors
 instance Infer A.InductiveDef [(Name, Global)] where
   infer ind@(A.InductiveDef name pars tp constrs) =
-    do liftIO $ putStrLn $ "\n INDUCTIVE " ++ show ind
+    do -- traceTCM $ "Checking inductive definition\n" ++ show ind
        (pars', _) <- infer pars
        let bindPars' = map getBind pars'
-       liftIO $ putStrLn $ "\n PARS " ++ show pars'
+       -- traceTCM $ "Parameters\n" ++ show pars'
        (tp', s2)  <- local (reverse bindPars'++) $ infer tp
-       liftIO $ putStrLn $ "\n TYPE " ++ show tp'
+       traceTCM $ "Type\n" ++ show tp'
        _          <- isSort s2
        (args, s3) <- isArity (getRange tp) tp'
        cs         <- mapM (local (reverse bindPars'++) . flip check (name, bindPars', args, s3)) constrs
-       liftIO $ putStrLn $ "\n CONSTRUCTORS " ++ show cs
+       -- traceTCM $ "Constructors\n" ++ show cs
        return $ (name, Inductive pars' args s3 constrNames) : fillIds cs
          where fillIds cs = map (\(idConstr, (x, c)) -> (x, c { constrId = idConstr })) (zip [0..] cs)
                constrNames = map A.constrName constrs
@@ -63,7 +63,7 @@ instance Check A.Constructor (Name, [Bind], [Bind], Sort) (Name, Global) where
     do (tp', s) <- local (indBind:) $  infer tp
        s' <- isSort s
        unlessM (conversion sortInd s') $ error "Error in constructor. Make up value for TCErr"
-       liftIO $ putStrLn $ "Constr checking: " ++ show tp ++ " --> " ++ show tp'
+       -- traceTCM $ "Constructor checking: " ++ show tp ++ " --> " ++ show tp'
        (args, indices) <- isConstrType nmInd numPars (subst (Ind Empty nmInd) tp')
        return (name, Constructor nmInd 0 parsInd args indices)
                      -- id is filled elsewhere
