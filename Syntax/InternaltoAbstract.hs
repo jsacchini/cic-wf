@@ -124,18 +124,17 @@ instance Reify Term A.Expr where
        return $ A.Fix (A.FixExpr noRange num f tp' body')
   reify (Case c) = fmap A.Case $ reify c
   -- Special case for reification of natural numbers
-  -- This definition is inefficient. Should be rewritten
-  reify t@(Constr x (Id "nat",k) ps as)
-       | closed t = return $ A.Number noRange $ mkClosedNat t
-       | otherwise = mkOpenNat t
-    where closed (Constr (Id "O") (Id "nat",0) [] []) = True
-          closed (Constr (Id "S") (Id "nat",1) [] [n]) = closed n
-          closed _ = False
-          mkClosedNat (Constr (Id "O") (Id "nat",0) [] []) = 0
-          mkClosedNat (Constr (Id "S") (Id "nat",1) [] [n]) = mkClosedNat n + 1
-          mkOpenNat (Constr (Id "S") (Id "nat",1) [] [n]) =
-            do n' <- reify n
-               return (A.Constr noRange (Id "S") (Id "nat",1) [] [n'])
+  reify t@(Constr x (Id "nat",k) ps as) =
+    case getS t of
+      (k, Nothing) -> return $ A.Number noRange k
+      (k, Just t)  -> do t' <- reify t
+                         return $ foldS k t'
+    where getS (Constr (Id "O") (Id "nat",0) [] []) = (0, Nothing)
+          getS (Constr (Id "S") (Id "nat",1) [] [n]) = (k + 1, t)
+            where (k, t) = getS n
+          getS t = (0, Just $ t)
+          foldS 0 t     = t
+          foldS (k+1) t = A.Constr noRange (Id "S") (Id "nat",1) [] [foldS k t]
   reify (Constr x indId ps as) =
     do ps' <- mapM reify ps
        as' <- mapM reify as
