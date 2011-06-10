@@ -31,37 +31,10 @@ instance Conversion Sort where
   conversion s1 s2 = return (s1 == s2)
 
 instance Conversion Term where
-    conversion t1 t2 =
-      do w1 <- whnf t1
-         w2 <- whnf t2
-         -- traceTCM_ ["\nCONVERSION CHECKING:\n",
-         --            show t1, " -> ", show w1,
-         --            "\n == \n",
-         --            show t2, " -> ", show w2, "\n***************"]
-         case (w1, w2) of
-           (Var x, Var y) -> return (x == y)
-           (Bound m, Bound n) -> return (m == n)
-           (Sort s1, Sort s2) -> conversion s1 s2
-           (Pi u1 u2, Pi v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
-           (Lam u1 u2, Lam v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
-           (App u1 u2, App v1 v2) -> conversion u1 v1 `mAnd` conversion u2 v2
-           -- (Constr _ x p1 a1, Constr _ y p2 a2) -> if x /= y then return False
-           --                                         else do bps <- sequence (map (uncurry conversion) (zip p1 p2))
-           --                                                 bas <- sequence (map (uncurry conversion) (zip a1 a2))
-           --                                                 return $ and (bps ++ bas)
-           (Ind _ x, Ind _ y) -> return (x == y)
-           (Constr x1 _ ps1 as1, Constr x2 _ ps2 as2) ->
-             do bps <- mapM (uncurry conversion) (zip ps1 ps2)
-                bas <- mapM (uncurry conversion) (zip as1 as2)
-                return $ x1 == x2 && and (bps ++ bas)
-           (_, _) -> return False
-
-
-(===) :: (MonadTCM) tcm => Term -> Term -> tcm ()
-(===) x y = do b <- conversion x y
-               unless b $ liftIO $ putStrLn $ "\n**ERROR IN CONVERSION**\n" ++ show x ++ "\n==\n" ++ show y
-               (unless b $
-                 ask >>= \e -> typeError $ NotConvertible e x y)
+  conversion t1 t2 =
+    do n1 <- normalForm t1
+       n2 <- normalForm t2
+       return (n1 == n2)
 
 
 class SubType a where

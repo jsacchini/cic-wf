@@ -49,14 +49,14 @@ data CaseTerm = CaseTerm {
   caseNmInd :: Name,
   caseTpRet :: Type,
   caseBranches :: [Branch]
-  } deriving(Show)
+  } deriving(Show,Eq)
 
 data Branch = Branch {
   brName :: Name,
   brConstrId :: Int,
   brArgNames :: [Name],
   brBody :: Term
-  } deriving(Show)
+  } deriving(Show,Eq)
 
 
 buildPi :: [Bind] -> Term -> Term
@@ -105,7 +105,12 @@ instance Eq Term where
   (App f1 ts1) == (App f2 ts2) = length ts1 == length ts2 &&
                                  all (uncurry (==)) (zip ts1 ts2) &&
                                  f1 == f2
-  (Ind a1 i1) == (Ind a2 i2) = a1 == a2 && i1 == i2
+  (Constr x1 cid1 ps1 as1) == (Constr x2 cid2 ps2 as2) =
+    x1 == x2 && cid1 == cid2 && ps1 == ps2 && as1 == as2
+  (Fix n1 x1 bs1 tp1 body1) == (Fix n2 x2 bs2 tp2 body2) =
+    n1 == n2 && x1 == x2 && bs1 == bs2 && tp1 == tp2 && body1 == body2
+  (Case c1) == (Case c2) = c1 == c2
+  (Ind a1 i1) == (Ind a2 i2) = i1 == i2
   _ == _ = False
 
 type Type = Term

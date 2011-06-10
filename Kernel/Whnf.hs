@@ -23,20 +23,35 @@ instance Whnf Term where
     do w <- whnf f
        case w of
          Lam bs u -> whnf $ betaRed bs u ts
-         u        -> return $ App u ts
+         Fix n _ _ _ _
+           | length ts < n -> return $ App w ts
+           | otherwise ->
+             do recArg' <- normalForm recArg
+                case isConstr recArg' of
+                  Just _ -> whnf (muRed w (first ++ recArg' : last))
+                  Nothing -> return $ App w ts
+           where (first, recArg, last) = splitRecArg [] (n - 1) ts
+                 splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
+                 splitRecArg xs (k + 1) (r : rs) = splitRecArg (r : xs) k rs
+         _         -> return $ App w ts
   whnf t@(Var x) =
     do d <- getGlobal x
        case d of
          Definition _ u   -> return u
          Assumption _     -> return t
          _                -> __IMPOSSIBLE__
+  whnf t@(Case c) =
+    do arg' <- whnf $ caseArg c
+       case isConstr arg' of
+         Just cid -> whnf $ iotaRed cid (getConstrArgs arg') (caseBranches c)
+         Nothing -> return $ Case (c { caseArg = arg' })
   whnf t = return t
 
-instance Whnf Bind where
-  whnf (Bind x t) = do w <- whnf t
-                       return $ Bind x w
-  whnf (LocalDef x t u) = do w <- whnf u  -- we only normalize the type
-                             return $ LocalDef x t w
+-- instance Whnf Bind where
+--   whnf (Bind x t) = do w <- whnf t
+--                        return $ Bind x w
+--   whnf (LocalDef x t u) = do w <- whnf u  -- we only normalize the type
+--                              return $ LocalDef x t w
 
 
 unfoldPi :: (MonadTCM tcm) => Type -> tcm ([Bind], Type)
@@ -50,8 +65,6 @@ unfoldPi t =
 
 class NormalForm a where
   normalForm :: (MonadTCM tcm) => a -> tcm a
-
-  normalForm = error "Default impl of NormalForm. COMPLETE!"
 
 instance NormalForm Bind where
   normalForm (Bind x t) = do t' <- normalForm t
@@ -77,9 +90,9 @@ instance NormalForm Term where
                              t' <- normalForm t
                              return $ Lam bs' t'
   normalForm t@(App t1 ts) =
-    do e <- ask
+    do -- e <- ask
        -- traceTCM_ ["Normalizing App in ", show e, "\n---\n", show t]
-       t1' <- normalForm t1
+       t1' <- whnf t1
        case t1' of
          Lam bs u  -> do -- traceTCM_ ["Beta Reduction on ",
                                     -- "( fun ", show bs, " => ", show u, ")\non\n",
