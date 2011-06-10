@@ -34,7 +34,7 @@ data Term
     | Fix Int Name [Bind] Type Term
     | Case CaseTerm
     | Ind Annot Name
-
+    deriving(Show)
 
 -- Returns the constructor id or Nothing if it's not a constructor
 isConstr :: Term -> Maybe Int
@@ -49,14 +49,15 @@ data CaseTerm = CaseTerm {
   caseNmInd :: Name,
   caseTpRet :: Type,
   caseBranches :: [Branch]
-  }
+  } deriving(Show)
 
 data Branch = Branch {
   brName :: Name,
   brConstrId :: Int,
   brArgNames :: [Name],
   brBody :: Term
-  }
+  } deriving(Show)
+
 
 buildPi :: [Bind] -> Term -> Term
 buildPi [] t = t
@@ -170,7 +171,7 @@ data Global = Definition Type Term
                                     -- the indutive type
               constrArgs :: [Bind], -- arguments
               constrIndices :: [Term]
-              }
+              } deriving(Show)
 
 -- class HasType a where
 --   getType :: a -> Type
@@ -341,41 +342,41 @@ findArgs t = (t, [])
 ------------------------
 --- The instances below are used only for debugging
 
-instance Show Term where
-  show (Sort s) = show s
-  show (Pi bs e) = concat $ "Pi " : map show bs ++ [", ", show e]
-  show (Bound n) = concat ["[", show n, "]"]
-  show (Var x) = show x
-  show (Lam bs e) = concat $ "fun " : map show bs ++ [" => ", show e]
-  show (App e1 es) = "App " ++ show e1 ++ showArgs es
-    where showArgs [] = ""
-          showArgs (e : es) = concat ["(", show e, ") ", showArgs es]
-  show (Case c) = show c
-  show (Fix n x bs tp body) = concat ["fix ", show n, " ", show x, "..."] 
-                              -- show bs,
-                              --        " : ", show tp, " := ", show body]
-  show (Constr x i ps as) = concat $ [show x, " ", -- show i,
-                                      --"(",
-                                      intercalate ", " (map show (ps ++ as))] --, ")"]
-  show (Ind a x) = concat [show x] --, "<", show a, ">"]
+-- instance Show Term where
+--   show (Sort s) = show s
+--   show (Pi bs e) = concat $ "Pi " : map show bs ++ [", ", show e]
+--   show (Bound n) = concat ["[", show n, "]"]
+--   show (Var x) = show x
+--   show (Lam bs e) = concat $ "fun " : map show bs ++ [" => ", show e]
+--   show (App e1 es) = "App " ++ show e1 ++ showArgs es
+--     where showArgs [] = ""
+--           showArgs (e : es) = concat ["(", show e, ") ", showArgs es]
+--   show (Case c) = show c
+--   show (Fix n x bs tp body) = concat ["fix ", show n, " ", show x, "..."] 
+--                               -- show bs,
+--                               --        " : ", show tp, " := ", show body]
+--   show (Constr x i ps as) = concat $ [show x, " ", -- show i,
+--                                       --"(",
+--                                       intercalate ", " (map show (ps ++ as))] --, ")"]
+--   show (Ind a x) = concat [show x] --, "<", show a, ">"]
 
-instance Show CaseTerm where
-  show (CaseTerm arg nm tp branches) =
-    concat $ [--"<", show tp, ">",
-              "case ", -- on (", show nm, ")  ",
-              show arg] ++
-              map (("| "++) . show) branches
+-- instance Show CaseTerm where
+--   show (CaseTerm arg nm tp branches) =
+--     concat $ [--"<", show tp, ">",
+--               "case ", -- on (", show nm, ")  ",
+--               show arg] ++
+--               map (("| "++) . show) branches
 
-instance Show Branch where
-  show (Branch nm cid args body) =
-    concat [show nm, " : ", show args, " => ", show body]
+-- instance Show Branch where
+--   show (Branch nm cid args body) =
+--     concat [show nm, " : ", show args, " => ", show body]
 
-instance Show Global where
-  show (Assumption tp) = "assume " ++ show tp
-  show (Inductive pars indices sort constr) =
-    concat $ [show pars, " : ", show indices, " -> ", show sort,
-              " := "] ++ map show constr
-  show (Constructor name cid pars args indices) =
-    concat [" | ", show name, " : ", show pars, " ", show args, " --> ",
-            show indices]
-  show (Definition t1 t2) = "define : " ++ show t1 ++ " := " ++ show t2
+-- instance Show Global where
+--   show (Assumption tp) = "assume " ++ show tp
+--   show (Inductive pars indices sort constr) =
+--     concat $ [show pars, " : ", show indices, " -> ", show sort,
+--               " := "] ++ map show constr
+--   show (Constructor name cid pars args indices) =
+--     concat [" | ", show name, " : ", show pars, " ", show args, " --> ",
+--             show indices]
+--   show (Definition t1 t2) = "define : " ++ show t1 ++ " := " ++ show t2

@@ -50,6 +50,8 @@ main =
           typeCheckDecl d = do d' <- scope d
                                -- traceTCM $ "Scoped " ++ show d'
                                gs <- infer d'
+                               -- st <- getSignature
+                               -- liftIO $ putStrLn $ show st
                                forM_ gs (uncurry addGlobal)
           typeCheckFile :: [A.Declaration] -> TCM ()
           typeCheckFile ds =

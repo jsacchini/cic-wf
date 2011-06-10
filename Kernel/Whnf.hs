@@ -81,9 +81,9 @@ instance NormalForm Term where
        -- traceTCM_ ["Normalizing App in ", show e, "\n---\n", show t]
        t1' <- normalForm t1
        case t1' of
-         Lam bs u  -> do traceTCM_ ["Beta Reduction on ",
-                                    "( fun ", show bs, " => ", show u, ")\non\n",
-                                    show ts]
+         Lam bs u  -> do -- traceTCM_ ["Beta Reduction on ",
+                                    -- "( fun ", show bs, " => ", show u, ")\non\n",
+                                    -- show ts]
                          normalForm $ betaRed bs u ts
          App u1 us -> do ts' <- mapM normalForm ts
                          return $ buildApp u1 (us ++ ts')
@@ -95,9 +95,9 @@ instance NormalForm Term where
              do -- traceTCM_ ["Fix enough args\nFirst ", show first, "\nRec ", show recArg, "\nLast ", show last]
                 recArg' <- normalForm recArg
                 case isConstr recArg' of
-                  Just _ -> do traceTCM_ ["Mu Reduction ",
-                                          show t1', "\non\n",
-                                          show (first ++ recArg' : last)]
+                  Just _ -> do -- traceTCM_ ["Mu Reduction ",
+                               --            show t1', "\non\n",
+                               --            show (first ++ recArg' : last)]
                                normalForm (muRed t1' (first ++ recArg' : last))
                   Nothing -> do -- traceTCM_ ["No recursion arg = ", show recArg']
                                 first' <- mapM normalForm first
@@ -114,10 +114,10 @@ instance NormalForm Term where
   normalForm t@(Case c) =
     do arg' <- normalForm $ caseArg c
        case isConstr arg' of
-         Just cid -> do traceTCM_ ["Iota Reduction ",
-                                   show cid, " ", show (getConstrArgs arg'),
-                                   "\nwith branches\n",
-                                   show (caseBranches c)]
+         Just cid -> do -- traceTCM_ ["Iota Reduction ",
+                        --            show cid, " ", show (getConstrArgs arg'),
+                        --            "\nwith branches\n",
+                        --           show (caseBranches c)]
                         normalForm $ iotaRed cid (getConstrArgs arg') (caseBranches c)
          Nothing -> do -- traceTCM_ ["Case in normal form ", show t]
                        ret' <- normalForm (caseTpRet c)

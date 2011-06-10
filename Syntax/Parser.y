@@ -158,6 +158,8 @@ Exp1 : '(' Exp ')'   { $2 }
      | Sort          { $1 }
      | Name          { A.Ident (mkRangeLen (fst $1) (length (unName (snd $1)))) (snd $1) }
      | identStar     {% unlessM starAllowed (fail $ "position type not allowed" ++ show (fst $1)) >> return (A.Ind (mkRangeLen (fst $1) (length (snd $1))) Star (Id (snd $1))) }
+     | number        { let (pos, num) = $1
+                       in  A.Number (mkRangeLen pos (length (show num))) num }
 
 
 -- This does not look elegant

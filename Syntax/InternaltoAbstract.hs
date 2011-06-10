@@ -57,12 +57,12 @@ reifyPiBinds = rP []
                                      return $ A.Pi noRange (reverse bs) e
     rP [] bs@(Bind x t1:bs') t2
       | notFree bs' t2 =
-        do liftIO $ putStrLn $ "notFree 1 " ++ show bs ++ " -> " ++ show t2
+        do -- traceTCM $ "notFree 1 " ++ show bs ++ " -> " ++ show t2
            e1 <- reify t1
            e2 <- fakeBinds noName $ rP [] bs' t2
            return $ A.Arrow noRange e1 e2
       | otherwise     =
-          do liftIO $ putStrLn $ "otherwise 1 " ++ show bs ++ " -> " ++ show t2
+          do -- traceTCM $ "otherwise 1 " ++ show bs ++ " -> " ++ show t2
              e1 <- reify t1
              x' <- freshName x
              fakeBinds x' $ rP [A.Bind noRange [x'] e1] bs' t2
@@ -103,8 +103,8 @@ reifyLamBinds = rL []
 
 instance Reify Term A.Expr where
   reify (Sort s) = return $ A.Sort noRange s
-  reify (Pi bs t) = do traceTCM $ "printing " ++ show (Pi bs t)
-                       traceTCM $ "reifyBinds " ++ show bs
+  reify (Pi bs t) = do -- traceTCM $ "printing " ++ show (Pi bs t)
+                       -- traceTCM $ "reifyBinds " ++ show bs
                        reifyPiBinds bs t
   reify (Bound n) = do xs <- getLocalNames
                        l <- ask
@@ -117,16 +117,29 @@ instance Reify Term A.Expr where
                         return $ mkApp e es
                           where mkApp = foldl (A.App noRange)
   reify (Ind a i) = return $ A.Ind noRange a i
-  reify (Constr x indId ps as) =
-    do ps' <- mapM reify ps
-       as' <- mapM reify as
-       return $ A.Constr noRange x indId ps' as'
   reify (Fix num f args tp body) =
     do tp'   <- reify (buildPi args tp)
        f'    <- freshName f
        body' <- fakeBinds f' $ reify body
        return $ A.Fix (A.FixExpr noRange num f tp' body')
   reify (Case c) = fmap A.Case $ reify c
+  -- Special case for reification of natural numbers
+  -- This definition is inefficient. Should be rewritten
+  reify t@(Constr x (Id "nat",k) ps as)
+       | closed t = return $ A.Number noRange $ mkClosedNat t
+       | otherwise = mkOpenNat t
+    where closed (Constr (Id "O") (Id "nat",0) [] []) = True
+          closed (Constr (Id "S") (Id "nat",1) [] [n]) = closed n
+          closed _ = False
+          mkClosedNat (Constr (Id "O") (Id "nat",0) [] []) = 0
+          mkClosedNat (Constr (Id "S") (Id "nat",1) [] [n]) = mkClosedNat n + 1
+          mkOpenNat (Constr (Id "S") (Id "nat",1) [] [n]) =
+            do n' <- reify n
+               return (A.Constr noRange (Id "S") (Id "nat",1) [] [n'])
+  reify (Constr x indId ps as) =
+    do ps' <- mapM reify ps
+       as' <- mapM reify as
+       return $ A.Constr noRange x indId ps' as'
 
 
 instance Reify CaseTerm A.CaseExpr where
@@ -154,11 +167,11 @@ instance Reify Name A.Declaration where
          I.Assumption t -> do e <- reify t
                               return $ A.Assumption noRange x e
          t@(I.Inductive {}) ->
-           do traceTCM $ "data " ++ show x ++ " : " ++ show t
+           do -- traceTCM $ "data " ++ show x ++ " : " ++ show t
               return $ A.Inductive noRange (A.InductiveDef x [] (A.Sort noRange Prop) [])
            -- COMPLETE THIS CASE
          t@(Constructor _ _ _ _ _) ->
-           do traceTCM $ "constructor " ++ show x ++ " : " ++ show t
+           do -- traceTCM $ "constructor " ++ show x ++ " : " ++ show t
               return $ A.Assumption noRange x (A.Sort noRange Prop)
 
 

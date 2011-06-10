@@ -104,6 +104,7 @@ instance Scope A.Expr where
          Just (I.Inductive {}) -> return e
          Just _                -> typeError $ NotInductive x
          Nothing               -> typeError $ UndefinedName r x
+  scope t@(A.Number _ _) = return t
   scope (A.Ind _ _ _) = __IMPOSSIBLE__
   scope (A.Constr _ _ _ _ _) = __IMPOSSIBLE__
   scope (A.Bound _ _ _) = __IMPOSSIBLE__
@@ -219,4 +220,3 @@ instance Scope A.Constructor where
     do e' <- scope e
        checkIfDefined x
        return (A.Constructor r x e' idConstr)
-

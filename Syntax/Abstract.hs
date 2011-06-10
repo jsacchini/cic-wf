@@ -53,7 +53,8 @@ data Expr =
                              --
                              -- * Actual arguments of the constructor
   | Ind Range Annot IName
-
+  -- Natural numbers are predefined
+  | Number Range Int
 
 -- | Equality on expressions is used by the reifier ("InternaltoAbstract")
 --   to join consecutive binds with the same type.
@@ -212,6 +213,7 @@ instance HasRange Expr where
   getRange (Fix f) = fixRange f
   getRange (Constr r _ _ _ _) = r
   getRange (Ind r _ _) = r
+  getRange (Number r _) = r
 
 instance HasRange Bind where
   getRange (Bind r _ _) = r
@@ -268,6 +270,7 @@ instance Pretty Expr where
       pp n (Constr _ x _ pars args) =
         parensIf (n > 2) $ prettyPrint x <+> hsep (map (pp lvl) (pars ++ args))
           where lvl = if length pars + length args == 0 then 0 else 3
+      pp _ (Number _ n) = text $ show n
 
       nestedPi :: [Bind] -> Expr -> Doc
       nestedPi bs e = hsep [text "forall",
@@ -370,6 +373,7 @@ instance Show Expr where
   show (Bound _ x n) = concat [show x, "[", show n, "]"]
   show (Constr _ x i ps as) = concat $ [show x, show i, "(", intercalate ", " (map show (ps ++ as)), ")"]
   show (Ind _ a x) = concat [show x, "<", show a, ">"]
+  show (Number _ n) = show n
 
 
 instance Show InductiveDef where

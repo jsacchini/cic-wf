@@ -31,7 +31,7 @@ instance Infer A.InductiveDef [(Name, Global)] where
        let bindPars' = map getBind pars'
        -- traceTCM $ "Parameters\n" ++ show pars'
        (tp', s2)  <- local (reverse bindPars'++) $ infer tp
-       traceTCM $ "Type\n" ++ show tp'
+       -- traceTCM $ "Type\n" ++ show tp'
        _          <- isSort s2
        (args, s3) <- isArity (getRange tp) tp'
        cs         <- mapM (local (reverse bindPars'++) . flip check (name, bindPars', args, s3)) constrs

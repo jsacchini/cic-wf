@@ -21,6 +21,7 @@ import Control.Monad.Reader
 import qualified Syntax.Internal as I
 import Syntax.Common
 import Syntax.Position
+import Syntax.Size
 import Utils.Fresh
 
 import Kernel.Constraints
@@ -107,11 +108,20 @@ runTCM' :: TCM a -> IO a
 runTCM' m = liftM fst $ runReaderT (runStateT m initialTCState) initialTCEnv
 
 initialTCState :: TCState
-initialTCState = TCState { stSignature = Map.empty,
+initialTCState = TCState { stSignature = Map.empty, -- initialSignature,
                            stDefined = [],
                            stFresh = initialFresh,
                            stConstraints = emptyConstraints
                          }
+
+
+-- | 'initialSignature' contains the definition of natural numbers as an
+--   inductive type
+initialSignature :: Signature
+initialSignature = foldr (uncurry Map.insert) Map.empty
+                   [(Id "nat", natInd),
+                    (Id "O", natO),
+                    (Id "S", natS)]
 
 initialFresh :: Fresh
 initialFresh = Fresh { freshStage = 1 }  -- 0 is mapped to Infty
@@ -196,6 +206,8 @@ testTCM_ m = runTCM m'
                 addGlobal (Id "S")   natS
                 m
 
+
+-- Initial signature
 natInd :: I.Global
 natInd =
   I.Inductive { I.indPars    = [],
@@ -215,6 +227,6 @@ natS =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 1,
                   I.constrPars    = [],
-                  I.constrArgs    = [I.Bind noName (I.Bound 0)],
+                  I.constrArgs    = [I.Bind noName (I.Ind Empty (Id "nat"))],
                   I.constrIndices = [] }
 

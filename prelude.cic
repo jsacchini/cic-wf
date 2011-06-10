@@ -50,13 +50,23 @@ define mult : nat -> nat -> nat :=
                         | S m' => plus n (mult m' n)
                         end.
 
+define fact : nat -> nat :=
+  fix 1 fact : nat -> nat :=
+    fun m : nat => < fun x : nat => nat >
+                   case m of
+                   | O => 1
+                   | S m' => mult (fact m') m
+                   end.
+
 -- eval t1 nat O (S O) O (S (S O)) (S (S (S (S O)))).
-   
+
 -- eval t6 O.
 
 -- eval plus (S O).
 
-eval mult (S (S (S O))) (S (S O)).
+eval mult 21 21.
+
+eval fact 5.
 
 check mult O : nat -> nat.
 
