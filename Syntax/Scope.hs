@@ -29,6 +29,7 @@ import Syntax.Size
 
 import Kernel.TCM
 
+import Utils.Misc
 
 wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
 wrongArg r x m n = typeError $ WrongNumberOfArguments r x m n
@@ -104,10 +105,12 @@ instance Scope A.Expr where
          Just (I.Inductive {}) -> return e
          Just _                -> typeError $ NotInductive x
          Nothing               -> typeError $ UndefinedName r x
-  scope t@(A.Number _ _) = return t
   scope (A.Ind _ _ _) = __IMPOSSIBLE__
   scope (A.Constr _ _ _ _ _) = __IMPOSSIBLE__
   scope (A.Bound _ _ _) = __IMPOSSIBLE__
+  scope (A.Number r n) = scope $ mkNat n
+    where mkNat 0     = A.Ident r (Id "O")
+          mkNat (k+1) = A.App r (A.Ident r (Id "S")) (mkNat k)
 
 
 instance Scope A.FixExpr where

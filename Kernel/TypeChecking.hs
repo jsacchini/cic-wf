@@ -125,9 +125,7 @@ instance Infer A.Expr (Term, Type) where
          _  -> __IMPOSSIBLE__
   infer (A.Fix f) = infer f
   infer (A.Case c) = infer c
-  infer (A.Number _ n) = return (mkNat n, Ind Empty (Id "nat"))
-      where mkNat 0     = Constr (Id "O") (Id "nat", 0) [] []
-            mkNat (k+1) = Constr (Id "S") (Id "nat", 1) [] [mkNat k]
+  infer (A.Number _ _) = __IMPOSSIBLE__
 
 -- | Only inductive definitions return more than one global
 instance Infer A.Declaration [(Name, Global)] where

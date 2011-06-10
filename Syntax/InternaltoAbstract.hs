@@ -110,13 +110,7 @@ instance Reify Term A.Expr where
                        l <- ask
                        when (n >= length xs) $ get >>= \st -> traceTCM $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
                        return $ A.Ident noRange (xs !! n)
-  reify (Var x) = return $ A.Ident noRange x
   reify (Lam bs t) = reifyLamBinds bs t
-  reify (App t ts) = do e <- reify t
-                        es <- mapM reify ts
-                        return $ mkApp e es
-                          where mkApp = foldl (A.App noRange)
-  reify (Ind a i) = return $ A.Ind noRange a i
   reify (Fix num f args tp body) =
     do tp'   <- reify (buildPi args tp)
        f'    <- freshName f
@@ -124,21 +118,42 @@ instance Reify Term A.Expr where
        return $ A.Fix (A.FixExpr noRange num f tp' body')
   reify (Case c) = fmap A.Case $ reify c
   -- Special case for reification of natural numbers
-  reify t@(Constr x (Id "nat",k) ps as) =
-    case getS t of
-      (k, Nothing) -> return $ A.Number noRange k
-      (k, Just t)  -> do t' <- reify t
-                         return $ foldS k t'
-    where getS (Constr (Id "O") (Id "nat",0) [] []) = (0, Nothing)
-          getS (Constr (Id "S") (Id "nat",1) [] [n]) = (k + 1, t)
-            where (k, t) = getS n
-          getS t = (0, Just $ t)
-          foldS 0 t     = t
-          foldS (k+1) t = A.Constr noRange (Id "S") (Id "nat",1) [] [foldS k t]
+  -- case O
+  reify (Constr (Id "O") cid [] []) = return $ A.Number noRange 0
+  reify (Var (Id "O")) = return $ A.Number noRange 0
+  reify (Ind _ (Id "O")) = return $ A.Number noRange 0
+  -- case S
+  reify (Constr (Id "S") cid [t] []) =
+    do t' <- reify t
+       return $ case t' of
+         A.Number noRange k -> A.Number noRange (k + 1)
+         _                  -> A.Constr noRange (Id "S") cid [t'] []
+  reify (Constr (Id "S") cid [] [t]) =
+    do t' <- reify t
+       return $ case t' of
+         A.Number noRange k -> A.Number noRange (k + 1)
+         _                  -> A.Constr noRange (Id "S") cid [] [t']
+  reify (App (Var (Id "S")) [t]) =
+    do t' <- reify t
+       return $ case t' of
+         A.Number noRange k -> A.Number noRange (k + 1)
+         _                  -> A.App noRange (A.Ident noRange (Id "S")) t'
+  reify (App (Ind a (Id "S")) [t]) =
+    do t' <- reify t
+       return $ case t' of
+         A.Number noRange k -> A.Number noRange (k + 1)
+         _                  -> A.App noRange (A.Ind noRange a (Id "S")) t'
+  -- General case for Var, App, Ind, and Constr
   reify (Constr x indId ps as) =
     do ps' <- mapM reify ps
        as' <- mapM reify as
        return $ A.Constr noRange x indId ps' as'
+  reify (App t ts) = do e <- reify t
+                        es <- mapM reify ts
+                        return $ mkApp e es
+                          where mkApp = foldl (A.App noRange)
+  reify (Var x) = return $ A.Ident noRange x
+  reify (Ind a i) = return $ A.Ind noRange a i
 
 
 instance Reify CaseTerm A.CaseExpr where
