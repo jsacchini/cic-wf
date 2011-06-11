@@ -64,9 +64,9 @@ define fact : nat -> nat :=
 
 -- eval plus (S O).
 
-eval mult 21 21.
+eval mult 20 21.
 
-eval fact 5.
+eval fact 6.
 
 check mult O : nat -> nat.
 
