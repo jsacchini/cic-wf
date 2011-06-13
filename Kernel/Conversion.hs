@@ -16,16 +16,23 @@ import Utils.Misc
 class Conversion a where
   conversion :: (MonadTCM tcm) => a -> a -> tcm Bool
 
-instance Conversion a => Conversion [a] where
-  conversion [] [] = return True
-  conversion (x:xs) (y:ys) = conversion x y `mAnd` conversion xs ys
-  conversion _ _ = return False
+-- instance Conversion a => Conversion [a] where
+--   conversion [] [] = return True
+--   conversion (x:xs) (y:ys) = conversion x y `mAnd` conversion xs ys
+--   conversion _ _ = return False
 
 
 instance Conversion Bind where
   conversion (Bind _ t1) (Bind _ t2) = conversion t1 t2
   conversion (LocalDef _ t1 t2) (LocalDef _ t3 t4) = conversion t1 t3 `mAnd` conversion t2 t4
   conversion _ _ = return False
+
+instance Conversion Context where
+  conversion EmptyCtx EmptyCtx = return True
+  conversion (ExtendCtx b1 c1) (ExtendCtx b2 c2) =
+    do x1 <- conversion b1 b2
+       x2 <- conversion c1 c2
+       return $ x1 && x2
 
 instance Conversion Sort where
   conversion s1 s2 = return (s1 == s2)
@@ -52,5 +59,5 @@ instance SubType Type where
          (App (Ind a1 x1) ts1, App (Ind a2 x2) ts2) ->
            addConstraints (a1 <<= a2) >> return True
 
-instance SubType [Bind] where
+instance SubType Context where
   subtype _ _ = return False

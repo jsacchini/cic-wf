@@ -18,6 +18,9 @@ module Syntax.InternaltoAbstract where
 import Control.Monad.Reader
 import Control.Monad.State
 
+import Data.Traversable (traverse)
+import qualified Data.Foldable as Fold
+
 import Syntax.Internal as I
 import qualified Syntax.Abstract as A
 import Kernel.TCM
@@ -27,7 +30,6 @@ import Utils.Misc
 
 class Reify a b | a -> b where
   reify :: (MonadTCM tcm) => a -> tcm b
-
 
 freshName :: (MonadTCM tcm) => Name -> tcm Name
 freshName x | isNull x  = return $ Id "_"
@@ -103,16 +105,16 @@ reifyLamBinds = rL []
 
 instance Reify Term A.Expr where
   reify (Sort s) = return $ A.Sort noRange s
-  reify (Pi bs t) = do -- traceTCM $ "printing " ++ show (Pi bs t)
-                       -- traceTCM $ "reifyBinds " ++ show bs
-                       reifyPiBinds bs t
+  reify (Pi ctx t) = do -- traceTCM $ "printing " ++ show (Pi bs t)
+                             -- traceTCM $ "reifyBinds " ++ show bs
+                       reifyPiBinds (Fold.toList ctx) t
   reify (Bound n) = do xs <- getLocalNames
                        l <- ask
                        when (n >= length xs) $ get >>= \st -> traceTCM $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
                        return $ A.Ident noRange (xs !! n)
-  reify (Lam bs t) = reifyLamBinds bs t
+  reify (Lam ctx t) = reifyLamBinds (Fold.toList ctx) t
   reify (Fix num f args tp body) =
-    do tp'   <- reify (buildPi args tp)
+    do tp'   <- reify (mkPi args tp)
        f'    <- freshName f
        body' <- fakeBinds f' $ reify body
        return $ A.Fix (A.FixExpr noRange num f tp' body')
@@ -165,11 +167,19 @@ instance Reify CaseTerm A.CaseExpr where
          A.CaseExpr noRange arg' Nothing Nothing Nothing (Just ret') branches'
 
 instance Reify Branch A.Branch where
-  reify (Branch nmConstr idConstr nmArgs body) =
+  reify (Branch nmConstr idConstr nmArgs body whSubst) =
     do nmArgs' <- freshNameList nmArgs
        body' <- fakeBinds nmArgs' $ reify body
-       return $ A.Branch noRange nmConstr idConstr nmArgs' body'
+       whSubst' <- fakeBinds nmArgs' $ traverse reify whSubst
+       return $ A.Branch noRange nmConstr idConstr nmArgs' body' whSubst'
 
+instance Reify Subst A.Subst where
+  reify (Subst sg) =
+    do sg' <- mapM reifyAssign sg
+       return $ A.Subst sg'
+      where reifyAssign (k, t) = do xs <- getLocalNames
+                                    e <- reify t
+                                    return $ A.Assign noRange (xs !! k) k e
 
 instance Reify Name A.Declaration where
   reify x =
@@ -189,37 +199,3 @@ instance Reify Name A.Declaration where
               return $ A.Assumption noRange x (A.Sort noRange Prop)
 
 
--- | Free bound variables
-
-class IsFree a where
-  isFree :: Int -> a -> Bool
-
-instance IsFree Term where
-  isFree _ (Sort _) = False
-  isFree k (Pi [] t) = isFree k t
-  isFree k (Pi (b:bs) t) = isFree k b || isFree (k+1) (Pi bs t)
-  isFree k (Bound n) = k == n
-  isFree _ (Var _) = False
-  isFree k (Lam [] t) = isFree k t
-  isFree k (Lam (b:bs) t) = isFree k b || isFree (k+1) (Lam bs t)
-  isFree k (App f ts) = isFree k f || any (isFree k) ts
-  isFree _ (Ind _ _) = False
-  isFree k (Constr _ _ ps as) = any (isFree k) (ps ++ as)
-  isFree k (Fix _ _ bs tp body) = isFree k (buildPi bs tp) || isFree (k+1) body
-  isFree k (Case c) = isFree k c
-
-instance IsFree CaseTerm where
-  isFree k (CaseTerm arg _ tpRet branches) =
-    isFree k arg || isFree k tpRet || any (isFree k) branches
-
-instance IsFree Branch where
-  isFree k (Branch _ _ nmArgs body) =
-    isFree (k + length nmArgs) body
-
-
-instance IsFree Bind where
-  isFree k (Bind _ t) = isFree k t
-  isFree k (LocalDef _ t1 t2) = isFree k t1 || isFree k t2
-
-isFreeList :: Int -> [Term] -> Bool
-isFreeList k = foldrAcc (\n t r -> isFree n t || r) (\n _ -> n + 1) k False

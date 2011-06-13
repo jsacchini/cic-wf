@@ -49,7 +49,7 @@ main =
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
                                -- traceTCM $ "Scoped " ++ show d'
-                               gs <- infer d'
+                               gs <- inferDecl d'
                                -- st <- getSignature
                                -- liftIO $ putStrLn $ show st
                                forM_ gs (uncurry addGlobal)

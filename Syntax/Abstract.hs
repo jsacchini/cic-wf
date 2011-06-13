@@ -108,8 +108,10 @@ data Branch = Branch {
   brName      :: CName,
   brConstrId  :: Int,
   brArgsNames :: [Name],
-  brBody      :: Expr
+  brBody      :: Expr,
+  brSubst     :: Maybe Subst
   } deriving(Show)
+
 
 newtype Subst = Subst { unSubst :: [Assign] }
                 deriving(Show)
@@ -117,6 +119,7 @@ newtype Subst = Subst { unSubst :: [Assign] }
 data Assign = Assign {
   assgnRange :: Range,
   assgnName :: Name,
+  assgnBound :: Int,
   assgnExpr :: Expr
   } deriving(Show)
 
@@ -306,10 +309,10 @@ instance Pretty Subst where
   prettyPrint = hsep . map (parens . prettyPrint) . unSubst
 
 instance Pretty Assign where
-  prettyPrint (Assign _ x e) = hsep [prettyPrint x, defEq, prettyPrint e]
+  prettyPrint (Assign _ x _ e) = hsep [prettyPrint x, defEq, prettyPrint e]
 
 instance Pretty Branch where
-  prettyPrint (Branch _ x _ args body) =
+  prettyPrint (Branch _ x _ args body whSubst) =
     hsep $ prettyPrint x : map prettyPrint args ++ [implies, prettyPrint body]
 
 instance Pretty FixExpr where

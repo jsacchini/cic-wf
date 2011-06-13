@@ -11,19 +11,11 @@ import Syntax.Internal
 
 import Kernel.TCM
 
-class Infer a b | a -> b where
-  infer :: (MonadTCM tcm) => a -> tcm b
 
-class Check a b c | a -> b c where
-  check :: (MonadTCM tcm) => a -> b -> tcm c
+inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm (Context, Sort)
 
+infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
 
-instance Infer A.Bind ([Bind], Sort)
-
-instance (HasBind b, Infer a ([b], Sort)) => Infer [a] ([b], Sort)
-
-instance Infer A.Expr (Term, Type)
-
-instance Check A.Expr Type Term
+check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 
 isSort :: (MonadTCM tcm) => Term -> tcm Sort

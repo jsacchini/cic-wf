@@ -5,8 +5,10 @@
 module Kernel.TCM where
 
 import Prelude hiding (catch)
+import Control.Applicative
 import Control.Exception
 
+import qualified Data.Foldable as Fold
 import Data.Typeable
 
 import Data.Map (Map)
@@ -92,6 +94,7 @@ data TCErr = TCErr TypeError
 instance Exception TCErr
 
 class (Functor tcm,
+       Applicative tcm,
        MonadReader TCEnv tcm,
        MonadState TCState tcm,
        MonadIO tcm) => MonadTCM tcm
@@ -166,10 +169,19 @@ addGlobal x g = do st <- get
                               stDefined = x : stDefined st
                             }
 
+pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
+pushCtx ctx = local (reverse (Fold.toList ctx)++)
+
+pushType :: (MonadTCM tcm) => I.Type -> tcm a -> tcm a
+pushType tp = local (I.bindNoName tp:)
+
+pushBind :: (MonadTCM tcm) => I.Bind -> tcm a -> tcm a
+pushBind b = local (b:)
+
 -- | Returns the number of parameters of an inductive type.
 --   Assumes that the global declaration exists and that is an inductive type
 numParam :: (MonadTCM tcm) => Name -> tcm Int
-numParam x = (length . I.indPars) <$> getGlobal x
+numParam x = (I.ctxLen . I.indPars) <$> getGlobal x
 
 
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
@@ -178,7 +190,7 @@ getLocalNames = map I.bindName <$> ask
 -- We don't need the real type of the binds for scope checking, just the names
 -- Maybe should be moved to another place
 fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
-fakeBinds b = local (map (flip I.Bind I.tProp) (reverse (getNames b))++)
+fakeBinds b = local (map (flip I.Bind (I.Sort Prop)) (reverse (getNames b))++)
 
 
 -- Constraints
@@ -210,23 +222,24 @@ testTCM_ m = runTCM m'
 -- Initial signature
 natInd :: I.Global
 natInd =
-  I.Inductive { I.indPars    = [],
-                I.indIndices = [],
+  I.Inductive { I.indPars    = I.empCtx,
+                I.indPol     = [],
+                I.indIndices = I.empCtx,
                 I.indSort    = Type 0,
                 I.indConstr  = [Id "O", Id "S"] }
 natO :: I.Global
 natO =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 0,
-                  I.constrPars    = [],
-                  I.constrArgs    = [],
+                  I.constrPars    = I.empCtx,
+                  I.constrArgs    = I.empCtx,
                   I.constrIndices = [] }
 
 natS :: I.Global
 natS =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 1,
-                  I.constrPars    = [],
-                  I.constrArgs    = [I.Bind noName (I.Ind Empty (Id "nat"))],
+                  I.constrPars    = I.empCtx,
+                  I.constrArgs    = I.Bind noName (I.Ind Empty (Id "nat")) I.<| I.empCtx,
                   I.constrIndices = [] }
 

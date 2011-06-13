@@ -20,6 +20,7 @@ import Control.Monad.Reader
 import Control.Exception
 
 import Data.List
+import Data.Traversable (traverse)
 
 import qualified Syntax.Abstract as A
 import qualified Syntax.Internal as I
@@ -46,7 +47,6 @@ class Scope a where
 
 instance Scope A.Bind where
   scope (A.Bind r xs e) = fmap (A.Bind r xs) (scope e)
-
 
 instance (Scope a, HasNames a) => Scope [a] where
   scope [] = return []
@@ -90,8 +90,8 @@ instance Scope A.Expr where
                 Just c@(I.Constructor {}) ->
                   do when (numArgs /= 0) $ constrNotApplied r x
                      return $ A.Constr r x indId [] []
-                    where numArgs = length (I.constrPars c) +
-                                    length (I.constrArgs c)
+                    where numArgs = I.ctxLen (I.constrPars c) +
+                                    I.ctxLen (I.constrArgs c)
                           indId = (I.constrInd c, I.constrId c)
                 Just _ -> return t
                 Nothing -> undefinedName r x
@@ -143,17 +143,30 @@ instance Scope A.CaseIn where
 -- TODO: check that all branch belong to the same inductive type, and that all
 --       constructors of the inductive type are considered
 instance Scope A.Branch where
-  scope (A.Branch r name _ pattern body) =
+  scope (A.Branch r name _ pattern body whSubst) =
     do g <- lookupGlobal name
        case g of
          Just (I.Constructor _ idConstr _ targs _) ->
            do when (lenPat /= lenArgs) $ wrongArg r name lenPat lenArgs
               body' <- fakeBinds pattern $ scope body
-              return $ A.Branch r name idConstr pattern body'
+              whSubst' <- fakeBinds pattern $ traverse (scopeSubst (length pattern)) whSubst
+              return $ A.Branch r name idConstr pattern body' whSubst
              where lenPat  = length pattern
-                   lenArgs = length targs
+                   lenArgs = I.ctxLen targs
          Just _ -> throw $ PatternNotConstructor name
          Nothing -> throw $ UndefinedName r name
+
+scopeAssign :: (MonadTCM tcm) => Int -> A.Assign -> tcm A.Assign
+scopeAssign k an = do xs <- getLocalNames
+                      case findIndex (==A.assgnName an) xs of
+                        Just n | n < k -> do e' <- scope (A.assgnExpr an)
+                                             return $ an { A.assgnBound = n,
+                                                           A.assgnExpr = e' }
+                               | otherwise -> error "scope: assign var out of bound"
+                        Nothing -> error "scope: var not found"
+
+scopeSubst :: (MonadTCM tcm) => Int -> A.Subst -> tcm A.Subst
+scopeSubst k (A.Subst sg) = mapM (scopeAssign k) sg >>= return . A.Subst
 
 
 scopeApp :: (MonadTCM tcm) => A.Expr -> [A.Expr] -> tcm A.Expr
@@ -170,8 +183,8 @@ scopeApp e@(A.Ident r x) args =
                   then wrongArg cRange x expLen givenLen
                   else return $ A.Constr cRange x (i,idConstr) cpars cargs
                 where
-                  parLen = length parsTp
-                  argLen = length argsTp
+                  parLen = I.ctxLen parsTp
+                  argLen = I.ctxLen argsTp
                   givenLen = length args
                   expLen = parLen + argLen
                   (cpars, cargs) = splitAt parLen args

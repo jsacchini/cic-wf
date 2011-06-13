@@ -221,7 +221,7 @@ BasicBranch :: { A.Branch }
 BasicBranch : Name Pattern '=>' Exp WhereSubst
                              { let rg = maybe (fuseRange (fst $1) $4)
                                               (fuseRange (fst $1)) $5
-                               in A.Branch rg (snd $1) 0 (reverse $2) $4 }
+                               in A.Branch rg (snd $1) 0 (reverse $2) $4 $5 }
 
 WhereSubst :: { Maybe A.Subst }
 WhereSubst : 'where' Assigns     { Just (A.Subst $2) }
@@ -230,7 +230,7 @@ WhereSubst : 'where' Assigns     { Just (A.Subst $2) }
 
 Assigns :: { [A.Assign] }
 Assigns : Assigns '(' Name ':=' Exp ')'
-                           { A.Assign (fuseRange $2 $6) (snd $3) $5 : $1 }
+                           { A.Assign (fuseRange $2 $6) (snd $3) 0 $5 : $1 }
       | {- empty -}        { [] }
 
 Fix :: { A.FixExpr }
