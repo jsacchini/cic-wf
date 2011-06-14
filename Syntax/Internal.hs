@@ -88,6 +88,33 @@ ctxHd (ExtendCtx b _) = b
 ctxTl :: Context -> Context
 ctxTl (ExtendCtx _ c) = c
 
+ctxReverse :: Context -> Context
+ctxReverse EmptyCtx = EmptyCtx
+ctxReverse (ExtendCtx b c) = ctxReverse c |> b
+
+ctxSplitAt :: Int -> Context -> (Context, Context)
+ctxSplitAt 0 ctx = (empCtx, ctx)
+ctxSplitAt (k+1) ctx = case tail of
+                         EmptyCtx -> (head, tail)
+                         ExtendCtx b ctx' -> (head |> b, ctx')
+  where (head, tail) = ctxSplitAt k ctx
+
+getSubst :: Context -> Subst
+getSubst = getSubstN 0
+  where
+    getSubstN _ EmptyCtx = Subst []
+    getSubstN k (ExtendCtx (Bind _ _) ctx) = getSubstN (k+1) ctx
+    getSubstN k (ExtendCtx (LocalDef _ t _) ctx) = Subst $ (k,t) : sg
+      where Subst sg = getSubstN (k+1) ctx
+
+renameCtx :: Context -> [Name] -> Context
+renameCtx EmptyCtx [] = EmptyCtx
+renameCtx (ExtendCtx b c) (x:xs) = ExtendCtx (b { bindName = x }) (renameCtx c xs)
+
+mkLocalCtx :: Context -> [Term] -> Context
+mkLocalCtx EmptyCtx [] = EmptyCtx
+mkLocalCtx (ExtendCtx (Bind x u) c) (t:ts) = LocalDef x t u <| mkLocalCtx c ts
+
 instance Eq a => Eq (Ctx a) where
   EmptyCtx == EmptyCtx = True
   (ExtendCtx b1 c1) == (ExtendCtx b2 c2) = b1 == b2 && c1 == c2
@@ -96,10 +123,17 @@ instance Eq a => Eq (Ctx a) where
 data CaseTerm = CaseTerm {
   caseArg :: Term,
   caseNmInd :: Name,
+  caseAsName :: Maybe Name,
+  caseIn :: Maybe CaseIn,
   caseTpRet :: Type,
   caseBranches :: [Branch]
   } deriving(Eq)
 
+data CaseIn = CaseIn {
+  inBind :: Context,
+  inInd :: Name,
+  inArgs :: [Term]
+  } deriving(Eq)
 
 data Branch = Branch {
   brName :: Name,
@@ -254,8 +288,12 @@ instance HasAnnot Term where
       mSize (Ind a x) = Ind (f a) x
 
 instance HasAnnot CaseTerm where
-  modifySize f (CaseTerm arg nm ret bs) =
-    CaseTerm (modifySize f arg) nm (modifySize f ret) (map (modifySize f) bs)
+  modifySize f (CaseTerm arg nm asName cin ret bs) =
+    CaseTerm (modifySize f arg) nm asName (modifySize f cin) (modifySize f ret) (map (modifySize f) bs)
+
+instance HasAnnot CaseIn where
+  modifySize f (CaseIn binds nmInd args) = CaseIn (modifySize f binds) nmInd (map (modifySize f) args)
+
 
 instance HasAnnot Branch where
   modifySize f (Branch nm cid nmArgs body whSubst) =
@@ -283,8 +321,17 @@ instance HasAnnot a => HasAnnot (Ctx a) where
 class Lift a where
   lift :: Int -> Int -> a -> a
 
+instance Lift Int where
+  lift k n m = if m < n then m else (m + k)
+
+instance (Lift a, Lift b) => Lift (a, b) where
+  lift k n (x, y) = (lift k n x, lift k n y)
+
 instance Lift a => Lift (Maybe a) where
   lift k n = fmap (lift k n)
+
+instance Lift Subst where
+  lift k n (Subst sg) = Subst $ map (lift k n) sg
 
 instance Lift Bind where
   lift k n (Bind x t) = Bind x (lift k n t)
@@ -311,15 +358,16 @@ instance Lift Term where
 
 
 instance Lift CaseTerm where
-  lift k n (CaseTerm arg nm ret branches) =
-    CaseTerm (lift k n arg) nm (lift k n ret) (map (lift k n) branches)
+  lift k n (CaseTerm arg nm asName cin ret branches) =
+    CaseTerm (lift k n arg) nm asName (lift k n cin) (lift k n ret) (map (lift k n) branches)
+
+instance Lift CaseIn where
+  lift k n (CaseIn binds nmInd args) = CaseIn (lift k n binds) nmInd (map (lift k (n + ctxLen binds)) args)
 
 instance Lift Branch where
   lift k n (Branch nm cid nmArgs body whSubst) =
     Branch nm cid nmArgs (lift k (n + length nmArgs) body) (lift k (n + length nmArgs) whSubst)
 
-instance Lift Subst where
-  lift k n (Subst sg) = Subst $ map (appSnd (lift k n)) sg
 
 ------------------------------------------------------------
 -- ** Substitution
@@ -366,9 +414,13 @@ instance SubstTerm Term where
 
 
 instance SubstTerm CaseTerm where
-  substN i r (CaseTerm arg nm ret branches) =
-    CaseTerm (substN i r arg) nm (substN i r ret) branches'
+  substN i r (CaseTerm arg nm cas cin ret branches) =
+    CaseTerm (substN i r arg) nm cas (substN i r cin) (substN i r ret) branches'
       where branches' = map (substN i r) branches
+
+instance SubstTerm CaseIn where
+  substN i r (CaseIn binds nmInd args) =
+    CaseIn (substN i r binds) nmInd (substN (i + ctxLen binds) r args)
 
 instance SubstTerm Branch where
   substN i r (Branch nm cid xs body whSubst) =
@@ -403,8 +455,11 @@ instance IsFree Term where
   isFree k (Case c) = isFree k c
 
 instance IsFree CaseTerm where
-  isFree k (CaseTerm arg _ tpRet branches) =
-    isFree k arg || isFree k tpRet || any (isFree k) branches
+  isFree k (CaseTerm arg _ _ cin tpRet branches) =
+    isFree k arg || isFree k tpRet || isFree k cin || any (isFree k) branches
+
+instance IsFree CaseIn where
+  isFree k (CaseIn binds _ args) = isFree k binds || any (isFree (k + ctxLen binds)) args
 
 instance IsFree Branch where
   isFree k (Branch _ _ nmArgs body whSubst) =
@@ -437,9 +492,13 @@ isFreeList k = foldrAcc (\n t r -> isFree n t || r) (\n _ -> n + 1) k False
 ------------------------------------------------------------
 
 deriving instance Show Term
-deriving instance Show a => Show (Ctx a)
 deriving instance Show CaseTerm
+deriving instance Show CaseIn
 deriving instance Show Branch
+
+instance Show a => Show (Ctx a) where
+  show EmptyCtx = ""
+  show (ExtendCtx b c) = show b ++ show c
 
 instance Show Bind where
   show (Bind x t) = concat ["(",  show x, " : ", show t, ")"]

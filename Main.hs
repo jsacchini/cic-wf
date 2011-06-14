@@ -30,7 +30,8 @@ import Syntax.InternaltoAbstract
 
 main :: IO ()
 main =
-  do args <- getArgs
+  do hSetBuffering stdout NoBuffering
+     args <- getArgs
      mapM_ runFile args
     where runFile f =
             do h <- openFile f ReadMode
@@ -48,7 +49,7 @@ main =
                putStrLn "\n *** FIN ***"
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
-                               -- traceTCM $ "Scoped " ++ show d'
+                               -- traceTCM $ "\n\n\n\n\n\nScoped " ++ (show $ prettyPrint d')
                                gs <- inferDecl d'
                                -- st <- getSignature
                                -- liftIO $ putStrLn $ show st

@@ -262,7 +262,7 @@ instance Pretty Expr where
       pp n (Pi _ bs e) = parensIf (n > 0) $ nestedPi bs e
       pp n (Arrow _ e1 e2) = parensIf (n > 0) $ hsep [pp 1 e1, arrow, pp 0 e2]
       pp _ (Ident _ x) = prettyPrint x -- text $ "[" ++ x ++ "]"
-      pp _ (Bound _ x _) = prettyPrint x -- text "<" ++ x ">"
+      pp _ (Bound _ x k) = prettyPrint x <> (text $ "[" ++ show k ++ "]") -- text "<" ++ x ">"
 --      pp _ (EVar _ Nothing) = text "_"
 --      pp _ (EVar _ (Just n)) = char '?' <> int n
       pp n (Lam _ bs e) = parensIf (n > 0) $ nestedLam bs e

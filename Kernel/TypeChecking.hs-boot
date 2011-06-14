@@ -18,4 +18,6 @@ infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
 
 check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 
+checkList :: (MonadTCM tcm) => [A.Expr] -> Context -> tcm [Term]
+
 isSort :: (MonadTCM tcm) => Term -> tcm Sort

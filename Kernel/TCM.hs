@@ -48,6 +48,9 @@ data TypeError
     | PatternNotConstructor Name
     | FixRecursiveArgumentNotPositive Range
     | AlreadyDefined Name
+    -- Unification
+    | NotUnifiable
+    | NotImpossibleBranch
     deriving(Show, Typeable)
 
 -- instance Show TypeError where

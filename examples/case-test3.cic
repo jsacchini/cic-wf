@@ -1,0 +1,37 @@
+data nat : Type := O : nat | S : nat -> nat.
+
+data leq : nat -> nat -> Type :=
+| lO : forall x:nat, leq O x
+| lS : forall (x y : nat), leq x y -> leq (S x) (S y).
+
+data False : Type := .
+
+define leqS_False :=
+  fix 2 LL : forall (n1: nat) (H : leq (S n1) n1), False :=
+    fun (n1: nat) (H : leq (S n1) n1) =>
+    < False > case H1 := H in [(n0 : nat)] leq (S n0) n0 of
+              | lS x y H' => LL y H' where (x := S y)
+              end.
+
+check fun (x y z: nat) (H : leq x y) => lS x y H.
+
+check fun (x y z : nat) (H : leq x y) => lO x.
+
+define leq_trans : forall (m n k : nat), leq m n -> leq n k -> leq m k :=
+  fix 1 trans : forall (m n k : nat), leq m n -> leq n k -> leq m k :=
+    fun (m n k : nat) (H1 : leq m n) (H2 : leq n k) =>
+    (< leq n1 k -> leq m1 k >
+    case H1 in [(m1 n1 : nat)] leq m1 n1 of
+    | lO x => fun _ : leq x k => lO k
+    | lS x y H =>  fun h2 : leq (S y) k =>
+                   < leq (S x) k2  >
+                   case h2 in [(k2 : nat)] leq (S y) k2 of
+                   | lS x' y' H' => lS x y' (trans x y y' H H')
+                                    where (x' := y)
+                   end
+    end) H2.
+
+
+check leqS_False.
+
+check leq_trans.

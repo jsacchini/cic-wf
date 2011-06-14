@@ -149,8 +149,10 @@ instance Scope A.Branch where
          Just (I.Constructor _ idConstr _ targs _) ->
            do when (lenPat /= lenArgs) $ wrongArg r name lenPat lenArgs
               body' <- fakeBinds pattern $ scope body
+              traceTCM_ ["scoping branch where ", show whSubst]
               whSubst' <- fakeBinds pattern $ traverse (scopeSubst (length pattern)) whSubst
-              return $ A.Branch r name idConstr pattern body' whSubst
+              traceTCM_ ["scoped branch where ", show whSubst']
+              return $ A.Branch r name idConstr pattern body' whSubst'
              where lenPat  = length pattern
                    lenArgs = I.ctxLen targs
          Just _ -> throw $ PatternNotConstructor name
@@ -158,6 +160,7 @@ instance Scope A.Branch where
 
 scopeAssign :: (MonadTCM tcm) => Int -> A.Assign -> tcm A.Assign
 scopeAssign k an = do xs <- getLocalNames
+                      traceTCM_ ["scope branch ", show xs]
                       case findIndex (==A.assgnName an) xs of
                         Just n | n < k -> do e' <- scope (A.assgnExpr an)
                                              return $ an { A.assgnBound = n,
@@ -191,7 +194,8 @@ scopeApp e@(A.Ident r x) args =
                   cRange = fuseRange r args
               Just _ -> return $ A.buildApp e args
               Nothing -> undefinedName r x
-scopeApp e args = return $ A.buildApp e args
+scopeApp e args = do e' <- scope e
+                     return $ A.buildApp e' args
 
 
 instance (Scope a) => Scope (Maybe a) where

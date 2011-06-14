@@ -10,8 +10,7 @@ import Data.List
 import qualified Data.Foldable as Fold
 import Control.Monad.Reader
 
-
-import Syntax.Internal
+import Syntax.Internal as I
 import Kernel.TCM
 
 import Syntax.InternaltoAbstract
@@ -36,6 +35,10 @@ instance Whnf Term where
                  splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
                  splitRecArg xs (k + 1) (r : rs) = splitRecArg (r : xs) k rs
          _         -> return $ App w ts
+  whnf t@(Bound k) = do e <- ask
+                        case e !! k of
+                          Bind _ _ -> return t
+                          LocalDef _ t' _ -> whnf (I.lift (k+1) 0 t')
   whnf t@(Var x) =
     do d <- getGlobal x
        case d of
@@ -84,10 +87,12 @@ instance NormalForm Context where
 instance NormalForm Term where
   normalForm t@(Sort _) = return t
   normalForm (Pi c t) = do c' <- normalForm c
-                           t' <- normalForm t
+                           t' <- pushCtx c $ normalForm t
                            return $ Pi c' t'
-  normalForm t@(Bound _) = do -- traceTCM_ ["Normalizing Bound ", show t]
-                              return t
+  normalForm t@(Bound k) = do e <- ask
+                              case e !! k of
+                                Bind _ _ -> return t
+                                LocalDef _ t' _ -> normalForm (I.lift (k+1) 0 t')
   normalForm t@(Var x) = do -- traceTCM_ ["Normalizing Var ", show x]
                             u <- getGlobal x
                             case u of
@@ -95,7 +100,7 @@ instance NormalForm Term where
                               Assumption _    -> return t
                               _               -> __IMPOSSIBLE__
   normalForm (Lam c t) = do c' <- normalForm c
-                            t' <- normalForm t
+                            t' <- pushCtx c $ normalForm t
                             return $ Lam c' t'
   normalForm t@(App t1 ts) =
     do -- e <- ask
@@ -108,7 +113,8 @@ instance NormalForm Term where
               -- show ts]
               normalForm $ betaRed ctx u ts
          App u1 us -> do ts' <- mapM normalForm ts
-                         return $ mkApp u1 (us ++ ts')
+                         us' <- mapM normalForm us
+                         return $ mkApp u1 (us' ++ ts')
          Fix n _ _ _ _
            | length ts < n -> do -- traceTCM_ ["Fix without enough args ", show (length ts), " < ", show n]
                                  ts' <- mapM normalForm ts

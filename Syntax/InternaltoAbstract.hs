@@ -1,4 +1,5 @@
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
+TypeSynonymInstances, FlexibleInstances
   #-}
 
 {-|
@@ -111,7 +112,7 @@ instance Reify Term A.Expr where
   reify (Bound n) = do xs <- getLocalNames
                        l <- ask
                        when (n >= length xs) $ get >>= \st -> traceTCM $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
-                       return $ A.Ident noRange (xs !! n)
+                       return $ A.Bound noRange (xs !! n) n -- A.Ident noRange (xs !! n)
   reify (Lam ctx t) = reifyLamBinds (Fold.toList ctx) t
   reify (Fix num f args tp body) =
     do tp'   <- reify (mkPi args tp)
@@ -157,14 +158,30 @@ instance Reify Term A.Expr where
   reify (Var x) = return $ A.Ident noRange x
   reify (Ind a i) = return $ A.Ind noRange a i
 
-
+-- TODO: print properly the names of CaseIn: do not show variables not used
 instance Reify CaseTerm A.CaseExpr where
-  reify (CaseTerm arg _ tpRet branches) =
-    do arg' <- reify arg
-       ret' <- reify tpRet
+  reify (CaseTerm arg _ asName cin tpRet branches) =
+    do traceTCM_ ["reifying arg ", show arg]
+       arg' <- reify arg
+       traceTCM_ ["reifying cin ", show cin]
+       cin' <- traverse reify cin
+       traceTCM_ ["reifying ret type ", show tpRet]
+       ret' <- fakeBinds cin' $ fakeBinds asName $ reify tpRet
        branches' <- mapM reify branches
        return $
-         A.CaseExpr noRange arg' Nothing Nothing Nothing (Just ret') branches'
+         A.CaseExpr noRange arg' asName cin'  Nothing (Just ret') branches'
+
+instance Reify CaseIn A.CaseIn where
+  reify (CaseIn ctx nmInd args) =
+    do (ctx', args') <- reifyCtx ctx args
+       return $ A.CaseIn noRange ctx' nmInd args'
+      where reifyCtx EmptyCtx args = do args' <- mapM reify args
+                                        return ([], args')
+            reifyCtx (ExtendCtx (Bind x t) ctx') args =
+              do t' <- reify t
+                 x' <- freshName x
+                 (bs, args') <- fakeBinds x' $ reifyCtx ctx' args
+                 return (A.Bind noRange [x'] t' : bs, args')
 
 instance Reify Branch A.Branch where
   reify (Branch nmConstr idConstr nmArgs body whSubst) =
@@ -199,3 +216,17 @@ instance Reify Name A.Declaration where
               return $ A.Assumption noRange x (A.Sort noRange Prop)
 
 
+--- for debugging
+
+instance Reify [Bind] [A.Bind] where
+  reify [] = return []
+  reify (b:c) =
+    do b' <- rb b
+       -- x <- freshName (bindName b)
+       c' <- fakeBinds [bindName b] $ reify c
+       return (b':c')
+         where rb (Bind x t) = do t' <- reify t
+                                  return $ A.Bind noRange [x] t'
+               rb (LocalDef x t1 t2) = do t1' <- reify t1
+                                          t2' <- reify t2
+                                          return $ A.Bind noRange [x] (A.Ann noRange t1' t2')

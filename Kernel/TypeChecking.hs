@@ -13,6 +13,7 @@ import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
 import Syntax.InternaltoAbstract
 import Syntax.Common
+import Syntax.Position
 import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
@@ -109,8 +110,11 @@ infer (A.Constr _ x _ pars args) =
          Constructor indName idConstr tpars targs indices ->
            do pars' <- checkList pars tpars
               args' <- checkList args (foldr subst targs pars')
-              return (Constr x (indName, idConstr) pars' args',
-                      mkApp (Ind Empty indName) (pars' ++ foldr subst indices (pars' ++ args')))
+              let numPars = ctxLen tpars
+                  numArgs = ctxLen targs
+                  genType = mkApp (Ind Empty indName) (map Bound (reverse [numArgs..numArgs+numPars-1]) ++ indices)
+                  resType = foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
+              return (Constr x (indName, idConstr) pars' args', resType)
          _  -> __IMPOSSIBLE__
 infer (A.Fix f) = inferFix f
 infer (A.Case c) = inferCase c
@@ -151,6 +155,7 @@ inferDecl (A.Check e1 (Just e2)) =
        return []
 inferDecl (A.Check e1 Nothing) =
     do (t1, u1) <- infer e1
+       traceTCM_ ["checking ", show e1, "\ngiving ", show t1, "\n of type ", show u1]
        u1' <- reify u1
        t1' <- reify t1
        liftIO $ putStrLn $ concat ["check ", show (prettyPrint t1')]
@@ -164,12 +169,15 @@ check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 check t u =   do -- traceTCM_ ["Checking type of\n", show t, "\nagainst\n", show u]
                  (t', r) <- infer t
                  b <- conversion r u
-                 r__ <- whnf r
-                 u__ <- whnf u
+                 r__ <- normalForm r >>= reify
+                 u__ <- normalForm u >>= reify
+                 e <- ask
                  unless b $ traceTCM_ ["\nCHECK TYPE CONVERSION\n",
-                                       show r, " -> ", show r__,
+                                       -- show r, " -> ",
+                                       show $ prettyPrint r__,
                                        "\n==\n",
-                                       show u, " -> ", show u__, "\n********\n"]
+                                       --show u, " -> ",
+                                       show $ prettyPrint u__, "\n\nin context : ", show e, "\n********\non ", show $ prettyPrint $ getRange t]
                  unless b $ throwNotConvertible r u
                  return t'
 

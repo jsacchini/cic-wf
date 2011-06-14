@@ -38,3 +38,11 @@ foldrAcc f g acc r (x:xs) = f acc x (foldrAcc f g (g acc x) r xs)
 -- Replaced by [n..]
 -- from :: Int -> [Int]
 -- from n = n : from (n + 1)
+
+ifMaybe :: Maybe a -> (a -> b -> c) -> (b -> c) -> b -> c
+ifMaybe (Just c) f g x = f c x
+ifMaybe Nothing f g x = g x
+
+ifMaybe_ :: Maybe a -> (b -> b) -> b -> b
+ifMaybe_ (Just c) f x = f x
+ifMaybe_ Nothing  f x = x

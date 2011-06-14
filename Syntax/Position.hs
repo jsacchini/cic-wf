@@ -2,6 +2,9 @@
 
 module Syntax.Position where
 
+import Utils.Pretty
+import Text.PrettyPrint as PP
+
 data Position = Pn { posFile :: FilePath,
                      posLine :: Int,
                      posCol :: Int }
@@ -31,6 +34,14 @@ instance Show Range where
     --                                  show (posLine end), ":",
     --                                  show (posCol end)]
     show _ = ""
+
+instance Pretty Range where
+    prettyPrint (Range start end) = text $ concat [posFile start,
+                                     ":",
+                                     show (posLine start), ":",
+                                     show (posCol start), "-",
+                                     show (posLine end), ":",
+                                     show (posCol end)]
 
 instance HasRange Position where
   getRange p = Range p p
