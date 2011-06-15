@@ -30,9 +30,7 @@ inferCase :: (MonadTCM tcm) => A.CaseExpr -> tcm (Term, Type)
 inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
 
   -- Typecheck the argument
-  traceTCM_ ["infer argument of case ", show arg]
   (arg', tpArg) <- infer arg
-  traceTCM_ ["inferred argument and type ", show arg', "\n : ", show tpArg]
 
   -- Check that the type of the argument is an inductive type and get parameters
   -- and family indices
@@ -40,24 +38,16 @@ inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
 
   -- Check the family specification. Unify with the family of the inductive type
   -- The resulting unification is used to type-check the return type
-  traceTCM_ ["casein ", show caseIn]
   (caseIn',ctx) <- checkCaseIn caseIn nmInd pars inds
 
   -- Context for the return type
   let caseCtx = mkCaseBinds asNm nmInd pars tpArg caseIn'
-  traceTCM_ ["inferred casein \n", show caseIn']
-  e <- ask
-  traceTCM_ ["Binds for ret ", show $ caseCtx, "\n in env\n", show e]
-  traceTCM_ ["Infer type of ret ", show ret, "\nin context ", show $ caseCtx]
 
   -- Check the return type and check that its type is a sort
   (ret', sort) <- pushCtx caseCtx $ infer ret
-  traceTCM_ ["Inferred ret ", show ret', "\n of type ", show sort]
   _ <- isSort sort
-  traceTCM_ ["inferred case ", show $ Case (CaseTerm arg' nmInd asNm caseIn' ret' [])]
 
   -- Check branches
-  traceTCM_ ["\n\nBRANCHES "]
   -- Find possible and impossible branches
   allConstrs <- listConstructors nmInd
   let posConstrs = map A.brName branches
@@ -70,14 +60,12 @@ inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
   -- Checking impossible branches
   _ <- mapM (checkImpossBranch pars caseIn') negConstrs
 
-  traceTCM_ ["branches checked!"]
-
   -- Building return type
-  let ret1 = ifMaybe_ asNm (subst arg') ret'
+  let -- Substitute the argument in the type, if it exists
+      ret1 = ifMaybe_ asNm (subst arg') ret'
+      -- Substitute all the defined variables in the context ctx returned by
+      -- unifying the CaseIn family specification
       ret2 = unfoldCtx ctx ret1
-  traceTCM_ ["ret' ", show ret']
-  traceTCM_ ["ret1 ", show ret1]
-  traceTCM_ ["\nctx  ", show ctx, "\nret2 ", show ret2]
 
   -- Final result
   return (Case (CaseTerm arg' nmInd asNm caseIn' ret' posBranches), ret2)
@@ -92,16 +80,9 @@ inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
         | otherwise = do
           i <- getGlobal nmInd
           (inBind', _) <- inferBinds $ A.inBind c
-          e <- ask
-          traceTCM_ ["env : ", show e]
-          traceTCM_ ["check indices in ", show (indIndices i), "\n", show pars, "\n", show (foldr subst (indIndices i) pars), "\n against ", show (A.inArgs c)]
           inArgs' <- pushCtx inBind' $ checkList (A.inArgs c) (foldr subst (indIndices i) pars)
-          traceTCM_ ["checked indices ", show inArgs']
-          traceTCM_ ["checked inBind ", show inBind']
           let liftInds = map (I.lift (size inBind') 0) inds
-          traceTCM_ ["calling unify between ", show liftInds, "\nand ", show inArgs']
           (bs'', p, ks) <- unifyPos inBind' (zip liftInds inArgs') [0..size inBind'-1]
-          traceTCM_ ["Unified! ", show bs'', "\n  ", show ks]
           when (length ks > 0) $ error "variables not unified in"
           return (Just (I.CaseIn inBind' nmInd inArgs'), bs'')
 
@@ -139,36 +120,34 @@ inferCase (A.CaseExpr _ _ _ _ _ Nothing _) =
 checkBranch :: (MonadTCM tcm) =>
                Maybe Name -> Name -> [Term] -> Maybe CaseIn -> Type -> A.Branch -> tcm Branch
 checkBranch asNm nmInd pars caseIn' ret'
-  (A.Branch _ nmConstr idConstr nmArgs body whSubst) =
-    do (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
-       -- type of branch = Π Δ_i *. P us_i * (C ps dom(Δ_i))
-       let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (foldr subst tpArgs pars) nmArgs -- renameBinds (foldr subst tpArgs pars) nmArgs
-           numPars = length pars
-           numArgs = size tpArgs'
-           inds' = substList (numArgs + numPars - 1) pars inds
-           inCtx = maybe empCtx inBind caseIn'
-           inFam = maybe [] inArgs caseIn'
-           whDom = case whSubst of
-                     Just ws -> map A.assgnBound (A.unSubst ws)
-                     Nothing -> []
-       traceTCM_ ["where branch ", show whSubst, "\ncontext ", show (inCtx +: tpArgs'), "\n inds'", show inds', "\n inds: ", show inds, "\n pars", show pars, "\n inFam: ", show inFam]
-       (permCtx, perm, ks) <- unifyPos (inCtx +: tpArgs') (zip (map (I.lift numArgs 0) inFam) inds') ([numArgs..numArgs+size inCtx-1] ++ whDom)
-       when (length ks > 0) $ error $ "variables not unified in branch " ++ show idConstr
-       traceTCM_ ["\nUnify ", show nmConstr, "\n", show permCtx, "\nperm: ", show perm, "  rest: ", show ks]
-       let constrArg = applyPerm perm $ Constr nmConstr (nmInd, idConstr) pars (localDom numArgs)
-           ret2 = case asNm of
-                    Just x -> subst constrArg ret'
-                    Nothing -> ret'
-           ret3 = applyPerm perm $ I.lift numArgs 0 ret2
-       traceTCM_ ["checking body after perm  ", show (prettyPrint (applyPerm perm body)), "\n\nbefore perm: ", show (prettyPrint body)]
-       ret3'' <- pushCtx permCtx $ reify ret3
-       traceTCM_ ["against type ", show (prettyPrint ret3''), "\nbefore perm: ", show ret2, "\nlifted by ", show numArgs, " : ", show $ I.lift numArgs 0 ret2]
-       e <- (pushCtx permCtx $ ask) >>= reify
-       traceTCM_ ["in context ", show (prettyPrint (A.Pi noRange e (A.Sort noRange Prop)))]
-       body' <- pushCtx permCtx $ check (applyPerm perm body) ret3
-       -- TODO: check where substitution
-       traceTCM_ ["checked body ", show body']
-       return $ Branch noName idConstr nmArgs body' Nothing
+  (A.Branch _ nmConstr idConstr nmArgs body whSubst) = do
+
+    (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
+
+    let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (foldr subst tpArgs pars) nmArgs
+        numPars = length pars
+        numArgs = size tpArgs'
+        inds' = substList (numArgs + numPars - 1) pars inds
+        inCtx = maybe empCtx inBind caseIn'
+        inFam = maybe [] inArgs caseIn'
+        whDom = case whSubst of
+                  Just ws -> map A.assgnBound (A.unSubst ws)
+                  Nothing -> []
+
+    (permCtx, perm, ks) <- unifyPos (inCtx +: tpArgs') (zip (map (I.lift numArgs 0) inFam) inds') ([numArgs..numArgs+size inCtx-1] ++ whDom)
+
+    when (length ks > 0) $ error $ "variables not unified in branch " ++ show idConstr
+
+    let constrArg = applyPerm perm $ Constr nmConstr (nmInd, idConstr) pars (localDom numArgs)
+        ret2 = ifMaybe_ asNm (subst constrArg) ret'
+        ret3 = applyPerm perm $ I.lift numArgs 0 ret2
+
+    -- Check body
+    body' <- pushCtx permCtx $ check (applyPerm perm body) ret3
+
+    -- TODO: check where substitution
+    -- return final result
+    return $ Branch noName idConstr nmArgs body' Nothing
 
 
 localDom :: Int -> [Term]
