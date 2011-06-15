@@ -317,10 +317,15 @@ class SubstTerm a where
 
   subst = substN 0
 
+
+substList :: (SubstTerm a) => Int -> [Term] -> a -> a
+substList k xs t = foldl (flip (uncurry substN)) t (zip ks xs)
+                   where ks = reverse [k - (length xs) + 1..k]
+
 instance SubstTerm a => SubstTerm (Maybe a) where
   substN k = fmap . substN k
 
-instance SubstTerm [Term] where
+instance SubstTerm a => SubstTerm [a] where
   substN n r = map (substN n r)
 
 instance SubstTerm Bind where

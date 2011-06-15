@@ -113,7 +113,8 @@ infer (A.Constr _ x _ pars args) =
               let numPars = ctxLen tpars
                   numArgs = ctxLen targs
                   genType = mkApp (Ind Empty indName) (map Bound (reverse [numArgs..numArgs+numPars-1]) ++ indices)
-                  resType = foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
+                  resType = substList (numArgs + numPars - 1) (pars'++args') genType
+                    -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
               return (Constr x (indName, idConstr) pars' args', resType)
          _  -> __IMPOSSIBLE__
 infer (A.Fix f) = inferFix f

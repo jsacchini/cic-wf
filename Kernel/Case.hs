@@ -145,8 +145,7 @@ checkBranch asNm nmInd pars caseIn' ret'
        let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (foldr subst tpArgs pars) nmArgs -- renameBinds (foldr subst tpArgs pars) nmArgs
            numPars = length pars
            numArgs = size tpArgs'
-           inds' = foldl (flip (uncurry substN)) inds
-                   (zip (reverse [numArgs..numArgs + numPars - 1]) pars)
+           inds' = substList (numArgs + numPars - 1) pars inds
            inCtx = maybe empCtx inBind caseIn'
            inFam = maybe [] inArgs caseIn'
            whDom = case whSubst of
