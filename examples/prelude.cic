@@ -5,38 +5,18 @@ assume False : forall P:Type, P.
 assume True : forall P:Type, P -> P.
 
 
-
 data list (A:Type) : Type := | nil : list A -- firs constructor
                              | cons : A -> list A -> list A. -- second
 
-
-
 data nat : Type := O : nat | S : nat -> nat.
 
-data vec (A:Type) : nat -> Type := | vnil : vec A O | vcons : forall n : nat,
-A -> vec A n -> vec A (S n).
-
-
-define t1 := fun (A : Type) (x y : A) ( _ z : A) (_ : A) => z.
-
-define t2 := forall A : Type, forall (x:A) (y:A), A.
-
-define t3 := fun (A : Type)(B:A->Type) (x y : A) ( _ z _ _ : A) (_ : B z) => z. -- last comment
-
-define t4 := fun A : Type0 => fun x y : A => vcons A (S O) x (vcons A O y (vnil A)).
-
-define t5 := fix 1 f : nat -> nat := fun x : nat => S (f x).
-
-define t6 := fun x : nat =>
-             < fun x : nat => nat >
-             case x of
-             | O => O
-             | S y => y
-             end.
+data vec (A:Type) : nat -> Type :=
+| vnil : vec A O
+| vcons : forall n : nat, A -> vec A n -> vec A (S n).
 
 define plus : nat -> nat -> nat :=
    fix 1 plus : nat -> nat -> nat :=
-     fun (m n : nat) => < fun x : nat => nat >
+     fun (m n : nat) => < nat >
                         case m of
                         | O => n
                         | S m' => S (plus m' n)
@@ -44,7 +24,7 @@ define plus : nat -> nat -> nat :=
 
 define mult : nat -> nat -> nat :=
    fix 1 mult : nat -> nat -> nat :=
-     fun (m n : nat) => < fun x : nat => nat >
+     fun (m n : nat) => < nat >
                         case m of
                         | O => O
                         | S m' => plus n (mult m' n)
@@ -52,21 +32,28 @@ define mult : nat -> nat -> nat :=
 
 define fact : nat -> nat :=
   fix 1 fact : nat -> nat :=
-    fun m : nat => < fun x : nat => nat >
+    fun m : nat => < nat >
                    case m of
                    | O => 1
                    | S m' => mult (fact m') m
                    end.
 
--- eval t1 nat O (S O) O (S (S O)) (S (S (S (S O)))).
+define vtail := fun (A : Type) (n : nat) (v : vec A (S n)) =>
+                < vec A n0 >
+                case v1 := v in [(n0 : nat)] vec (S n0) of
+                | vcons n1 h1 t1 => t1
+                end.
 
--- eval t6 O.
+define vhead := fun (A : Type) (n : nat) (v : vec A (S n)) =>
+                < A >
+                case v1 := v in [(n0 : nat)] vec (S n0) of
+                | vcons _ h1 _ => h1
+                end.
 
--- eval plus (S O).
+check fun (A : Type) => vnil A.
 
-eval mult 20 21.
+check fun (A : Type) (m n : nat) (v : vec A n) (x : A)  => vcons A n x v.
 
-eval fact 6.
+check vtail.
 
-check mult O : nat -> nat.
-
+check vhead.

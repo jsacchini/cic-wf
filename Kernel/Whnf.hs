@@ -10,10 +10,11 @@ import Data.List
 import qualified Data.Foldable as Fold
 import Control.Monad.Reader
 
+import Syntax.Common
 import Syntax.Internal as I
+import Syntax.InternaltoAbstract
 import Kernel.TCM
 
-import Syntax.InternaltoAbstract
 import Utils.Pretty
 
 class Whnf a where
@@ -195,7 +196,7 @@ iotaRed :: Int -> [Term] -> [Branch] -> Term
 iotaRed cid args branches =
   case find ( (==cid) . brConstrId ) branches of
     Just br -> foldr subst (brBody br) args
-    Nothing -> __IMPOSSIBLE__
+    Nothing -> __IMPOSSIBLE__ -- branch
 
 -- | 'muRed' @fix@ @args@ unfolds the fixpoint and applies it to the arguments
 --   @args@ shoudl have a length greater or equal than the recursive argument of

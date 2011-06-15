@@ -203,7 +203,7 @@ InArgs : InArgs Exp1               { $2 : $1 }
        | {- empty -}               { [] }
 
 InContext :: { [A.Bind] }
-InContext : '[' Bindings ']'       { $2 }
+InContext : '[' Binding ']'        { $2 }
           | {- empty -}            { [] }
 
 Branches :: { [A.Branch] }

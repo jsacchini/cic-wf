@@ -111,8 +111,10 @@ instance Reify Term A.Expr where
                        reifyPiBinds (Fold.toList ctx) t
   reify (Bound n) = do xs <- getLocalNames
                        l <- ask
-                       when (n >= length xs) $ get >>= \st -> traceTCM $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
-                       return $ A.Bound noRange (xs !! n) n -- A.Ident noRange (xs !! n)
+                       -- when (n >= length xs) $ get >>= \st -> traceTCM $ "InternaltoAbstract Bound " ++ " " ++ show n ++ "  -- " ++ show l ++ " \n\n" ++ show st
+                       if (n >= length xs)
+                         then return $ A.Bound noRange (Id $ "ERROR "++show n) n
+                         else return $ A.Bound noRange (xs !! n) n
   reify (Lam ctx t) = reifyLamBinds (Fold.toList ctx) t
   reify (Fix num f args tp body) =
     do tp'   <- reify (mkPi args tp)
@@ -167,7 +169,7 @@ instance Reify CaseTerm A.CaseExpr where
        cin' <- traverse reify cin
        traceTCM_ ["reifying ret type ", show tpRet]
        ret' <- fakeBinds cin' $ fakeBinds asName $ reify tpRet
-       branches' <- mapM reify branches
+       branches' <- mapM (fakeBinds cin . reify) branches
        return $
          A.CaseExpr noRange arg' asName cin'  Nothing (Just ret') branches'
 
@@ -211,7 +213,7 @@ instance Reify Name A.Declaration where
            do -- traceTCM $ "data " ++ show x ++ " : " ++ show t
               return $ A.Inductive noRange (A.InductiveDef x [] (A.Sort noRange Prop) [])
            -- COMPLETE THIS CASE
-         t@(Constructor _ _ _ _ _) ->
+         t@(Constructor _ _ _ _ _ _) ->
            do -- traceTCM $ "constructor " ++ show x ++ " : " ++ show t
               return $ A.Assumption noRange x (A.Sort noRange Prop)
 

@@ -81,7 +81,7 @@ checkConstr (A.Constructor _ name tp _)
        unlessM (conversion sortInd s') $ error "Error in constructor. Make up value for TCErr"
        -- traceTCM $ "Constructor checking: " ++ show tp ++ " --> " ++ show tp'
        (args, indices) <- isConstrType nmInd numPars (subst (Ind Empty nmInd) tp')
-       return (name, Constructor nmInd 0 parsInd args indices)
+       return (name, Constructor nmInd 0 parsInd args [] indices)
                      -- id is filled elsewhere
       where numPars = ctxLen parsInd
             indType

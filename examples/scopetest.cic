@@ -1,0 +1,13 @@
+data nat : Type := O : nat  | S : nat -> nat.
+
+data I (A : Type) (D : nat -> Type) : nat -> Type -> Type1 :=
+C : A -> D 0 -> I A D 1 A.
+
+define t2 := fun (A : Type) (n : nat) (D : nat -> Type)
+             (x : I A D 1 A )=>
+             < (fun (_ : nat) (_ : I A D 1 X) => nat) n x1 >
+             case x1 := x in [(X : Type)] I 1 X of
+             | C _ _ => 0
+             end.
+
+check t2.

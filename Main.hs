@@ -49,11 +49,16 @@ main =
                putStrLn "\n *** FIN ***"
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
-                               -- traceTCM $ "\n\n\n\n\n\nScoped " ++ (show $ prettyPrint d')
+                               traceTCM $ "Scoped " ++ (show $ prettyPrint d')
                                gs <- inferDecl d'
                                -- st <- getSignature
                                -- liftIO $ putStrLn $ show st
                                forM_ gs (uncurry addGlobal)
+                               let xs = map fst gs
+                               traceTCM_ ["Typed !! ", show xs]
+                               traceTCM_ [show gs]
+                               ds <- mapM reify xs
+                               traceTCM_ ["Typed ", show (map prettyPrint ds)]
           typeCheckFile :: [A.Declaration] -> TCM ()
           typeCheckFile ds =
             do forM_ ds typeCheckDecl

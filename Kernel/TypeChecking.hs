@@ -107,7 +107,7 @@ infer (A.Ind _ _ x) =
 infer (A.Constr _ x _ pars args) =
     do t <- getGlobal x
        case t of
-         Constructor indName idConstr tpars targs indices ->
+         Constructor indName idConstr tpars targs _ indices ->
            do pars' <- checkList pars tpars
               args' <- checkList args (foldr subst targs pars')
               let numPars = ctxLen tpars

@@ -37,6 +37,7 @@ instance Conversion Context where
 instance Conversion Sort where
   conversion s1 s2 = return (s1 == s2)
 
+-- A more efficient version would only reduce to whnf
 instance Conversion Term where
   conversion t1 t2 =
     do n1 <- normalForm t1

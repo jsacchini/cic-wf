@@ -42,34 +42,8 @@ insertP k (Perm xs) = Perm $ (map liftF xs) ++ [k]
   where liftF x | x >= k = x + 1
                 | otherwise = x
 
-reorderCtx :: Permutation -> Context -> Context
-reorderCtx p ctx = foldr ExtendCtx EmptyCtx $ map (uncurry (!!)) $ zip (repeat (Fold.toList ctx)) (unPerm p)
 
-
--- from k = k : from (k + 1)
-
-
--- applyPerm :: (ApplyPerm a) => Permutation -> a -> a
--- applyPerm p = boundop (Bound . p) (\p -> Bound . (liftPerm 1 $ unBound p))
---   where unBound :: (Int -> Term) -> Int -> Int
---         unBound p x = case p x of
---                         Bound k -> k
-
--- instance ApplyPerm [Bind] where
---   applyPerm p [] = []
---   applyPerm p (Bind x t : bs) =
---     Bind x (applyPerm p t) : applyPerm (liftPerm 1 p) bs
---   applyPerm p (LocalDef x t1 t2 : bs) =
---     LocalDef x (applyPerm p t1) (applyPerm p t2) : applyPerm (liftPerm 1 p) bs
-
--- instance ApplyPerm Term where
---   applyPerm p t@(Sort _) = t
---   applyPerm p (Pi bs t) = Pi (applyPerm p bs) (applyPerm (liftPerm (length bs) p) t)
---   applyPerm p (Bound k) = Bound (p k)
---   applyPerm p t@(Var _) = t
---   applyPerm p (Lam bs t) = Lam (applyPerm p bs) (applyPerm (liftPerm (length bs) p) t)
-
-
+-- | Applying a permutation
 class ApplyPerm a where
   applyPerm :: Permutation -> a -> a
 
@@ -83,6 +57,14 @@ instance ApplyPerm a => ApplyPerm (Maybe a) where
 instance ApplyPerm a => ApplyPerm (a, a) where
   applyPerm p (t1, t2) = (applyPerm p t1, applyPerm p t2)
 
+instance ApplyPerm a => ApplyPerm [a] where
+  applyPerm = map . applyPerm
+
+
+------------------------------------------------------------
+-- instance of ApplyPerm to Intenal syntax
+------------------------------------------------------------
+
 instance ApplyPerm Bind where
   applyPerm p (Bind x t) = Bind x (applyPerm p t)
   applyPerm p (LocalDef x t1 t2) = LocalDef x (applyPerm p t1) (applyPerm p t2)
@@ -90,10 +72,6 @@ instance ApplyPerm Bind where
 instance ApplyPerm a => ApplyPerm (Ctx a) where
   applyPerm p EmptyCtx = EmptyCtx
   applyPerm p (ExtendCtx b c) = ExtendCtx (applyPerm p b) (applyPerm (1 <++ p) c)
-
--- applyMany :: Int -> (a -> a) -> (a -> a)
--- applyMany 0 _ = id
--- applyMany (k + 1) f = f . applyMany k f
 
 instance ApplyPerm Term where
   applyPerm _ t@(Sort _) = t
@@ -132,11 +110,9 @@ instance ApplyPerm Subst where
 
 
 
-
-
-
-
-
+------------------------------------------------------------
+-- instance of ApplyPerm to Abstract syntax
+------------------------------------------------------------
 
 instance ApplyPerm A.Expr where
   applyPerm p (A.Ann r e1 e2) = A.Ann r (applyPerm p e1) (applyPerm p e2)
@@ -192,6 +168,3 @@ instance ApplyPerm A.Branch where
   applyPerm p (A.Branch r nm cid nmArgs body whSubst) =
     A.Branch r nm cid nmArgs (applyPerm (length nmArgs <++ p) body)
     (applyPerm (length nmArgs <++ p) whSubst)
-
-
-

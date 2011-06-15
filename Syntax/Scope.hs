@@ -31,6 +31,7 @@ import Syntax.Size
 import Kernel.TCM
 
 import Utils.Misc
+import Utils.Sized
 
 wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
 wrongArg r x m n = typeError $ WrongNumberOfArguments r x m n
@@ -71,7 +72,9 @@ instance Scope A.Expr where
        e2' <- fakeBinds noName $ scope e2
        return $ A.Arrow r e1' e2'
   scope (A.Lam r bs e) =
-    do bs' <- scope bs
+    do traceTCM_ ["scoping lam ", show bs]
+       bs' <- scope bs
+       traceTCM_ ["scoping lam ", show bs']
        e' <- fakeBinds bs $ scope e
        return $ A.Lam r bs' e'
   scope t@(A.App _ _ _) =
@@ -90,8 +93,8 @@ instance Scope A.Expr where
                 Just c@(I.Constructor {}) ->
                   do when (numArgs /= 0) $ constrNotApplied r x
                      return $ A.Constr r x indId [] []
-                    where numArgs = I.ctxLen (I.constrPars c) +
-                                    I.ctxLen (I.constrArgs c)
+                    where numArgs = size (I.constrPars c) +
+                                    size (I.constrArgs c)
                           indId = (I.constrInd c, I.constrId c)
                 Just _ -> return t
                 Nothing -> undefinedName r x
@@ -125,13 +128,15 @@ instance Scope A.CaseExpr where
   scope (A.CaseExpr r arg asName inName subst ret bs) =
     do arg'    <- scope arg
        inName' <- scope inName
-       ret'    <- fakeBinds asName $ fakeBinds inName $ scope ret
+       ret'    <- fakeBinds inName $ fakeBinds asName $ scope ret
        bs'     <- mapM (fakeBinds inName . scope) bs
        return $ A.CaseExpr r arg' asName inName' subst ret' bs'
 
 instance Scope A.CaseIn where
   scope (A.CaseIn r bs ind args) =
-    do bs' <- scope bs
+    do traceTCM_ ["scoping in ", show bs]
+       bs' <- scope bs
+       traceTCM_ ["scoped in ", show bs']
        g <- lookupGlobal ind
        case g of
          Just (I.Inductive {}) -> do args' <- mapM (fakeBinds bs . scope) args
@@ -146,7 +151,7 @@ instance Scope A.Branch where
   scope (A.Branch r name _ pattern body whSubst) =
     do g <- lookupGlobal name
        case g of
-         Just (I.Constructor _ idConstr _ targs _) ->
+         Just (I.Constructor _ idConstr _ targs _ _) ->
            do when (lenPat /= lenArgs) $ wrongArg r name lenPat lenArgs
               body' <- fakeBinds pattern $ scope body
               traceTCM_ ["scoping branch where ", show whSubst]
@@ -154,7 +159,7 @@ instance Scope A.Branch where
               traceTCM_ ["scoped branch where ", show whSubst']
               return $ A.Branch r name idConstr pattern body' whSubst'
              where lenPat  = length pattern
-                   lenArgs = I.ctxLen targs
+                   lenArgs = size targs
          Just _ -> throw $ PatternNotConstructor name
          Nothing -> throw $ UndefinedName r name
 
@@ -181,13 +186,13 @@ scopeApp e@(A.Ident r x) args =
          do g <- lookupGlobal x
             case g of
               Just (I.Inductive {}) -> return $ A.buildApp (A.Ind r Empty x) args
-              Just (I.Constructor i idConstr parsTp argsTp _) ->
+              Just (I.Constructor i idConstr parsTp argsTp _ _) ->
                   if expLen /= givenLen
                   then wrongArg cRange x expLen givenLen
                   else return $ A.Constr cRange x (i,idConstr) cpars cargs
                 where
-                  parLen = I.ctxLen parsTp
-                  argLen = I.ctxLen argsTp
+                  parLen = size parsTp
+                  argLen = size argsTp
                   givenLen = length args
                   expLen = parLen + argLen
                   (cpars, cargs) = splitAt parLen args
@@ -226,8 +231,8 @@ instance Scope A.Declaration where
 instance Scope A.InductiveDef where
   scope (A.InductiveDef x ps e cs) =
       do ps' <- scope ps
-         e'  <- fakeBinds (reverse ps) $ scope e
-         cs' <- fakeBinds (reverse ps) $ fakeBinds x $ mapM scope cs
+         e'  <- fakeBinds ps $ scope e
+         cs' <- fakeBinds ps $ fakeBinds x $ mapM scope cs
          checkIfDefined x
          return $ A.InductiveDef x ps' e' cs'
 

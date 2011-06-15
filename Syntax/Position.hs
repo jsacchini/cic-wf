@@ -27,13 +27,13 @@ instance Show Position where
     -- show _ = ""
 
 instance Show Range where
-    -- show (Range start end) = concat [-- posFile start,
-    --                                  ":",
-    --                                  show (posLine start), ":",
-    --                                  show (posCol start), "-",
-    --                                  show (posLine end), ":",
-    --                                  show (posCol end)]
-    show _ = ""
+    show (Range start end) = concat [-- posFile start,
+                                     ":",
+                                     show (posLine start), ":",
+                                     show (posCol start), "-",
+                                     show (posLine end), ":",
+                                     show (posCol end)]
+    -- show _ = ""
 
 instance Pretty Range where
     prettyPrint (Range start end) = text $ concat [posFile start,

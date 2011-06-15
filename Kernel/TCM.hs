@@ -25,6 +25,7 @@ import Syntax.Common
 import Syntax.Position
 import Syntax.Size
 import Utils.Fresh
+import Utils.Sized
 
 import Kernel.Constraints
 
@@ -184,7 +185,7 @@ pushBind b = local (b:)
 -- | Returns the number of parameters of an inductive type.
 --   Assumes that the global declaration exists and that is an inductive type
 numParam :: (MonadTCM tcm) => Name -> tcm Int
-numParam x = (I.ctxLen . I.indPars) <$> getGlobal x
+numParam x = (size . I.indPars) <$> getGlobal x
 
 
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
@@ -225,24 +226,26 @@ testTCM_ m = runTCM m'
 -- Initial signature
 natInd :: I.Global
 natInd =
-  I.Inductive { I.indPars    = I.empCtx,
+  I.Inductive { I.indPars    = empCtx,
                 I.indPol     = [],
-                I.indIndices = I.empCtx,
+                I.indIndices = empCtx,
                 I.indSort    = Type 0,
                 I.indConstr  = [Id "O", Id "S"] }
 natO :: I.Global
 natO =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 0,
-                  I.constrPars    = I.empCtx,
-                  I.constrArgs    = I.empCtx,
+                  I.constrPars    = empCtx,
+                  I.constrArgs    = empCtx,
+                  I.constrRec     = [],
                   I.constrIndices = [] }
 
 natS :: I.Global
 natS =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 1,
-                  I.constrPars    = I.empCtx,
-                  I.constrArgs    = I.Bind noName (I.Ind Empty (Id "nat")) I.<| I.empCtx,
+                  I.constrPars    = empCtx,
+                  I.constrArgs    = I.Bind noName (I.Ind Empty (Id "nat")) <| empCtx,
+                  I.constrRec     = [0],
                   I.constrIndices = [] }
 

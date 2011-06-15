@@ -21,11 +21,11 @@ define leq_trans : forall (m n k : nat), leq m n -> leq n k -> leq m k :=
   fix 1 trans : forall (m n k : nat), leq m n -> leq n k -> leq m k :=
     fun (m n k : nat) (H1 : leq m n) (H2 : leq n k) =>
     (< leq n1 k -> leq m1 k >
-    case H1 in [(m1 n1 : nat)] leq m1 n1 of
+    case H1_ := H1 in [(m1 n1 : nat)] leq m1 n1 of
     | lO x => fun _ : leq x k => lO k
     | lS x y H =>  fun h2 : leq (S y) k =>
                    < leq (S x) k2  >
-                   case h2 in [(k2 : nat)] leq (S y) k2 of
+                   case h2_ := h2 in [(k2 : nat)] leq (S y) k2 of
                    | lS x' y' H' => lS x y' (trans x y y' H H')
                                     where (x' := y)
                    end

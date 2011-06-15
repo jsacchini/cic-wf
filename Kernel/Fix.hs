@@ -5,6 +5,7 @@ module Kernel.Fix where
 
 import Control.Monad.Reader
 
+import Syntax.Common
 import Syntax.Internal hiding (lift)
 import qualified Syntax.Abstract as A
 import Syntax.InternaltoAbstract

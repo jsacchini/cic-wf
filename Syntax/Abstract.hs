@@ -19,9 +19,6 @@ import Syntax.Size
 
 import Utils.Pretty
 
-type IName = Name -- ^ inductive type names
-type CName = Name -- ^ constructor names
-
 -- | The main data type of expressions
 data Expr =
   Ann Range Expr Expr       -- ^ Annotated term with type, e.g. @ M :: T @
@@ -41,7 +38,7 @@ data Expr =
   -- appear in a correctly parsed expression
   | Bound Range Name Int     -- ^ Bound variables. The name argument is used by
                              -- the pretty printer.
-  | Constr Range CName (IName, Int) [Expr] [Expr]
+  | Constr Range Name (Name, Int) [Expr] [Expr]
                              -- ^ Constructors are fully applied. Arguments are
                              --
                              -- * Name of the constructor
@@ -52,7 +49,7 @@ data Expr =
                              -- * Parameters (of the inductive type)
                              --
                              -- * Actual arguments of the constructor
-  | Ind Range Annot IName
+  | Ind Range Annot Name
   -- Natural numbers are predefined
   | Number Range Int
 
@@ -105,7 +102,7 @@ data CaseIn = CaseIn {
 
 data Branch = Branch {
   brRange     :: Range,
-  brName      :: CName,
+  brName      :: Name,
   brConstrId  :: Int,
   brArgsNames :: [Name],
   brBody      :: Expr,
@@ -144,7 +141,7 @@ data Declaration =
   deriving(Show)
 
 data InductiveDef = InductiveDef {
-  indName   :: IName,
+  indName   :: Name,
   indPars   :: [Parameter],
   indType   :: Expr,
   indConstr :: [Constructor]
@@ -153,7 +150,7 @@ data InductiveDef = InductiveDef {
 
 data Constructor = Constructor {
   constrRange :: Range,
-  constrName  :: CName,
+  constrName  :: Name,
   constrType  :: Expr,
   constrId    :: Int   -- Not used now. Should be removed
   }

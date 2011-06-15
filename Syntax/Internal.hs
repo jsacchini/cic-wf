@@ -9,13 +9,12 @@ module Syntax.Internal where
 import Utils.Impossible
 
 import Data.List
-import qualified Data.Foldable as Fold
-import Data.Monoid
 
 import Syntax.Common
 import Syntax.Size
 
 import Utils.Misc
+import Utils.Sized
 
 data Term
     = Sort Sort
@@ -45,81 +44,6 @@ data Bind =
 unNamed :: Type -> Bind
 unNamed = Bind noName
 
-data Ctx a = EmptyCtx
-           | ExtendCtx a (Ctx a)
-
--- | A Context is isomorphic to a list of binds. The reason why we do not simply
---   use a list is that instances such as (shift, subst, isfree) are not simply
---   mappings on the elements, since we have to take care of bound variables
-type Context = Ctx Bind
-
-instance Functor Ctx where
-  fmap f EmptyCtx = EmptyCtx
-  fmap f (ExtendCtx x c) = ExtendCtx (f x) (fmap f c)
-
-instance Fold.Foldable Ctx where
-  foldr f r EmptyCtx = r
-  foldr f r (ExtendCtx x c) = f x (Fold.foldr f r c)
-
-  foldMap _ EmptyCtx = mempty
-  foldMap f (ExtendCtx b c) = f b `mappend` Fold.foldMap f c
-
-(+:) :: Context -> Context -> Context
-EmptyCtx +: c2 = c2
-(ExtendCtx b c1) +: c2 = ExtendCtx b (c1 +: c2)
-
-empCtx :: Context
-empCtx = EmptyCtx
-
-ctxLen :: Context -> Int
-ctxLen EmptyCtx = 0
-ctxLen (ExtendCtx _ c) = 1 + ctxLen c
-
-(<|) :: Bind -> Context -> Context
-(<|) = ExtendCtx
-
-(|>) :: Context -> Bind -> Context
-EmptyCtx |> b = ExtendCtx b EmptyCtx
-(ExtendCtx b' c') |> b = ExtendCtx b' (c' |> b)
-
-ctxHd :: Context -> Bind
-ctxHd (ExtendCtx b _) = b
-
-ctxTl :: Context -> Context
-ctxTl (ExtendCtx _ c) = c
-
-ctxReverse :: Context -> Context
-ctxReverse EmptyCtx = EmptyCtx
-ctxReverse (ExtendCtx b c) = ctxReverse c |> b
-
-ctxSplitAt :: Int -> Context -> (Context, Context)
-ctxSplitAt 0 ctx = (empCtx, ctx)
-ctxSplitAt (k+1) ctx = case tail of
-                         EmptyCtx -> (head, tail)
-                         ExtendCtx b ctx' -> (head |> b, ctx')
-  where (head, tail) = ctxSplitAt k ctx
-
-getSubst :: Context -> Subst
-getSubst = getSubstN 0
-  where
-    getSubstN _ EmptyCtx = Subst []
-    getSubstN k (ExtendCtx (Bind _ _) ctx) = getSubstN (k+1) ctx
-    getSubstN k (ExtendCtx (LocalDef _ t _) ctx) = Subst $ (k,t) : sg
-      where Subst sg = getSubstN (k+1) ctx
-
-renameCtx :: Context -> [Name] -> Context
-renameCtx EmptyCtx [] = EmptyCtx
-renameCtx (ExtendCtx b c) (x:xs) = ExtendCtx (b { bindName = x }) (renameCtx c xs)
-
-mkLocalCtx :: Context -> [Term] -> Context
-mkLocalCtx EmptyCtx [] = EmptyCtx
-mkLocalCtx (ExtendCtx (Bind x u) c) (t:ts) = LocalDef x t u <| mkLocalCtx c ts
-
-instance Eq a => Eq (Ctx a) where
-  EmptyCtx == EmptyCtx = True
-  (ExtendCtx b1 c1) == (ExtendCtx b2 c2) = b1 == b2 && c1 == c2
-  _ == _ = False
-
 data CaseTerm = CaseTerm {
   caseArg :: Term,
   caseNmInd :: Name,
@@ -135,6 +59,9 @@ data CaseIn = CaseIn {
   inArgs :: [Term]
   } deriving(Eq)
 
+instance Sized CaseIn where
+  size = size . inBind
+
 data Branch = Branch {
   brName :: Name,
   brConstrId :: Int,
@@ -142,6 +69,16 @@ data Branch = Branch {
   brBody :: Term,
   brSubst :: Maybe Subst
   } deriving(Eq)
+
+
+-- | A Context is isomorphic to a list of binds. The reason why we do not simply
+--   use a list is that instances such as (shift, subst, isfree) are not simply
+--   mappings on the elements, since we have to take care of bound variables
+type Context = Ctx Bind
+
+renameCtx :: Context -> [Name] -> Context
+renameCtx EmptyCtx [] = EmptyCtx
+renameCtx (ExtendCtx b c) (x:xs) = ExtendCtx (b { bindName = x }) (renameCtx c xs)
 
 newtype Subst = Subst { unSubst :: [(Int, Term)] }
                 deriving(Show,Eq)
@@ -199,8 +136,9 @@ data Global = Definition Type Term
               constrInd :: Name,
               constrId :: Int,   -- id
               constrPars :: Context, -- parameters, should be the same as
-                                    -- the indutive type
+                                     -- the indutive type
               constrArgs :: Context, -- arguments
+              constrRec :: [Int],    -- indicates the recursive arguments
               constrIndices :: [Term]
               } deriving(Show)
 
@@ -228,14 +166,12 @@ instance Eq Term where
 
 
 
-class HasBind a where
-  getBind :: a -> Bind
+instance HasNames Bind where
+  getNames (Bind x _) = [x]
+  getNames (LocalDef x _ _) = [x]
 
-instance HasBind Bind where
-  getBind = id
-
-instance HasBind (Polarized Bind) where
-  getBind = unPol
+instance HasNames CaseIn where
+  getNames = getNames . inBind
 
 
 bind :: Bind -> Type
@@ -314,7 +250,7 @@ instance HasAnnot a => HasAnnot (Ctx a) where
 ------------------------------------------------------------
 
 ------------------------------------------------------------
--- ** Raise
+-- ** Shift
 ------------------------------------------------------------
 
 
@@ -359,7 +295,8 @@ instance Lift Term where
 
 instance Lift CaseTerm where
   lift k n (CaseTerm arg nm asName cin ret branches) =
-    CaseTerm (lift k n arg) nm asName (lift k n cin) (lift k n ret) (map (lift k n) branches)
+    CaseTerm (lift k n arg) nm asName (lift k n cin) (lift k (n + len) ret) (map (lift k n) branches)
+      where len = length (getNames asName ++ getNames cin)
 
 instance Lift CaseIn where
   lift k n (CaseIn binds nmInd args) = CaseIn (lift k n binds) nmInd (map (lift k (n + ctxLen binds)) args)
@@ -415,8 +352,9 @@ instance SubstTerm Term where
 
 instance SubstTerm CaseTerm where
   substN i r (CaseTerm arg nm cas cin ret branches) =
-    CaseTerm (substN i r arg) nm cas (substN i r cin) (substN i r ret) branches'
+    CaseTerm (substN i r arg) nm cas (substN i r cin) (substN (i + len) r ret) branches'
       where branches' = map (substN i r) branches
+            len = length (getNames cas ++ getNames cin)
 
 instance SubstTerm CaseIn where
   substN i r (CaseIn binds nmInd args) =
@@ -435,12 +373,24 @@ instance SubstTerm Subst where
 -- ** Free bound variables
 ------------------------------------------------------------
 
+type FreeBVars = [Int]
+
+shiftFV :: Int -> FreeBVars -> FreeBVars
+shiftFV k = filter (>0) . map (subtract k)
+
 class IsFree a where
   isFree :: Int -> a -> Bool
+  fvN :: Int -> a -> [Int]
+  fv :: a -> [Int]
+
+  fvN _ = const [] -- remove me
+  fv = fvN 0
 
 instance IsFree a => IsFree (Maybe a) where
   isFree k Nothing = False
   isFree k (Just c) = isFree k c
+
+  fvN = maybe [] . fvN
 
 instance IsFree Term where
   isFree _ (Sort _) = False
@@ -454,9 +404,22 @@ instance IsFree Term where
   isFree k (Fix _ _ bs tp body) = isFree k (mkPi bs tp) || isFree (k+1) body
   isFree k (Case c) = isFree k c
 
+  fvN _ (Sort _) = []
+  fvN k (Pi c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
+  fvN k (Bound n) = if k > n then [] else [n]
+  fvN _ (Var _) = []
+  fvN k (Lam c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
+  fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
+  fvN _ (Ind _ _) = []
+  fvN k (Constr _ _ ps as) = concatMap (fvN k) (ps ++ as)
+  fvN k (Fix _ _ bs tp body) = fvN k (mkPi bs tp) ++ fvN (k + 1) body
+
 instance IsFree CaseTerm where
   isFree k (CaseTerm arg _ _ cin tpRet branches) =
     isFree k arg || isFree k tpRet || isFree k cin || any (isFree k) branches
+
+  fvN k (CaseTerm arg _ _ cin tpRet branches) =
+    fvN k arg ++ fvN k tpRet ++ fvN k cin ++ concatMap (fvN k) branches
 
 instance IsFree CaseIn where
   isFree k (CaseIn binds _ args) = isFree k binds || any (isFree (k + ctxLen binds)) args
