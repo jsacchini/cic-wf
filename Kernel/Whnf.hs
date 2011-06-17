@@ -37,6 +37,7 @@ instance Whnf Term where
                  splitRecArg xs (k + 1) (r : rs) = splitRecArg (r : xs) k rs
          _         -> return $ App w ts
   whnf t@(Bound k) = do e <- ask
+                        when (k >= length e) $ error $ "Whnf " ++ show k ++ "\nin " ++ show e
                         case e !! k of
                           Bind _ _ -> return t
                           LocalDef _ t' _ -> whnf (I.lift (k+1) 0 t')
@@ -65,8 +66,9 @@ unfoldPi t =
   do t' <- whnf t
      case t' of
        Pi ctx1 t1 -> do (ctx2, t2) <- pushCtx ctx1 $ unfoldPi t1
-                        return (ctx1 +: ctx2, t2)
-       t1        -> return (empCtx, t1)
+                        t2' <- pushCtx (ctx1 +: ctx1) $ whnf t2
+                        return (ctx1 +: ctx2, t2')
+       _          -> return (empCtx, t')
 
 
 class NormalForm a where
@@ -91,6 +93,7 @@ instance NormalForm Term where
                            t' <- pushCtx c $ normalForm t
                            return $ Pi c' t'
   normalForm t@(Bound k) = do e <- ask
+                              when (k >= length e) $ error $ "whnf out of bound: " ++ show k ++ "  " ++ show e
                               case e !! k of
                                 Bind _ _ -> return t
                                 LocalDef _ t' _ -> normalForm (I.lift (k+1) 0 t')

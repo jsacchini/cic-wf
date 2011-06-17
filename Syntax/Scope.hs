@@ -19,6 +19,7 @@ import Utils.Impossible
 import Control.Monad.Reader
 import Control.Exception
 
+import Data.Function
 import Data.List
 import Data.Traversable (traverse)
 
@@ -72,9 +73,7 @@ instance Scope A.Expr where
        e2' <- fakeBinds noName $ scope e2
        return $ A.Arrow r e1' e2'
   scope (A.Lam r bs e) =
-    do traceTCM_ ["scoping lam ", show bs]
-       bs' <- scope bs
-       traceTCM_ ["scoping lam ", show bs']
+    do bs' <- scope bs
        e' <- fakeBinds bs $ scope e
        return $ A.Lam r bs' e'
   scope t@(A.App _ _ _) =
@@ -130,13 +129,12 @@ instance Scope A.CaseExpr where
        inName' <- scope inName
        ret'    <- fakeBinds inName $ fakeBinds asName $ scope ret
        bs'     <- mapM (fakeBinds inName . scope) bs
-       return $ A.CaseExpr r arg' asName inName' subst ret' bs'
+       let sortbs = sortBy (compare `on` A.brConstrId) bs'
+       return $ A.CaseExpr r arg' asName inName' subst ret' sortbs
 
 instance Scope A.CaseIn where
   scope (A.CaseIn r bs ind args) =
-    do traceTCM_ ["scoping in ", show bs]
-       bs' <- scope bs
-       traceTCM_ ["scoped in ", show bs']
+    do bs' <- scope bs
        g <- lookupGlobal ind
        case g of
          Just (I.Inductive {}) -> do args' <- mapM (fakeBinds bs . scope) args
@@ -154,10 +152,9 @@ instance Scope A.Branch where
          Just (I.Constructor _ idConstr _ targs _ _) ->
            do when (lenPat /= lenArgs) $ wrongArg r name lenPat lenArgs
               body' <- fakeBinds pattern $ scope body
-              traceTCM_ ["scoping branch where ", show whSubst]
               whSubst' <- fakeBinds pattern $ traverse (scopeSubst (length pattern)) whSubst
-              traceTCM_ ["scoped branch where ", show whSubst']
-              return $ A.Branch r name idConstr pattern body' whSubst'
+              return $ A.Branch r name idConstr pattern body'
+                (fmap A.sortSubst whSubst')
              where lenPat  = length pattern
                    lenArgs = size targs
          Just _ -> throw $ PatternNotConstructor name
@@ -165,7 +162,6 @@ instance Scope A.Branch where
 
 scopeAssign :: (MonadTCM tcm) => Int -> A.Assign -> tcm A.Assign
 scopeAssign k an = do xs <- getLocalNames
-                      traceTCM_ ["scope branch ", show xs]
                       case findIndex (==A.assgnName an) xs of
                         Just n | n < k -> do e' <- scope (A.assgnExpr an)
                                              return $ an { A.assgnBound = n,

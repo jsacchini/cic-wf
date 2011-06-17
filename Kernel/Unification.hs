@@ -79,8 +79,8 @@ unify ctx ((t1,t2):es) ks = do
 
   -- Unify the rest of the equations applying
   (ctx2, p2, ks2) <- unify ctx1 (map (applyPerm p1) es) ks1
-  e <- R.lift $ ask
-  R.lift $ traceTCM_ ["Combining all\nouter context: ", show e, "\nstarting ", show ctx, "\nopen vars: ", show ks, "\n\nfirst eq: ", show (w1,w2), "\nresult: ", show ctx1, "\nperm: ", show p1, "\nleft: ", show ks1, "\n\nrest of eq ", show es, "\nctx: ", show ctx2, "\nleft ", show ks2, "\n perm : ", show p2] --, "\n combining perm: "] -- , show $ combineP p2 p1]
+  -- e <- R.lift $ ask
+  -- R.lift $ traceTCM_ ["Combining all\nouter context: ", show e, "\nstarting ", show ctx, "\nopen vars: ", show ks, "\n\nfirst eq: ", show (w1,w2), "\nresult: ", show ctx1, "\nperm: ", show p1, "\nleft: ", show ks1, "\n\nrest of eq ", show es, "\nctx: ", show ctx2, "\nleft ", show ks2, "\n perm : ", show p2] --, "\n combining perm: "] -- , show $ combineP p2 p1]
 
   -- Combine the results of both unifications
   return (ctx2, combineP p2 p1, ks2)

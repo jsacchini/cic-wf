@@ -8,6 +8,7 @@ module Syntax.Internal where
 #include "../undefined.h"
 import Utils.Impossible
 
+import Data.Function
 import Data.List
 
 import Syntax.Common
@@ -69,7 +70,6 @@ data Branch = Branch {
   brBody :: Term,
   brSubst :: Maybe Subst
   } deriving(Eq)
-
 
 -- | A Context is isomorphic to a list of binds. The reason why we do not simply
 --   use a list is that instances such as (shift, subst, isfree) are not simply
@@ -195,6 +195,8 @@ class HasAnnot a where
   modifySize :: (Annot -> Annot) -> a -> a
   eraseSize :: a -> a
   eraseStage :: Int -> a -> a
+  -- listAnnot :: a -> [Annot]
+
 --  getSizes :: a -> [Size]
 
   eraseSize = modifySize $ const Empty
@@ -208,6 +210,11 @@ class HasAnnot a where
 
 instance HasAnnot a => HasAnnot (Maybe a) where
   modifySize = fmap . modifySize
+  -- listAnnot = maybe [] listAnnot
+
+instance HasAnnot a => HasAnnot [a] where
+  modifySize f = map (modifySize f)
+  -- listAnnot = concatMap listAnnot
 
 instance HasAnnot Term where
   modifySize f = mSize
@@ -222,6 +229,15 @@ instance HasAnnot Term where
       mSize (Fix n x c t1 t2) = Fix n x (modifySize f c) (mSize t1) (mSize t2)
       mSize (Case c) = Case (modifySize f c)
       mSize (Ind a x) = Ind (f a) x
+
+  -- listAnnot t@(Sort _) = []
+  -- listAnnot (Pi c t) = listAnnot c ++ listAnnot t
+  -- listAnnot t@(Bound _) = []
+  -- listAnnot t@(Var _) = []
+  -- listAnnot (Lam c t) = listAnnot c ++ listAnnot t
+  -- listAnnot (App t ts) = listAnnot t ++ listAnnot ts
+  -- listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
+  -- listAnnot (
 
 instance HasAnnot CaseTerm where
   modifySize f (CaseTerm arg nm asName cin ret bs) =
@@ -265,6 +281,9 @@ instance (Lift a, Lift b) => Lift (a, b) where
 
 instance Lift a => Lift (Maybe a) where
   lift k n = fmap (lift k n)
+
+instance Lift a => Lift [a] where
+  lift k n = map (lift k n)
 
 instance Lift Subst where
   lift k n (Subst sg) = Subst $ map (lift k n) sg
@@ -396,6 +415,10 @@ instance IsFree a => IsFree (Maybe a) where
   isFree k (Just c) = isFree k c
 
   fvN = maybe [] . fvN
+
+instance IsFree a => IsFree [a] where
+  isFree k = any (isFree k)
+
 
 instance IsFree Term where
   isFree _ (Sort _) = False

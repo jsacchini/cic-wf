@@ -9,7 +9,8 @@
 
 module Syntax.Abstract where
 
-import Data.List (intercalate)
+import Data.Function
+import Data.List (intercalate, sortBy)
 
 import Text.PrettyPrint.HughesPJ
 
@@ -119,6 +120,9 @@ data Assign = Assign {
   assgnBound :: Int,
   assgnExpr :: Expr
   } deriving(Show)
+
+sortSubst :: Subst -> Subst
+sortSubst (Subst sg) = Subst $ sortBy (compare `on` assgnBound) sg
 
 
 data LetBind = LetBind Range Name (Maybe Expr) Expr

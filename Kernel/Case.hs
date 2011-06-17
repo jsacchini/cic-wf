@@ -52,7 +52,7 @@ inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
   allConstrs <- listConstructors nmInd
   let posConstrs = map A.brName branches
       negConstrs = allConstrs \\ posConstrs
-  traceTCM_ ["+++ : ", show posConstrs, "\n_|_ :", show negConstrs]
+  -- traceTCM_ ["+++ : ", show posConstrs, "\n_|_ :", show negConstrs]
 
   -- Checking possible
   posBranches <- mapM (checkBranch asNm nmInd pars caseIn' ret') branches
@@ -170,4 +170,4 @@ checkImpossBranch pars caseIn' nmConstr =
            eqs = zip (map (I.lift numArgs 0) (maybe [] inArgs caseIn')) inds'
            freeVars = [0..size (maybe empCtx inBind caseIn') + numArgs - 1]
        unifyNeg ctx eqs freeVars
-       traceTCM_ ["Impossible branch ", show nmConstr]
+       -- traceTCM_ ["Impossible branch ", show nmConstr]

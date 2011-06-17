@@ -71,6 +71,8 @@ data TCState = TCState
                { stSignature :: Signature,
                  stDefined :: [Name], -- defined names in reverse order
                  stFresh :: Fresh,
+                 stStarStages :: [Int], -- list of stages assigned to position
+                                        -- types
                  stConstraints :: ConstraintSet
                }
                deriving(Show)
@@ -88,6 +90,24 @@ instance HasFresh Int Fresh where
 instance HasFresh i Fresh => HasFresh i TCState where
   nextFresh s = (i, s { stFresh = f })
     where (i, f) = nextFresh $ stFresh s
+
+getFreshStage :: (MonadTCM tcm) => tcm Int
+getFreshStage = do
+  x <- fresh
+  st <- get
+  put $ st { stConstraints = insNode (x, ()) $ stConstraints st }
+  return x
+
+resetStarStages :: (MonadTCM tcm) => tcm ()
+resetStarStages = do st <- get
+                     put $ st { stStarStages = [] }
+
+getStarStages :: (MonadTCM tcm) => tcm [Int]
+getStarStages = stStarStages <$> get
+
+addStarStage :: (MonadTCM tcm) => Int -> tcm ()
+addStarStage k = do st <- get
+                    put $ st { stStarStages = k : stStarStages st }
 
 -- Local environment
 type TCEnv = [I.Bind]
@@ -118,6 +138,7 @@ initialTCState :: TCState
 initialTCState = TCState { stSignature = Map.empty, -- initialSignature,
                            stDefined = [],
                            stFresh = initialFresh,
+                           stStarStages = [],
                            stConstraints = emptyConstraints
                          }
 
@@ -148,14 +169,14 @@ throwNotFunction t = do e <- ask
                         typeError $ NotFunction e t
 
 getSignature :: (MonadTCM tcm) => tcm Signature
-getSignature = fmap stSignature get
+getSignature = stSignature <$> get
 
 lookupGlobal :: (MonadTCM tcm) => Name -> tcm (Maybe I.Global)
 lookupGlobal x = do sig <- getSignature
                     return $ Map.lookup x sig
 
 isGlobal :: (MonadTCM tcm) => Name -> tcm Bool
-isGlobal x = fmap (Map.member x) getSignature
+isGlobal x = Map.member x <$> getSignature
 
 checkIfDefined :: (MonadTCM tcm) => Name -> tcm ()
 checkIfDefined x = isGlobal x >>= flip when (throw (AlreadyDefined x))
@@ -203,8 +224,7 @@ addConstraints :: (MonadTCM tcm) => [Constraint] -> tcm ()
 addConstraints cts =
   do s <- get
      put $ s { stConstraints = addCts (stConstraints s)  }
-       where addCts g = insEdges cts (insNodes (getNodes cts) g)
-             getNodes = foldr (\(n1,n2,_) r -> (n1,()):(n2,()):r) []
+   where addCts g = insEdges cts g
 
 --- For debugging
 traceTCM :: (MonadTCM tcm) => String -> tcm ()

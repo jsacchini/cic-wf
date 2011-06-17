@@ -18,6 +18,7 @@ mAnd x y = do bx <- x
               by <- y
               return $ bx && by
 
+infixl 5 `mAnd`
 
 -- This two functions could be eliminated
 whenM :: (Monad m) => m Bool -> m () -> m ()

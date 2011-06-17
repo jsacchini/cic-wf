@@ -15,7 +15,7 @@ data vec (A:Type) : nat -> Type :=
 | vcons : forall n : nat, A -> vec A n -> vec A (S n).
 
 define plus : nat -> nat -> nat :=
-   fix 1 plus : nat -> nat -> nat :=
+   fix 1 plus : nat* -> nat -> nat* :=
      fun (m n : nat) => < nat >
                         case m of
                         | O => n
@@ -23,7 +23,7 @@ define plus : nat -> nat -> nat :=
                         end.
 
 define mult : nat -> nat -> nat :=
-   fix 1 mult : nat -> nat -> nat :=
+   fix 1 mult : nat* -> nat -> nat* :=
      fun (m n : nat) => < nat >
                         case m of
                         | O => O
@@ -31,7 +31,7 @@ define mult : nat -> nat -> nat :=
                         end.
 
 define fact : nat -> nat :=
-  fix 1 fact : nat -> nat :=
+  fix 1 fact : nat* -> nat :=
     fun m : nat => < nat >
                    case m of
                    | O => 1

@@ -44,10 +44,12 @@ inferBinds bs = inferList bs
           inferList (b:bs) = do (ctx1, s1) <- inferBind b
                                 (ctx2, s2) <- pushCtx ctx1 $ inferList bs
                                 return (ctx1 +: ctx2, max s1 s2)
-          inferBind (A.Bind _ xs e) =
-            do (t, r) <- infer e
-               s <- isSort r
-               return (mkCtx xs t 0, s)
+          inferBind (A.Bind _ [] _) = return (empCtx, Prop)
+          inferBind (A.Bind rg (x:xs) e) = do
+            (t1, r1) <- infer e
+            s1 <- isSort r1
+            (ctx, s2) <- pushBind (Bind x t1) $ inferBind (A.Bind rg xs e)
+            return (Bind x t1 <| ctx, max s1 s2)
               where mkCtx [] _ _ = empCtx
                     mkCtx (y:ys) t k = Bind y (I.lift k 0 t) <| mkCtx ys t (k + 1)
 
@@ -87,7 +89,7 @@ infer (A.Ident _ x) =   do t <- getGlobal x
                              _               -> __IMPOSSIBLE__
 infer xx@(A.Lam _ bs t) =   do (ctx, _) <- inferBinds bs
                                (t', u) <- pushCtx ctx $ infer t
-                               return (mkLam ctx t', mkPi ctx u)
+                               return (mkLam (eraseSize ctx) t', mkPi ctx u)
 infer (A.App _ e1 e2) = -- inferApp e1 e2
     do (t1, r1) <- infer e1
        case r1 of
@@ -97,26 +99,35 @@ infer (A.App _ e1 e2) = -- inferApp e1 e2
                 w  <- whnf $ mkPi (subst t2 ct) (substN (ctxLen ct) t2 u2)
                 return (mkApp t1 [t2], w)
          _            -> throwNotFunction r1
-infer (A.Ind _ _ x) =
+infer (A.Ind _ an x) =
     do t <- getGlobal x
-       i <- fresh
+       i <- getFreshStage
+       when (an == Star) $ addStarStage i
        case t of
          Inductive pars pols indices sort _ ->
            return (Ind (Size (Svar i)) x, mkPi (pars +: indices) (Sort sort))
          _                             -> __IMPOSSIBLE__
-infer (A.Constr _ x _ pars args) =
-    do t <- getGlobal x
-       case t of
-         Constructor indName idConstr tpars targs _ indices ->
-           do pars' <- checkList pars tpars
-              args' <- checkList args (foldr subst targs pars')
-              let numPars = ctxLen tpars
-                  numArgs = ctxLen targs
-                  genType = mkApp (Ind Empty indName) (map Bound (reverse [numArgs..numArgs+numPars-1]) ++ indices)
-                  resType = substList (numArgs + numPars - 1) (pars'++args') genType
-                    -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
-              return (Constr x (indName, idConstr) pars' args', resType)
-         _  -> __IMPOSSIBLE__
+infer (A.Constr _ x _ pars args) = do
+  t <- getGlobal x
+  stage <- getFreshStage
+  let replStage x = if x == Empty then (Size (Svar stage)) else x
+      replFunc = modifySize replStage
+  case t of
+    Constructor indName idConstr tpars targs _ indices -> do
+      pars' <- checkList pars (replFunc tpars)
+      args' <- checkList args (foldr subst (replFunc targs) pars')
+      let numPars = ctxLen tpars
+          numArgs = ctxLen targs
+          indStage = Size (Hat (Svar stage))
+          genType = mkApp (Ind indStage indName) (map Bound (reverse [numArgs..numArgs+numPars-1]) ++ indices)
+          resType = substList (numArgs + numPars - 1) (pars'++args') genType
+          -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
+      -- We erase the type annotations of both parameters and arguments
+      return (Constr x (indName, idConstr) (eraseSize pars') (eraseSize args'),
+              resType)
+
+    _  -> __IMPOSSIBLE__
+
 infer (A.Fix f) = inferFix f
 infer (A.Case c) = inferCase c
 infer (A.Number _ _) = __IMPOSSIBLE__
@@ -156,7 +167,7 @@ inferDecl (A.Check e1 (Just e2)) =
        return []
 inferDecl (A.Check e1 Nothing) =
     do (t1, u1) <- infer e1
-       traceTCM_ ["checking ", show e1, "\ngiving ", show t1, "\n of type ", show u1]
+       -- traceTCM_ ["checking ", show e1, "\ngiving ", show t1, "\n of type ", show u1]
        u1' <- reify u1
        t1' <- reify t1
        liftIO $ putStrLn $ concat ["check ", show (prettyPrint t1')]
@@ -169,7 +180,7 @@ inferDecl (A.Check e1 Nothing) =
 check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 check t u =   do -- traceTCM_ ["Checking type of\n", show t, "\nagainst\n", show u]
                  (t', r) <- infer t
-                 b <- conversion r u
+                 b <- r ~~ u
                  r__ <- normalForm r >>= reify
                  u__ <- normalForm u >>= reify
                  e <- ask
