@@ -224,6 +224,7 @@ addConstraints :: (MonadTCM tcm) => [Constraint] -> tcm ()
 addConstraints cts =
   do s <- get
      put $ s { stConstraints = addCts (stConstraints s)  }
+     -- traceTCM_ ["adding constraints ", show cts]
    where addCts g = insEdges cts g
 
 --- For debugging

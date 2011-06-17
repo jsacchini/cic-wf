@@ -42,8 +42,7 @@ emptyConstraints = G.insNode (0, ()) G.empty
   where mapInfty = fromMaybe (0, 0)
         (a1, n1) = mapInfty $ normalize s1
         (a2, n2) = mapInfty $ normalize s2
-(<<=) Empty Empty = []
-(<<=) _ _ = []
+(<<=) _ _ = __IMPOSSIBLE__
 -- (<<=) a1 a2 = error $ "comparing sizes " ++ show a1 ++ " <<=> " ++ show a2
 -- (<<=) _ _ = __IMPOSSIBLE__
 

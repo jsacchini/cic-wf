@@ -60,13 +60,11 @@ reifyPiBinds = rP []
                                      return $ A.Pi noRange (reverse bs) e
     rP [] bs@(Bind x t1:bs') t2
       | notFree bs' t2 =
-        do -- traceTCM $ "notFree 1 " ++ show bs ++ " -> " ++ show t2
-           e1 <- reify t1
+        do e1 <- reify t1
            e2 <- fakeBinds noName $ rP [] bs' t2
            return $ A.Arrow noRange e1 e2
       | otherwise     =
-          do -- traceTCM $ "otherwise 1 " ++ show bs ++ " -> " ++ show t2
-             e1 <- reify t1
+          do e1 <- reify t1
              x' <- freshName x
              fakeBinds x' $ rP [A.Bind noRange [x'] e1] bs' t2
     rP bs1@(A.Bind _ xs e1:bs1') bs2@(Bind y t1:bs2') t2
@@ -163,11 +161,8 @@ instance Reify Term A.Expr where
 -- TODO: print properly the names of CaseIn: do not show variables not used
 instance Reify CaseTerm A.CaseExpr where
   reify (CaseTerm arg _ asName cin tpRet branches) =
-    do traceTCM_ ["reifying arg ", show arg]
-       arg' <- reify arg
-       traceTCM_ ["reifying cin ", show cin]
+    do arg' <- reify arg
        cin' <- traverse reify cin
-       traceTCM_ ["reifying ret type ", show tpRet]
        ret' <- fakeBinds cin' $ fakeBinds asName $ reify tpRet
        branches' <- mapM (fakeBinds cin . reify) branches
        return $
@@ -209,13 +204,11 @@ instance Reify Name A.Declaration where
                                   return $ A.Definition noRange x (Just e1) e2
          I.Assumption t -> do e <- reify t
                               return $ A.Assumption noRange x e
-         t@(I.Inductive {}) ->
-           do -- traceTCM $ "data " ++ show x ++ " : " ++ show t
-              return $ A.Inductive noRange (A.InductiveDef x [] (A.Sort noRange Prop) [])
+         t@(I.Inductive {}) -> do
+           return $ A.Inductive noRange (A.InductiveDef x [] (A.Sort noRange Prop) [])
            -- COMPLETE THIS CASE
-         t@(Constructor _ _ _ _ _ _) ->
-           do -- traceTCM $ "constructor " ++ show x ++ " : " ++ show t
-              return $ A.Assumption noRange x (A.Sort noRange Prop)
+         t@(Constructor _ _ _ _ _ _) -> do
+           return $ A.Assumption noRange x (A.Sort noRange Prop)
 
 
 --- for debugging

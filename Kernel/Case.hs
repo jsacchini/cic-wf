@@ -122,32 +122,35 @@ checkBranch :: (MonadTCM tcm) =>
 checkBranch asNm nmInd pars caseIn' ret'
   (A.Branch _ nmConstr idConstr nmArgs body whSubst) = do
 
-    (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
+  (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
+  
+  -- TODO: replace star for the appropiate stage
+  let replStage x = if x == Star then (Size Infty) else x
 
-    let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (foldr subst tpArgs pars) nmArgs
-        numPars = length pars
-        numArgs = size tpArgs'
-        inds' = substList (numArgs + numPars - 1) pars inds
-        inCtx = maybe empCtx inBind caseIn'
-        inFam = maybe [] inArgs caseIn'
-        whDom = case whSubst of
-                  Just ws -> map A.assgnBound (A.unSubst ws)
-                  Nothing -> []
+  let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (foldr subst (modifySize replStage tpArgs) pars) nmArgs
+      numPars = length pars
+      numArgs = size tpArgs'
+      inds' = substList (numArgs + numPars - 1) pars inds
+      inCtx = maybe empCtx inBind caseIn'
+      inFam = maybe [] inArgs caseIn'
+      whDom = case whSubst of
+                Just ws -> map A.assgnBound (A.unSubst ws)
+                Nothing -> []
 
-    (permCtx, perm, ks) <- unifyPos (inCtx +: tpArgs') (zip (map (I.lift numArgs 0) inFam) inds') ([numArgs..numArgs+size inCtx-1] ++ whDom)
+  (permCtx, perm, ks) <- unifyPos (inCtx +: tpArgs') (zip (map (I.lift numArgs 0) inFam) inds') ([numArgs..numArgs+size inCtx-1] ++ whDom)
 
-    when (length ks > 0) $ error $ "variables not unified in branch " ++ show idConstr
+  when (length ks > 0) $ error $ "variables not unified in branch " ++ show idConstr
 
-    let constrArg = applyPerm perm $ Constr nmConstr (nmInd, idConstr) pars (localDom numArgs)
-        ret2 = ifMaybe_ asNm (subst constrArg) ret'
-        ret3 = applyPerm perm $ I.lift numArgs 0 ret2
+  let constrArg = applyPerm perm $ Constr nmConstr (nmInd, idConstr) pars (localDom numArgs)
+      ret2 = ifMaybe_ asNm (subst constrArg) ret'
+      ret3 = applyPerm perm $ I.lift numArgs 0 ret2
 
-    -- Check body
-    body' <- pushCtx permCtx $ check (applyPerm perm body) ret3
+  -- Check body
+  body' <- pushCtx permCtx $ check (applyPerm perm body) ret3
 
-    -- TODO: check where substitution
-    -- return final result
-    return $ Branch noName idConstr nmArgs body' Nothing
+  -- TODO: check where substitution
+  -- return final result
+  return $ Branch noName idConstr nmArgs body' Nothing
 
 
 localDom :: Int -> [Term]
@@ -160,14 +163,17 @@ localDom (k+1) = Bound k : localDom k
 --   Does not return any value, but throws an exception if unification fails
 checkImpossBranch :: (MonadTCM tcm) =>
                      [Term] -> Maybe CaseIn -> Name -> tcm ()
-checkImpossBranch pars caseIn' nmConstr =
-    do (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
-       -- type of branch = Π Δ_i *. P us_i * (C ps dom(Δ_i))
-       let tpArgs' = foldr subst tpArgs pars
-           inds'   = foldr subst inds pars
-           numArgs = size tpArgs'
-           ctx = maybe empCtx inBind caseIn' +: tpArgs'
-           eqs = zip (map (I.lift numArgs 0) (maybe [] inArgs caseIn')) inds'
-           freeVars = [0..size (maybe empCtx inBind caseIn') + numArgs - 1]
-       unifyNeg ctx eqs freeVars
-       -- traceTCM_ ["Impossible branch ", show nmConstr]
+checkImpossBranch pars caseIn' nmConstr = do
+  (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
+
+  -- TODO: replace star for the appropiate stage
+  let replStage x = if x == Star then (Size Infty) else x
+
+  let tpArgs' = foldr subst (modifySize replStage tpArgs) pars
+      inds'   = foldr subst inds pars
+      numArgs = size tpArgs'
+      ctx = maybe empCtx inBind caseIn' +: tpArgs'
+      eqs = zip (map (I.lift numArgs 0) (maybe [] inArgs caseIn')) inds'
+      freeVars = [0..size (maybe empCtx inBind caseIn') + numArgs - 1]
+  unifyNeg ctx eqs freeVars
+  -- traceTCM_ ["Impossible branch ", show nmConstr]

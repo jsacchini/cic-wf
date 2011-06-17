@@ -8,6 +8,7 @@ module Syntax.Internal where
 #include "../undefined.h"
 import Utils.Impossible
 
+import qualified Data.Foldable as Fold
 import Data.Function
 import Data.List
 
@@ -195,7 +196,7 @@ class HasAnnot a where
   modifySize :: (Annot -> Annot) -> a -> a
   eraseSize :: a -> a
   eraseStage :: Int -> a -> a
-  -- listAnnot :: a -> [Annot]
+  listAnnot :: a -> [Annot]
 
 --  getSizes :: a -> [Size]
 
@@ -210,11 +211,13 @@ class HasAnnot a where
 
 instance HasAnnot a => HasAnnot (Maybe a) where
   modifySize = fmap . modifySize
-  -- listAnnot = maybe [] listAnnot
+
+  listAnnot = maybe [] listAnnot
 
 instance HasAnnot a => HasAnnot [a] where
   modifySize f = map (modifySize f)
-  -- listAnnot = concatMap listAnnot
+
+  listAnnot = concatMap listAnnot
 
 instance HasAnnot Term where
   modifySize f = mSize
@@ -230,36 +233,57 @@ instance HasAnnot Term where
       mSize (Case c) = Case (modifySize f c)
       mSize (Ind a x) = Ind (f a) x
 
-  -- listAnnot t@(Sort _) = []
-  -- listAnnot (Pi c t) = listAnnot c ++ listAnnot t
-  -- listAnnot t@(Bound _) = []
-  -- listAnnot t@(Var _) = []
-  -- listAnnot (Lam c t) = listAnnot c ++ listAnnot t
-  -- listAnnot (App t ts) = listAnnot t ++ listAnnot ts
-  -- listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
-  -- listAnnot (
+  listAnnot t@(Sort _) = []
+  listAnnot (Pi c t) = listAnnot c ++ listAnnot t
+  listAnnot t@(Bound _) = []
+  listAnnot t@(Var _) = []
+  listAnnot (Lam c t) = listAnnot c ++ listAnnot t
+  listAnnot (App t ts) = listAnnot t ++ listAnnot ts
+  listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
+  listAnnot (Fix _ _ c t1 t2) = listAnnot c ++ listAnnot t1 ++ listAnnot t2
+  listAnnot (Case c) = listAnnot c
+  listAnnot (Ind a x) = case a of
+                          Size (Svar i) -> []
+                          _ -> []
 
 instance HasAnnot CaseTerm where
   modifySize f (CaseTerm arg nm asName cin ret bs) =
     CaseTerm (modifySize f arg) nm asName (modifySize f cin) (modifySize f ret) (map (modifySize f) bs)
 
+  listAnnot (CaseTerm arg _ _ cin ret bs) = listAnnot arg ++
+                                            listAnnot cin ++
+                                            listAnnot ret ++
+                                            listAnnot bs
+
 instance HasAnnot CaseIn where
   modifySize f (CaseIn binds nmInd args) = CaseIn (modifySize f binds) nmInd (map (modifySize f) args)
 
+  listAnnot (CaseIn binds _ args) = listAnnot binds ++ listAnnot args
 
 instance HasAnnot Branch where
   modifySize f (Branch nm cid nmArgs body whSubst) =
     Branch nm cid nmArgs (modifySize f body) (modifySize f whSubst)
 
+  listAnnot (Branch _ _ _ body whSubst) = listAnnot body ++ listAnnot whSubst
+
+
 instance HasAnnot Subst where
   modifySize f (Subst sg) = Subst $ map (appSnd (modifySize f)) sg
+
+  listAnnot (Subst sg) = concatMap (listAnnot . snd) sg
 
 instance HasAnnot Bind where
   modifySize f (Bind nm tp) = Bind nm (modifySize f tp)
   modifySize f (LocalDef nm t1 t2) = LocalDef nm (modifySize f t1) (modifySize f t2)
 
+  listAnnot (Bind _ tp) = listAnnot tp
+  listAnnot (LocalDef _ t1 t2) = listAnnot t1 ++ listAnnot t2
+
 instance HasAnnot a => HasAnnot (Ctx a) where
   modifySize f c = fmap (modifySize f) c
+
+  listAnnot = Fold.foldr (\x r -> listAnnot x ++ r) []
+
 
 ------------------------------------------------------------
 -- * Operations on de Bruijn indices
@@ -407,7 +431,6 @@ class IsFree a where
   fvN :: Int -> a -> [Int]
   fv :: a -> [Int]
 
-  fvN _ = const [] -- remove me
   fv = fvN 0
 
 instance IsFree a => IsFree (Maybe a) where
@@ -419,6 +442,7 @@ instance IsFree a => IsFree (Maybe a) where
 instance IsFree a => IsFree [a] where
   isFree k = any (isFree k)
 
+  fvN k = concatMap (fvN k)
 
 instance IsFree Term where
   isFree _ (Sort _) = False
@@ -434,7 +458,7 @@ instance IsFree Term where
 
   fvN _ (Sort _) = []
   fvN k (Pi c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
-  fvN k (Bound n) = if k > n then [] else [n]
+  fvN k (Bound n) = if n < k then [] else [n]
   fvN _ (Var _) = []
   fvN k (Lam c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
   fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
@@ -450,22 +474,36 @@ instance IsFree CaseTerm where
     fvN k arg ++ fvN k tpRet ++ fvN k cin ++ concatMap (fvN k) branches
 
 instance IsFree CaseIn where
-  isFree k (CaseIn binds _ args) = isFree k binds || any (isFree (k + ctxLen binds)) args
+  isFree k (CaseIn binds _ args) = isFree k binds ||
+                                   any (isFree (k + size binds)) args
+
+  fvN k (CaseIn binds _ args) = fvN k binds ++ fvN (k + size binds) args
 
 instance IsFree Branch where
   isFree k (Branch _ _ nmArgs body whSubst) =
     isFree (k + length nmArgs) body || isFree (k + length nmArgs) whSubst
 
+  fvN k (Branch _ _ nmArgs body whSubst) = fvN k1 body ++ fvN k1 whSubst
+                                           where k1 = k + length nmArgs
+
 instance IsFree Subst where
   isFree k (Subst sg) = any (isFree k . snd) sg
+
+  fvN k (Subst sg) = concatMap (fvN k . snd) sg
 
 instance IsFree Bind where
   isFree k (Bind _ t) = isFree k t
   isFree k (LocalDef _ t1 t2) = isFree k t1 || isFree k t2
 
+  fvN k (Bind _ t) = fvN k t
+  fvN k (LocalDef _ t1 t2) = fvN k t1 ++ fvN k t2
+
 instance IsFree a => IsFree (Ctx a) where
   isFree k EmptyCtx = False
   isFree k (ExtendCtx b c) = isFree k b || isFree (k + 1) c
+
+  fvN k EmptyCtx = []
+  fvN k (ExtendCtx b c) = fvN k b ++ fvN (k + 1) c
 
 isFreeList :: Int -> [Term] -> Bool
 isFreeList k = foldrAcc (\n t r -> isFree n t || r) (\n _ -> n + 1) k False

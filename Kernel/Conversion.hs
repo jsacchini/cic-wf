@@ -125,7 +125,7 @@ instance SubType Term where
        n2 <- normalForm t2
        case (n1, n2) of
          (Pi ctx1 u1, Pi ctx2 u2) ->
-           ctx1 <~  ctx1 `mAnd` u1 <~ u2
+           ctx2 <~  ctx1 `mAnd` pushCtx ctx2 (u1 <~ u2)
          -- TODO: check polarity of parameters
          (App (Ind a1 x1) ts1, App (Ind a2 x2) ts2)
            | x1 /= x2 -> return False

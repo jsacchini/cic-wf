@@ -24,7 +24,7 @@ inferFix (A.FixExpr r num f tp body) =
     do resetStarStages
        (tp', s) <- infer tp
        is <- getStarStages
-       traceTCM_ ["star vars ", show is, " in ", show tp']
+       -- traceTCM_ ["star vars ", show is, " in ", show tp']
        resetStarStages
        _ <- isSort s
 
@@ -43,12 +43,12 @@ inferFix (A.FixExpr r num f tp body) =
 
            tpFix = mkPi (args +: (srecArg <| srest)) stpRes
 
-       traceTCM_ ["checking against type ", show tpFix]
+       -- traceTCM_ ["checking against type ", show tpFix]
        (body', u) <- pushBind (Bind f tp') $ infer body
        bb <- pushBind (Bind f tp') $ reify body'
-       traceTCM_ ["checked body ", show (prettyPrint bb), " \n: ", show u, "\n expected: ", show tp']
+       -- traceTCM_ ["checked body ", show (prettyPrint bb), " \n: ", show u, "\n expected: ", show tp']
        b <- conversion tp' u
-       traceTCM_ ["type converted "]
+       -- traceTCM_ ["type converted "]
        tpr <- reify tp'
        ur <- reify u
        unless b $ error $ "fix error " ++ show (prettyPrint tpr) ++ " == " ++ show (prettyPrint ur)

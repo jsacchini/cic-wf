@@ -84,12 +84,12 @@ checkConstr (A.Constructor _ name tp _)
                                    isConstrType name nmInd numPars tp'
 
        -- We replace all occurrences of other inductive types with infty
-       -- The inductive type being typechecked here is assigned Empty
-       -- When checking a constructor, we can replace Empty with a fresh
+       -- The inductive type being typechecked here is assigned Star
+       -- When checking a constructor, we can replace Star with a fresh
        -- variable
        let argsInfty = modifySize (const (Size Infty)) args
            indicesInfty = modifySize (const (Size Infty)) indices
-       return (name, Constructor nmInd 0 parsInd (subst (Ind Empty nmInd) argsInfty) recArgs indicesInfty)
+       return (name, Constructor nmInd 0 parsInd (subst (Ind Star nmInd) argsInfty) recArgs indicesInfty)
                      -- id is filled elsewhere
       where numPars = ctxLen parsInd
             indType

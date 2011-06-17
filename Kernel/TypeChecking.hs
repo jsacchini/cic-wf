@@ -110,7 +110,7 @@ infer (A.Ind _ an x) =
 infer (A.Constr _ x _ pars args) = do
   t <- getGlobal x
   stage <- getFreshStage
-  let replStage x = if x == Empty then (Size (Svar stage)) else x
+  let replStage x = if x == Star then (Size (Svar stage)) else x
       replFunc = modifySize replStage
   case t of
     Constructor indName idConstr tpars targs _ indices -> do
@@ -180,7 +180,7 @@ inferDecl (A.Check e1 Nothing) =
 check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 check t u =   do -- traceTCM_ ["Checking type of\n", show t, "\nagainst\n", show u]
                  (t', r) <- infer t
-                 b <- r ~~ u
+                 b <- r <~ u
                  r__ <- normalForm r >>= reify
                  u__ <- normalForm u >>= reify
                  e <- ask
