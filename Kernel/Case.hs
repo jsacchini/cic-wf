@@ -16,6 +16,7 @@ import Syntax.InternaltoAbstract
 import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
+import Kernel.Constraints
 import Kernel.TCM
 import Kernel.Unification
 import Kernel.Permutation
@@ -27,14 +28,18 @@ import Utils.Pretty
 import Utils.Sized
 
 inferCase :: (MonadTCM tcm) => A.CaseExpr -> tcm (Term, Type)
-inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
+inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
 
   -- Typecheck the argument
   (arg', tpArg) <- infer arg
 
   -- Check that the type of the argument is an inductive type and get parameters
   -- and family indices
-  (nmInd, (pars, inds)) <- getInductiveType tpArg
+  (sta, nmInd, (pars, inds)) <- getInductiveType tpArg
+
+  -- Force the stage of the argument to be a successor
+  sta1 <- getFreshStage
+  addConstraints (sta <<= (Size (Hat (Svar sta1))))
 
   -- Check the family specification. Unify with the family of the inductive type
   -- The resulting unification is used to type-check the return type
@@ -55,7 +60,7 @@ inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
   -- traceTCM_ ["+++ : ", show posConstrs, "\n_|_ :", show negConstrs]
 
   -- Checking possible
-  posBranches <- mapM (checkBranch asNm nmInd pars caseIn' ret') branches
+  posBranches <- mapM (checkBranch (Size (Svar sta1)) asNm nmInd pars caseIn' ret') branches
 
   -- Checking impossible branches
   _ <- mapM (checkImpossBranch pars caseIn') negConstrs
@@ -67,8 +72,11 @@ inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
       -- unifying the CaseIn family specification
       ret2 = unfoldCtx ctx ret1
 
+  
+  -- traceTCM_ ["checked case ", show rg, "\nof type", show ret2]
   -- Final result
-  return (Case (CaseTerm arg' nmInd asNm caseIn' ret' posBranches), ret2)
+  return (Case (CaseTerm arg' nmInd asNm caseIn' (eraseSize ret') posBranches), 
+          ret2)
 
     where
       checkCaseIn :: (MonadTCM tcm) =>
@@ -96,10 +104,10 @@ inferCase (A.CaseExpr _ arg asNm caseIn whSubst (Just ret) branches) = do
       getInductiveType t = do
         t' <- whnf t
         case t' of
-          App (Ind _ i) args -> do
+          App (Ind a i) args -> do
             Inductive tpPars _ _ _ _ <- getGlobal i -- matching should not fail
-            return (i, splitAt (size tpPars) args)
-          Ind _ i          -> return (i, ([], []))
+            return (a, i, splitAt (size tpPars) args)
+          Ind a i          -> return (a, i, ([], []))
           _                -> error $ "case 0. not inductive type " ++ show t
 
       listConstructors :: (MonadTCM tcm) => Name -> tcm [Name]
@@ -118,14 +126,14 @@ inferCase (A.CaseExpr _ _ _ _ _ Nothing _) =
 
 
 checkBranch :: (MonadTCM tcm) =>
-               Maybe Name -> Name -> [Term] -> Maybe CaseIn -> Type -> A.Branch -> tcm Branch
-checkBranch asNm nmInd pars caseIn' ret'
+               Annot -> Maybe Name -> Name -> [Term] -> Maybe CaseIn -> Type -> A.Branch -> tcm Branch
+checkBranch sta asNm nmInd pars caseIn' ret'
   (A.Branch _ nmConstr idConstr nmArgs body whSubst) = do
 
   (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
   
   -- TODO: replace star for the appropiate stage
-  let replStage x = if x == Star then (Size Infty) else x
+  let replStage x = if x == Star then sta else x
 
   let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (foldr subst (modifySize replStage tpArgs) pars) nmArgs
       numPars = length pars
@@ -141,7 +149,7 @@ checkBranch asNm nmInd pars caseIn' ret'
 
   when (length ks > 0) $ error $ "variables not unified in branch " ++ show idConstr
 
-  let constrArg = applyPerm perm $ Constr nmConstr (nmInd, idConstr) pars (localDom numArgs)
+  let constrArg = applyPerm perm $ Constr empCtx nmConstr (nmInd, idConstr) pars (localDom numArgs)
       ret2 = ifMaybe_ asNm (subst constrArg) ret'
       ret3 = applyPerm perm $ I.lift numArgs 0 ret2
 

@@ -105,7 +105,7 @@ unifyEq ctx (Bound k, t2) js
   | k `elem` js = do (ctx', p) <- R.lift $ applyDef ctx k t2
                      -- traceTCM_ ["applyDef left result ", show ctx', "\nperm ", show p]
                      return (ctx', p, applyPerm p (js \\ [k]))
-  | otherwise   = do (unlessM (R.lift $ conversion (Bound k) t2)) $ R.lift $ typeError NotUnifiable
+  | otherwise   = do (unlessM (R.lift $ Bound k ~~ t2)) $ R.lift $ typeError NotUnifiable
                      return (empCtx, idP (ctxLen ctx), js)
 unifyEq ctx (t1, Bound k) js = unifyEq ctx (Bound k, t1) js
 
@@ -113,7 +113,7 @@ unifyEq ctx (t1, Bound k) js = unifyEq ctx (Bound k, t1) js
 -- constructor is the same, or return negative success (Nothing) if they are
 -- different.
 -- TODO: check that Constr are not in sort Prop
-unifyEq ctx (Constr x1 cid1 ps1 as1, Constr x2 cid2 ps2 as2) js =
+unifyEq ctx (Constr _ x1 cid1 ps1 as1, Constr _ x2 cid2 ps2 as2) js =
   if x1 == x2
   then do -- traceTCM_ ["unifying constructor ", show x1, "\nnew equations: ", show (zip as1 as2)]
           unify ctx (zip as1 as2) js
@@ -121,7 +121,7 @@ unifyEq ctx (Constr x1 cid1 ps1 as1, Constr x2 cid2 ps2 as2) js =
 -- Otherwise, we have to check that both terms are convertible. If they are not
 -- the problem is too difficult and we raise an exception.
 unifyEq ctx (t1, t2) js =
-  do unlessM (R.lift $ conversion t1 t2) $ R.lift $ typeError NotUnifiable
+  do unlessM (R.lift $ t1 ~~ t2) $ R.lift $ typeError NotUnifiable
      return (empCtx, idP (ctxLen ctx), js)
 
 

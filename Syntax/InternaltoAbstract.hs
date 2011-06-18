@@ -122,16 +122,16 @@ instance Reify Term A.Expr where
   reify (Case c) = fmap A.Case $ reify c
   -- Special case for reification of natural numbers
   -- case O
-  reify (Constr (Id "O") cid [] []) = return $ A.Number noRange 0
+  reify (Constr _ (Id "O") cid [] []) = return $ A.Number noRange 0
   reify (Var (Id "O")) = return $ A.Number noRange 0
   reify (Ind _ (Id "O")) = return $ A.Number noRange 0
   -- case S
-  reify (Constr (Id "S") cid [t] []) =
+  reify (Constr _ (Id "S") cid [t] []) =
     do t' <- reify t
        return $ case t' of
          A.Number noRange k -> A.Number noRange (k + 1)
          _                  -> A.Constr noRange (Id "S") cid [t'] []
-  reify (Constr (Id "S") cid [] [t]) =
+  reify (Constr _ (Id "S") cid [] [t]) =
     do t' <- reify t
        return $ case t' of
          A.Number noRange k -> A.Number noRange (k + 1)
@@ -147,7 +147,7 @@ instance Reify Term A.Expr where
          A.Number noRange k -> A.Number noRange (k + 1)
          _                  -> A.App noRange (A.Ind noRange a (Id "S")) t'
   -- General case for Var, App, Ind, and Constr
-  reify (Constr x indId ps as) =
+  reify (Constr _ x indId ps as) =
     do ps' <- mapM reify ps
        as' <- mapM reify as
        return $ A.Constr noRange x indId ps' as'

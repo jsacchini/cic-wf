@@ -25,7 +25,7 @@ data Term
     | Var Name
     | Lam Context Term
     | App Term [Term]
-    | Constr Name (Name, Int) [Term] [Term]
+    | Constr Context Name (Name, Int) [Term] [Term]
     | Fix Int Name Context Type Term
     | Case CaseTerm
     | Ind Annot Name
@@ -155,7 +155,7 @@ instance Eq Term where
   (App f1 ts1) == (App f2 ts2) = length ts1 == length ts2 &&
                                  all (uncurry (==)) (zip ts1 ts2) &&
                                  f1 == f2
-  (Constr x1 cid1 ps1 as1) == (Constr x2 cid2 ps2 as2) =
+  (Constr _ x1 cid1 ps1 as1) == (Constr _ x2 cid2 ps2 as2) =
     x1 == x2 && cid1 == cid2 && ps1 == ps2 && as1 == as2
   (Fix n1 x1 c1 tp1 body1) == (Fix n2 x2 c2 tp2 body2) =
     n1 == n2 && x1 == x2 && c1 == c2 && tp1 == tp2 && body1 == body2
@@ -196,7 +196,7 @@ class HasAnnot a where
   modifySize :: (Annot -> Annot) -> a -> a
   eraseSize :: a -> a
   eraseStage :: Int -> a -> a
-  listAnnot :: a -> [Annot]
+  listAnnot :: a -> [Int]
 
 --  getSizes :: a -> [Size]
 
@@ -228,7 +228,7 @@ instance HasAnnot Term where
       mSize t@(Var _) = t
       mSize (Lam c t) = Lam (modifySize f c) (mSize t)
       mSize (App t ts) = App (mSize t) (map mSize ts)
-      mSize (Constr nm cid pars args) = Constr nm cid (map mSize pars) (map mSize args)
+      mSize (Constr ccc nm cid pars args) = Constr ccc nm cid (map mSize pars) (map mSize args)
       mSize (Fix n x c t1 t2) = Fix n x (modifySize f c) (mSize t1) (mSize t2)
       mSize (Case c) = Case (modifySize f c)
       mSize (Ind a x) = Ind (f a) x
@@ -239,11 +239,11 @@ instance HasAnnot Term where
   listAnnot t@(Var _) = []
   listAnnot (Lam c t) = listAnnot c ++ listAnnot t
   listAnnot (App t ts) = listAnnot t ++ listAnnot ts
-  listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
+  listAnnot (Constr _ _ _ pars args) = listAnnot pars ++ listAnnot args
   listAnnot (Fix _ _ c t1 t2) = listAnnot c ++ listAnnot t1 ++ listAnnot t2
   listAnnot (Case c) = listAnnot c
   listAnnot (Ind a x) = case a of
-                          Size (Svar i) -> []
+                          (Size (Svar i)) -> [i]
                           _ -> []
 
 instance HasAnnot CaseTerm where
@@ -283,6 +283,21 @@ instance HasAnnot a => HasAnnot (Ctx a) where
   modifySize f c = fmap (modifySize f) c
 
   listAnnot = Fold.foldr (\x r -> listAnnot x ++ r) []
+
+instance HasAnnot Global where
+  modifySize f (Definition tp body) =
+    Definition (modifySize f tp) (modifySize f body)
+  modifySize f (Assumption tp) = Assumption (modifySize f tp)
+  modifySize f (Inductive pars pol indices sort constr) =
+    Inductive (modifySize f pars) pol (modifySize f indices) sort constr
+  modifySize f (Constructor nmInd cid pars args rec indices) =
+    Constructor nmInd cid (modifySize f pars) (modifySize f args) rec (modifySize f indices)
+
+  listAnnot (Definition tp body) = listAnnot tp ++ listAnnot body
+  listAnnot (Assumption tp) = listAnnot tp
+  listAnnot (Inductive pars _ indices _ _) = listAnnot pars ++ listAnnot indices
+  listAnnot (Constructor _ _ pars args _ indices) =
+    listAnnot pars ++ listAnnot args ++ listAnnot indices
 
 
 ------------------------------------------------------------
@@ -328,7 +343,7 @@ instance Lift Term where
   lift k n (Lam c u) = Lam (lift k n c) (lift k (n + ctxLen c) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
   lift _ _ t@(Ind _ _) = t
-  lift k n (Constr x indId ps as) = Constr x indId ps' as'
+  lift k n (Constr ccc x indId ps as) = Constr ccc x indId ps' as'
                                       where ps' = map (lift k n) ps
                                             as' = map (lift k n) as
   lift k n (Fix m x c t e) =
@@ -390,7 +405,7 @@ instance SubstTerm Term where
   substN i r (Lam c t) = Lam (substN i r c) (substN (i + ctxLen c) r t)
   substN i r (App t ts) = App (substN i r t) (substN i r ts)
   substN _ _ t@(Ind _ _) = t
-  substN i r (Constr x ind ps as) = Constr x ind ps' as'
+  substN i r (Constr ccc x ind ps as) = Constr ccc x ind ps' as'
                                     where ps' = map (substN i r) ps
                                           as' = map (substN i r) as
   substN i r (Case c) = Case (substN i r c)
@@ -452,7 +467,7 @@ instance IsFree Term where
   isFree k (Lam c t) = isFree k c || isFree (k + ctxLen c) t
   isFree k (App f ts) = isFree k f || any (isFree k) ts
   isFree _ (Ind _ _) = False
-  isFree k (Constr _ _ ps as) = any (isFree k) (ps ++ as)
+  isFree k (Constr _ _ _ ps as) = any (isFree k) (ps ++ as)
   isFree k (Fix _ _ bs tp body) = isFree k (mkPi bs tp) || isFree (k+1) body
   isFree k (Case c) = isFree k c
 
@@ -463,7 +478,7 @@ instance IsFree Term where
   fvN k (Lam c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
   fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
   fvN _ (Ind _ _) = []
-  fvN k (Constr _ _ ps as) = concatMap (fvN k) (ps ++ as)
+  fvN k (Constr _ _ _ ps as) = concatMap (fvN k) (ps ++ as)
   fvN k (Fix _ _ bs tp body) = fvN k (mkPi bs tp) ++ fvN (k + 1) body
 
 instance IsFree CaseTerm where

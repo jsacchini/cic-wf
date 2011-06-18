@@ -221,11 +221,27 @@ fakeBinds b = local (map (flip I.Bind (I.Sort Prop)) (reverse (getNames b))++)
 -- Constraints
 
 addConstraints :: (MonadTCM tcm) => [Constraint] -> tcm ()
-addConstraints cts =
-  do s <- get
-     put $ s { stConstraints = addCts (stConstraints s)  }
-     -- traceTCM_ ["adding constraints ", show cts]
-   where addCts g = insEdges cts g
+addConstraints cts = do
+  modify $ \st -> st { stConstraints = addCts (stConstraints st) }
+    where
+      addCts g = insEdges cts (insNodes (newNodes g) g)
+      getNodes = foldr (\(n1,n2,_) r -> n1:n2:r) [] cts
+      newNodes g = map (\n -> (n,())) $ filter (not . flip gelem g) getNodes
+
+
+removeStages :: (MonadTCM tcm) => [Int] -> tcm ()
+removeStages ans =
+  modify $ \st -> st { stConstraints = delNodes ans (stConstraints st) }
+
+allStages :: (MonadTCM tcm) => tcm [Int]
+allStages = (nodes . stConstraints) <$> get
+
+allConstraints :: (MonadTCM tcm) => tcm ConstraintSet
+allConstraints = stConstraints <$> get
+
+newConstraints :: (MonadTCM tcm) => ConstraintSet -> tcm ()
+newConstraints c = modify $ \st -> st { stConstraints = c }
+
 
 --- For debugging
 traceTCM :: (MonadTCM tcm) => String -> tcm ()

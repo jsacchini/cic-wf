@@ -115,6 +115,8 @@ infer (A.Constr _ x _ pars args) = do
   case t of
     Constructor indName idConstr tpars targs _ indices -> do
       pars' <- checkList pars (replFunc tpars)
+      e <- ask
+      -- traceTCM_ ["checking ", show args, " againsts ", show (foldr subst (replFunc targs) pars'), "\n env: ", show e]
       args' <- checkList args (foldr subst (replFunc targs) pars')
       let numPars = ctxLen tpars
           numArgs = ctxLen targs
@@ -123,7 +125,7 @@ infer (A.Constr _ x _ pars args) = do
           resType = substList (numArgs + numPars - 1) (pars'++args') genType
           -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
       -- We erase the type annotations of both parameters and arguments
-      return (Constr x (indName, idConstr) (eraseSize pars') (eraseSize args'),
+      return (Constr (replFunc tpars +: replFunc targs |> (Bind (Id"") (Ind indStage indName)) ) x (indName, idConstr) (eraseSize pars') (eraseSize args'),
               resType)
 
     _  -> __IMPOSSIBLE__
@@ -180,6 +182,7 @@ inferDecl (A.Check e1 Nothing) =
 check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 check t u =   do -- traceTCM_ ["Checking type of\n", show t, "\nagainst\n", show u]
                  (t', r) <- infer t
+                 -- traceTCM_ ["calling subtype with ", show (r, u)]
                  b <- r <~ u
                  r__ <- normalForm r >>= reify
                  u__ <- normalForm u >>= reify

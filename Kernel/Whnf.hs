@@ -30,7 +30,7 @@ instance Whnf Term where
            | otherwise ->
              do recArg' <- normalForm recArg
                 case recArg' of
-                  Constr _ _ _ _ -> whnf (muRed w (first ++ recArg' : last))
+                  Constr _ _ _ _ _ -> whnf (muRed w (first ++ recArg' : last))
                   _ -> return $ App w ts
            where (first, recArg, last) = splitRecArg [] (n - 1) ts
                  splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
@@ -50,7 +50,7 @@ instance Whnf Term where
   whnf t@(Case c) =
     do arg' <- whnf $ caseArg c
        case arg' of
-         Constr _ (_,cid) _ cArgs -> whnf $ iotaRed cid cArgs (caseBranches c)
+         Constr _ _ (_,cid) _ cArgs -> whnf $ iotaRed cid cArgs (caseBranches c)
          _ -> return $ Case (c { caseArg = arg' })
   whnf t = return t
 
@@ -127,7 +127,7 @@ instance NormalForm Term where
              do -- traceTCM_ ["Fix enough args\nFirst ", show first, "\nRec ", show recArg, "\nLast ", show last]
                 recArg' <- normalForm recArg
                 case recArg' of
-                  Constr _ _ _ _ ->
+                  Constr _ _ _ _ _ ->
                             do -- traceTCM_ ["Mu Reduction ",
                                --            show t1', "\non\n",
                                --            show (first ++ recArg' : last)]
@@ -147,7 +147,7 @@ instance NormalForm Term where
   normalForm t@(Case c) =
     do arg' <- normalForm $ caseArg c
        case arg' of
-         Constr _ (_,cid) _ cArgs ->
+         Constr _ _ (_,cid) _ cArgs ->
                      do -- traceTCM_ ["Iota Reduction ",
                         --            show cid, " ", show cArgs,
                         --            "\nwith branches\n",
@@ -159,11 +159,11 @@ instance NormalForm Term where
                        return $ Case (c { caseArg      = arg',
                                           caseTpRet    = ret',
                                           caseBranches = branches' })
-  normalForm t@(Constr x i ps as) =
+  normalForm t@(Constr ccc x i ps as) =
     do -- traceTCM_ ["Normalizing constr ", show t]
        ps' <- mapM normalForm ps
        as' <- mapM normalForm as
-       return $ Constr x i ps' as'
+       return $ Constr ccc x i ps' as'
   normalForm t@(Fix k nm c tp body) =
     do -- traceTCM_ ["Normalizing fix ", show t]
        c' <- normalForm c
@@ -220,7 +220,7 @@ neutral (Lam _ _) = False
 neutral (App (Fix n _ _ _ _) ts) | length ts < n = False
                                  | otherwise = neutral $ ts !! (n - 1)
 neutral (App t _) = neutral t
-neutral (Constr _ _ _ _) = False
+neutral (Constr _ _ _ _ _) = False
 neutral (Fix _ _ _ _ _) = False
 neutral (Case c) = neutral $ caseArg c
 neutral (Ind _ _) = False

@@ -20,10 +20,6 @@ import {-# SOURCE #-} Kernel.TypeChecking
 import Utils.Misc
 import Utils.Sized
 
-{---
-TODO:
- - positivity check in constructors
----}
 
 -- | Type-checks an inductive definition returning a list of global definitions
 --   for the inductive type and the constructors
@@ -31,7 +27,6 @@ inferInd :: (MonadTCM tcm) => A.InductiveDef -> tcm [(Name, Global)]
 inferInd ind@(A.InductiveDef name pars tp constrs) =
     do -- traceTCM $ "Checking inductive definition\n" ++ show ind
        ((pars',pols'), _) <- inferParamList pars
-       -- traceTCM $ "Parameters\n" ++ show pars'
        let bindPars' =  pars'
        (tp', s2)  <- pushCtx pars' $ infer tp
        -- traceTCM $ "Type\n" ++ show tp'
@@ -39,7 +34,20 @@ inferInd ind@(A.InductiveDef name pars tp constrs) =
        (args, s3) <- isArity (getRange tp) tp'
        cs         <- mapM (pushCtx pars' . flip checkConstr (name, bindPars', args, s3)) constrs
        -- traceTCM $ "Constructors\n" ++ show cs
-       return $ (name, Inductive pars' pols' args s3 constrNames) : fillIds cs
+
+       -- Preparing the constructors
+       -- We replace all occurrences of other inductive types with infty
+       -- The inductive type being typechecked here is assigned Star
+       -- When checking a constructor, we can replace Star with a fresh
+       -- variable
+       let replInfty :: (HasAnnot a) => a -> a
+           replInfty = modifySize (const (Size Infty))
+           annots = listAnnot tp' ++ listAnnot (map snd cs)
+           replInd c = c { constrArgs = subst (Ind Star name) (constrArgs c) }
+           cs' = map (appSnd (replInd . replInfty)) cs
+
+       removeStages annots
+       return $ (name, Inductive (replInfty pars') pols' (replInfty args) s3 constrNames) : fillIds cs'
          where fillIds cs = map (\(idConstr, (x, c)) -> (x, c { constrId = idConstr })) (zip [0..] cs)
                constrNames = map A.constrName constrs
 
@@ -78,18 +86,12 @@ checkConstr (A.Constructor _ name tp _)
             (nmInd, parsInd, indicesInd, sortInd) =
     do (tp', s) <- local (indBind:) $  infer tp
        s' <- isSort s
-       unlessM (conversion sortInd s') $ error "Error in constructor. Make up value for TCErr"
+       unless (sortInd == s') $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd
        let indBind = Bind nmInd (mkPi (parsInd +: indicesInd) (Sort sortInd))
        (args, indices, recArgs) <- pushBind indBind $
                                    isConstrType name nmInd numPars tp'
 
-       -- We replace all occurrences of other inductive types with infty
-       -- The inductive type being typechecked here is assigned Star
-       -- When checking a constructor, we can replace Star with a fresh
-       -- variable
-       let argsInfty = modifySize (const (Size Infty)) args
-           indicesInfty = modifySize (const (Size Infty)) indices
-       return (name, Constructor nmInd 0 parsInd (subst (Ind Star nmInd) argsInfty) recArgs indicesInfty)
+       return (name, Constructor nmInd 0 parsInd args recArgs indices)
                      -- id is filled elsewhere
       where numPars = ctxLen parsInd
             indType

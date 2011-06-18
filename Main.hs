@@ -49,7 +49,7 @@ main =
                putStrLn "\n *** FIN ***"
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d = do d' <- scope d
-                               -- traceTCM $ "Scoped " ++ (show $ prettyPrint d')
+                               traceTCM $ "Scoped " ++ (show $ prettyPrint d')
                                gs <- inferDecl d'
                                -- st <- getSignature
                                -- liftIO $ putStrLn $ show st

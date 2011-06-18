@@ -20,6 +20,11 @@ mAnd x y = do bx <- x
 
 infixl 5 `mAnd`
 
+(==>) :: Bool -> Bool -> Bool
+(==>) b1 b2 = not b1 || b2
+
+infixr 3 ==>
+
 -- This two functions could be eliminated
 whenM :: (Monad m) => m Bool -> m () -> m ()
 whenM c n = do b <- c

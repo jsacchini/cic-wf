@@ -63,7 +63,7 @@ instance Conversion Term where
          (Lam ctx1 t1, Lam ctx2 t2) ->
            ctx1 ~~ ctx2 `mAnd` pushCtx ctx1 (t1 ~~ t2)
          (App f1 ts1, App f2 ts2) -> f1 ~~ f2 `mAnd` ts1 ~~ ts2
-         (Constr c1 _ ps1 as1, Constr c2 _ ps2 as2) ->
+         (Constr _ c1 _ ps1 as1, Constr _ c2 _ ps2 as2) ->
            c1 ~~ c2 `mAnd` ps1 ~~ ps2 `mAnd` as1 ~~ as2
          (Fix n1 f1 ctx1 tp1 body1, Fix n2 f2 ctx2 tp2 body2) ->
            f1 ~~ f2 `mAnd`
@@ -73,8 +73,11 @@ instance Conversion Term where
            pushBind (Bind f1 (mkPi ctx1 tp1)) (body1 ~~ body2)
          (Case c1, Case c2) -> c1 ~~ c2
          (Ind a1 x1, Ind a2 x2) -> do
-           whenM (x1 ~~ x2) $ addConstraints (a1 <<>> a2)
+           when (x1 == x2) $ addConstraints (a1 <<>> a2)
+           when (x1 == x2) $ traceTCM_ ["adding constraints ", show a1, " <<>> ", show a2]
            x1 ~~ x2
+
+         (_, _) -> return False
 
 instance Conversion Bind where
   (~~) (Bind _ t1) (Bind _ t2) = (~~) t1 t2
@@ -133,8 +136,16 @@ instance SubType Term where
              Inductive ctxPars pols _ _ _ <- getGlobal x1
              let (pars1, args1) = splitAt (size ctxPars) ts1
              let (pars2, args2) = splitAt (size ctxPars) ts2
+             -- traceTCM_ ["adding ", show a1, " <<= ", show a2]
              addConstraints (a1 <<= a2)
              vsubt pols pars1 pars2 `mAnd` args1 ~~ args2
+
+         (Ind a1 x1, Ind a2 x2)
+           | x1 /= x2 -> return False
+           | otherwise -> do
+             -- traceTCM_ ["adding ", show a1, " <<= ", show a2]
+             addConstraints (a1 <<= a2)
+             return True
 
          _ -> n1 ~~ n2
 
