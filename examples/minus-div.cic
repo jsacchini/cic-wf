@@ -1,0 +1,21 @@
+data nat : Type := O : nat | S : nat -> nat.
+
+
+define div : nat -> nat -> nat :=
+   fix 1 div : nat* -> nat -> nat* :=
+     fun (m n : nat) =>
+     < nat >
+     case m of
+     | O => O
+     | S m' => S (div ((fix 1 minus : nat* -> nat -> nat* :=
+                       fun (m n : nat) =>
+                       < nat > case m of
+                               | O => O
+                               | S m' => < nat > case n of
+                                         | O => m
+                                         | S n' => minus m' n'
+                                        end
+                       end) m' n) n)
+     end.
+
+check div.

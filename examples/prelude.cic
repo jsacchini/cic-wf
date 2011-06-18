@@ -22,6 +22,17 @@ define plus : nat -> nat -> nat :=
                         | S m' => S (plus m' n)
                         end.
 
+define minus : nat -> nat -> nat :=
+   fix 1 minus : nat* -> nat -> nat* :=
+     fun (m n : nat) => < nat >
+                        case m of
+                        | O => O
+                        | S m' => < nat > case n of
+                                  | O => m
+                                  | S n' => minus m' n'
+                                  end
+                        end.
+
 define mult : nat -> nat -> nat :=
    fix 1 mult : nat* -> nat -> nat :=
      fun (m n : nat) => < nat >
@@ -29,6 +40,15 @@ define mult : nat -> nat -> nat :=
                         | O => O
                         | S m' => plus n (mult m' n)
                         end.
+
+-- div/minus does not work with separate global definitions
+-- define div : nat -> nat -> nat :=
+--    fix 1 div : nat* -> nat -> nat* :=
+--      fun (m n : nat) => < nat >
+--                         case m of
+--                         | O => O
+--                         | S m' => S (div (minus m' n) n)
+--                         end.
 
 define fact : nat -> nat :=
   fix 1 fact : nat* -> nat :=
