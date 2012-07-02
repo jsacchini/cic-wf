@@ -22,7 +22,7 @@ Executable cic
                      array -any,
                      filepath -any,
                      fgl >= 5.4
-  Build-Tools:       alex >= 2.0,
+  Build-Tools:       alex >= 2.0 && < 3,
                      happy >= 1.18
   extensions:        CPP
   other-modules:     Syntax.Lexer
