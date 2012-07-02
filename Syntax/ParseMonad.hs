@@ -73,20 +73,3 @@ getLexerInput = lexerInput <$> get
 putLexerInput :: AlexInput -> Parser ()
 putLexerInput inp = do st <- get
                        put (st { lexerInput = inp })
-
-------------------------------------------------------------------------
--- Wrapping parse results
--- Stoled from Agda
-
-wrap :: ParseResult a -> a
-wrap (ParseOk x)     = x
-wrap (ParseFail err) = throw err
-
-wrapM:: Monad m => m (ParseResult a) -> m a
-wrapM m =
-  do r <- m
-     case r of
-       ParseOk x     -> return x
-       ParseFail err -> throw err
-
-------------------------------------------------------------------------
