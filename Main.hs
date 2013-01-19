@@ -23,7 +23,7 @@ import Prelude hiding (catch)
 
 import System.IO
 
-import System
+import System.Environment
 
 import Control.Monad.Trans
 import Control.Monad.State

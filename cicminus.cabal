@@ -12,13 +12,12 @@ extra-source-files: undefined.h
 
 Executable cicminus
   Main-is:           Main.hs
-  Build-Depends:     base >= 4.2,
-                     parsec >= 2,
+  Build-Depends:     parsec >= 2,
                      pretty -any,
                      haskeline >= 0.6,
                      mtl == 2.*,
+                     base >= 4.2,
                      containers -any,
-                     haskell98 >= 1.0,
                      array -any,
                      filepath -any,
                      fgl >= 5.4

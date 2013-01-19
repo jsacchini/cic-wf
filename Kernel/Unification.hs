@@ -17,7 +17,8 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances
+  #-}
 
 module Kernel.Unification where
 

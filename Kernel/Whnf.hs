@@ -17,7 +17,7 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE CPP, TypeSynonymInstances
+{-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances
   #-}
 
 module Kernel.Whnf where
