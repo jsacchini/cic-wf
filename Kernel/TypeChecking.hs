@@ -28,6 +28,8 @@ import Utils.Impossible
 
 import Control.Monad.Reader
 
+import qualified Text.PrettyPrint as PP
+
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
 import Syntax.InternaltoAbstract
@@ -41,12 +43,37 @@ import Kernel.Whnf
 import Kernel.Inductive (inferInd)
 import Kernel.Fix (inferFix)
 import Kernel.Case (inferCase)
+import Kernel.PrettyTCM
 import Utils.Fresh
 import Utils.Pretty
 
-checkSort :: (MonadTCM tcm) => Sort -> tcm (Term, Type)
-checkSort Prop     = return (Sort Prop, Sort (Type 0))
-checkSort (Type n) = return (Sort (Type n), Sort (Type (n + 1)))
+checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term, Type)
+checkSort A.Prop     = do f <- fresh
+                          return (Sort Prop, Sort (Type f))
+checkSort (A.Type _) = do f1 <- fresh
+                          f2 <- fresh
+                          addTypeConstraints [(f1, f2, -1)]
+                          return (Sort (Type f1), Sort (Type f2))
+
+checkProd :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
+checkProd (Type _) Prop = return Prop
+checkProd Prop (Type n) = return $ Type n
+checkProd (Type m) (Type n) = do traceTCM 30 $ hsep [text "check product",
+                                                     prettyPrintTCM m,
+                                                     prettyPrintTCM n]
+                                 k <- fresh
+                                 addTypeConstraints [(m, k, 0), (n, k, 0)]
+                                 return $ Type k
+
+maxSort :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
+maxSort (Type m) Prop = return $ Type m
+maxSort Prop (Type n) = return $ Type n
+maxSort (Type m) (Type n) = do traceTCM 30 $ hsep [text "max sort",
+                                                   prettyPrintTCM m,
+                                                   prettyPrintTCM n]
+                               k <- fresh
+                               addTypeConstraints [(m, k, 0), (n, k, 0)]
+                               return $ Type k
 
 isSort :: (MonadTCM tcm) => Term -> tcm Sort
 isSort t = do t' <- whnf t
@@ -62,15 +89,17 @@ inferBinds bs = inferList bs
     where inferList [] = return (empCtx, Prop)
           inferList (b:bs) = do (ctx1, s1) <- inferBind b
                                 (ctx2, s2) <- pushCtx ctx1 $ inferList bs
-                                return (ctx1 +: ctx2, max s1 s2)
-          inferBind (A.Bind _ [] _) = return (empCtx, Prop)
-          inferBind (A.Bind rg (x:xs) e) = do
+                                s' <- maxSort s1 s2
+                                return (ctx1 +: ctx2, s')
+          inferBind (A.Bind _ _ [] _) = return (empCtx, Prop)
+          inferBind (A.Bind rg impl (x:xs) e) = do
             (t1, r1) <- infer e
             s1 <- isSort r1
-            (ctx, s2) <- pushBind (Bind x t1) $ inferBind (A.Bind rg xs e)
-            return (Bind x t1 <| ctx, max s1 s2)
+            (ctx, s2) <- pushBind (mkImplBind x impl t1) $ inferBind (A.Bind rg impl xs e)
+            s' <- maxSort s1 s2
+            return (mkBind x t1 <| ctx, s')
               where mkCtx [] _ _ = empCtx
-                    mkCtx (y:ys) t k = Bind y (I.lift k 0 t) <| mkCtx ys t (k + 1)
+                    mkCtx (y:ys) t k = mkImplBind y impl (I.lift k 0 t) <| mkCtx ys t (k + 1)
 
 
 infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
@@ -80,25 +109,31 @@ infer (A.Ann _ t u) = do (u', r) <- infer u
                          w <- whnf u'
                          return (t', w)
 infer (A.Sort _ s) = checkSort s
-infer (A.Pi _ ctx t) =
-  do (ctx', s1) <- inferBinds ctx
+infer exp@(A.Pi _ ctx t) =
+  do traceTCM 30 $ hsep [text "Inferring product",
+                         prettyPrintTCM exp]
+     (ctx', s1) <- inferBinds ctx
      (t', r2) <- pushCtx ctx' $ infer t
      s2 <- pushCtx ctx' $ isSort r2
-     return (mkPi ctx' t', Sort $ max s1 s2)
-infer (A.Arrow _ e1 e2) =
-  do (t1, r1) <- infer e1
+     s' <- checkProd s1 s2
+     return (mkPi ctx' t', Sort s')
+infer exp@(A.Arrow _ e1 e2) =
+  do traceTCM 30 $ hsep [text "Inferring arrow",
+                         prettyPrintTCM exp]
+     (t1, r1) <- infer e1
      s1 <- isSort r1
      (t2, r2) <- pushType t1 $ infer e2
      s2 <- pushType t1 $ isSort r2
-     return (mkPi (bindNoName t1 <| empCtx) t2, Sort $ max s1 s2)
+     s' <- checkProd s1 s2
+     return (mkPi (bindNoName t1 <| empCtx) t2, Sort s')
 infer (A.Bound _ _ n) =
-  do l <- ask
-     when (n >= length l) $ liftIO $ putStrLn $ concat ["Typechecking ", show n, " ", show l]
-     case (l !! n) of
-         Bind _ t        -> do w <- whnf (I.lift (n + 1) 0 t)
-                               return (Bound n, w)
-         LocalDef _ _ t2 -> do w <- whnf (I.lift (n + 1) 0 t2)
-                               return (Bound n, w)
+  do len <- localLength
+     when (n >= len) $
+       traceTCM levelBug $ hsep [text "Context shorter than expected ",
+                                 int len, text " <= ", int n]
+     b <- localGet n
+     w <- whnf (I.lift (n + 1) 0 (bindType b))
+     return (Bound n, w)
 infer (A.Ident _ x) =   do t <- getGlobal x
                            case t of
                              Definition t1 _ -> do w <- whnf t1
@@ -113,29 +148,33 @@ infer (A.App _ e1 e2) = -- inferApp e1 e2
     do (t1, r1) <- infer e1
        case r1 of
          Pi ctx u2 ->
-             do let (ch, ct) = (ctxHd ctx, ctxTl ctx)
+             do let (ch, ct) = ctxSplit ctx
                 t2 <- check e2 (bindType ch)
                 w  <- whnf $ mkPi (subst t2 ct) (substN (ctxLen ct) t2 u2)
                 return (mkApp t1 [t2], w)
          _            -> throwNotFunction r1
 infer (A.Ind _ an x) =
     do t <- getGlobal x
-       i <- getFreshStage
-       when (an == Star) $ addStarStage i
+       i <- fresh
+       -- when (an == Star) $ addStarStage i
        case t of
-         Inductive pars pols indices sort _ ->
+         Inductive k pars pols indices sort _ ->
            return (Ind (Size (Svar i)) x, mkPi (pars +: indices) (Sort sort))
          _                             -> __IMPOSSIBLE__
 infer (A.Constr _ x _ pars args) = do
   t <- getGlobal x
-  stage <- getFreshStage
+  stage <- fresh
   let replStage x = if x == Star then (Size (Svar stage)) else x
       replFunc = modifySize replStage
   case t of
     Constructor indName idConstr tpars targs _ indices -> do
       pars' <- checkList pars (replFunc tpars)
       e <- ask
-      -- traceTCM_ ["checking ", show args, " againsts ", show (foldr subst (replFunc targs) pars'), "\n env: ", show e]
+      traceTCM 20 $ hsep [text "checking ",
+                          prettyPrintTCM args,
+                          text " againsts ",
+                          text (show (foldr subst (replFunc targs) pars')), -- TODO: Add PrettyPrint of Context
+                          text "\n env: ", text (show e)] -- TODO: fix (show e). Add PrettyPrint of TCEnv
       args' <- checkList args (foldr subst (replFunc targs) pars')
       let numPars = ctxLen tpars
           numArgs = ctxLen targs
@@ -144,14 +183,14 @@ infer (A.Constr _ x _ pars args) = do
           resType = substList (numArgs + numPars - 1) (pars'++args') genType
           -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
       -- We erase the type annotations of both parameters and arguments
-      return (Constr (replFunc tpars +: replFunc targs |> (Bind (Id"") (Ind indStage indName)) ) x (indName, idConstr) (eraseSize pars') (eraseSize args'),
+      return (Constr (replFunc tpars +: replFunc targs |> (mkBind (Id"") (Ind indStage indName)) ) x (indName, idConstr) (eraseSize pars') (eraseSize args'),
               resType)
 
     _  -> __IMPOSSIBLE__
 
 infer (A.Fix f) = inferFix f
 infer (A.Case c) = inferCase c
-infer (A.Number _ _) = __IMPOSSIBLE__
+infer (A.Number _ _) = __IMPOSSIBLE__ -- Number n is transformed into S (S... O)) during scope checking
 
 -- | Only inductive definitions return more than one global
 inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm [(Name, Global)]
@@ -183,8 +222,8 @@ inferDecl (A.Check e1 (Just e2)) =
        t1 <- check e1 t2
        t2' <- reify t2
        t1' <- reify t1
-       liftIO $ putStrLn $ concat ["check ", show (prettyPrint t1')]
-       liftIO $ putStrLn $ concat ["  : ", show (prettyPrint t2')]
+       liftIO $ putStrLn $ concat ["check ", PP.renderStyle (PP.style { PP.lineLength=20 }) (prettyPrint t1')]
+       liftIO $ putStrLn $ concat ["  : ", PP.renderStyle (PP.style { PP.lineLength=20 }) (prettyPrint t2')]
        return []
 inferDecl (A.Check e1 Nothing) =
     do (t1, u1) <- infer e1
@@ -199,19 +238,21 @@ inferDecl (A.Check e1 Nothing) =
 
 
 check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
-check t u =   do -- traceTCM_ ["Checking type of\n", show t, "\nagainst\n", show u]
+check t u =   do traceTCM 30 $ (hsep [text "Checking type of", prettyPrintTCM t]
+                                <+> hsep [text "against", prettyPrintTCM u])
                  (t', r) <- infer t
-                 -- traceTCM_ ["calling subtype with ", show (r, u)]
-                 b <- r <~ u
+                 traceTCM 30 $ hsep [text "Calling subtype with ", prettyPrintTCM r,
+                                     text "≤", prettyPrintTCM u]
+                 b <- r `subTypeSort` u
                  r__ <- normalForm r >>= reify
                  u__ <- normalForm u >>= reify
-                 e <- ask
-                 unless b $ traceTCM_ ["\nCHECK TYPE CONVERSION\n",
-                                       -- show r, " -> ",
-                                       show $ prettyPrint r__,
-                                       "\n==\n",
-                                       --show u, " -> ",
-                                       show $ prettyPrint u__, "\n\nin context : ", show e, "\n********\non ", show $ prettyPrint $ getRange t]
+                 -- e <- ask
+                 -- unless b $ traceTCM_ ["\nCHECK TYPE CONVERSION\n",
+                 --                       -- show r, " -> ",
+                 --                       show $ prettyPrint r__,
+                 --                       "\n==\n",
+                 --                       --show u, " -> ",
+                 --                       show $ prettyPrint u__, "\n\nin context : ", show e, "\n********\non ", show $ prettyPrint $ getRange t]
                  unless b $ throwNotConvertible r u
                  return t'
 

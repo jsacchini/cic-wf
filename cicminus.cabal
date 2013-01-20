@@ -14,7 +14,7 @@ Executable cicminus
   Main-is:           Main.hs
   Build-Depends:     parsec >= 2,
                      pretty -any,
-                     haskeline >= 0.6,
+                     haskeline >= 0.7,
                      mtl == 2.*,
                      base >= 4.2,
                      containers -any,
@@ -52,3 +52,4 @@ Executable cicminus
                      Kernel.Fix
                      Kernel.Case
                      Kernel.Inductive
+                     TopLevel.TopLevel

@@ -26,16 +26,19 @@ module Kernel.TCM where
 import Prelude hiding (catch)
 import Control.Applicative
 import Control.Exception
+import Control.Monad
 
+import Data.List
 import qualified Data.Foldable as Fold
 import Data.Typeable
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Data.Graph.Inductive
+import qualified Data.Graph.Inductive as GI
 
-import Control.Applicative
+import Text.PrettyPrint
+
 import Control.Monad.State
 import Control.Monad.Reader
 
@@ -44,9 +47,11 @@ import Syntax.Common
 import Syntax.Position
 import Syntax.Size
 import Utils.Fresh
+import Utils.Pretty
 import Utils.Sized
 
-import Kernel.Constraints
+import Kernel.Constraints (CSet)
+import qualified Kernel.Constraints as CS
 
 -- Type checking errors
 -- We include scope errors, so we have to catch only one type
@@ -56,9 +61,10 @@ data TypeError
     | NotSort TCEnv I.Term
     | NotArity Range I.Term
     | NotConstructor TCEnv I.Term
-    | InvalidProductRule Sort Sort
+    | InvalidProductRule I.Sort I.Sort
     | IdentifierNotFound Name
     | ConstantError String
+    | UniverseInconsistency
     -- Scope checking
     | WrongNumberOfArguments Range Name Int Int
     | WrongFixNumber Range Name Int
@@ -84,52 +90,61 @@ data TypeError
 
 instance Exception TypeError
 
-
+type Verbosity = Int
 -- Global state containing definition, assumption, datatypes, etc..
 data TCState = TCState
-               { stSignature :: Signature,
-                 stDefined :: [Name], -- defined names in reverse order
-                 stFresh :: Fresh,
-                 stStarStages :: [Int], -- list of stages assigned to position
-                                        -- types
-                 stConstraints :: ConstraintSet
-               }
-               deriving(Show)
+               {
+                 stSignature       :: Signature
+               , stDefined         :: [Name] -- defined names in reverse order
+               , stFresh           :: Fresh
+               , stConstraints     :: CSet StageVar
+               , stTypeConstraints :: CSet I.SortVar
+               , stVerbosityLevel  :: Verbosity
+               } deriving(Show)
 
 type Signature = Map Name I.Global
 
 -- Fresh
-data Fresh = Fresh { freshStage :: Int }
+data Fresh = Fresh
+             { freshStage :: StageVar
+             , freshSort  :: I.SortVar }
              deriving(Show)
 
-instance HasFresh Int Fresh where
-  nextFresh f = (i, f { freshStage = i + 1 })
+instance HasFresh StageVar Fresh where
+  nextFresh f = (i, f { freshStage = succ i })
     where i = freshStage f
 
-instance HasFresh i Fresh => HasFresh i TCState where
-  nextFresh s = (i, s { stFresh = f })
+instance HasFresh I.SortVar Fresh where
+  nextFresh f = (i, f { freshSort = succ i })
+    where i = freshSort f
+
+-- instance HasFresh i Fresh => HasFresh i TCState where
+--   nextFresh s = (i, s { stFresh = f })
+--     where (i, f) = nextFresh $ stFresh s
+
+instance HasFresh StageVar TCState where
+  nextFresh s = (i, s { stFresh = f
+                      , stConstraints = CS.addNode i (stConstraints s) })
     where (i, f) = nextFresh $ stFresh s
 
-getFreshStage :: (MonadTCM tcm) => tcm Int
-getFreshStage = do
-  x <- fresh
-  st <- get
-  put $ st { stConstraints = insNode (x, ()) $ stConstraints st }
-  return x
-
-resetStarStages :: (MonadTCM tcm) => tcm ()
-resetStarStages = do st <- get
-                     put $ st { stStarStages = [] }
-
-getStarStages :: (MonadTCM tcm) => tcm [Int]
-getStarStages = stStarStages <$> get
-
-addStarStage :: (MonadTCM tcm) => Int -> tcm ()
-addStarStage k = do st <- get
-                    put $ st { stStarStages = k : stStarStages st }
+instance HasFresh I.SortVar TCState where
+  nextFresh s = (i, s { stFresh = f
+                      , stTypeConstraints = CS.addNode i (stTypeConstraints s) })
+    where (i, f) = nextFresh $ stFresh s
 
 -- Local environment
-type TCEnv = [I.Bind]
+newtype TCEnv = TCEnv { unEnv :: [I.Bind] }
+                deriving (Show)
+
+-- What combinator is this?
+withEnv :: ([I.Bind] -> [I.Bind])-> TCEnv -> TCEnv
+withEnv f (TCEnv x) = TCEnv (f x)
+
+localLength :: (MonadTCM tcm) => tcm Int
+localLength = liftM (length . unEnv) ask
+
+localGet :: (MonadTCM tcm) => Int -> tcm I.Bind
+localGet k = liftM ((!! k) . unEnv) ask
 
 data TCErr = TCErr TypeError
              deriving(Show, Typeable)
@@ -142,7 +157,7 @@ class (Functor tcm,
        MonadState TCState tcm,
        MonadIO tcm) => MonadTCM tcm
 
-type TCM = StateT TCState (ReaderT TCEnv IO)
+type TCM = ReaderT TCEnv (StateT TCState IO) -- StateT TCState (ReaderT TCEnv IO)
 
 instance MonadTCM TCM
 
@@ -150,17 +165,20 @@ instance MonadTCM TCM
 runTCM :: TCM a -> IO (Either TCErr a)
 runTCM m = (Right <$> runTCM' m) `catch` (return . Left)
 
-runTCM' :: TCM a -> IO a
-runTCM' m = liftM fst $ runReaderT (runStateT m initialTCState) initialTCEnv
+-- runTCM' :: TCM a -> IO a
+-- runTCM' m = liftM fst $ runReaderT (runStateT m initialTCState) initialTCEnv
+runTCM' m = liftM fst $ runStateT (runReaderT m initialTCEnv) initialTCState
+
 
 initialTCState :: TCState
-initialTCState = TCState { stSignature = Map.empty, -- initialSignature,
-                           stDefined = [],
-                           stFresh = initialFresh,
-                           stStarStages = [],
-                           stConstraints = emptyConstraints
-                         }
-
+initialTCState =
+  TCState { stSignature = Map.empty -- initialSignature,
+          , stDefined = []
+          , stFresh = initialFresh
+          , stConstraints     = CS.addNode inftyStageVar CS.empty
+          , stTypeConstraints = CS.empty
+          , stVerbosityLevel = 1
+          }
 
 -- | 'initialSignature' contains the definition of natural numbers as an
 --   inductive type
@@ -171,10 +189,11 @@ initialSignature = foldr (uncurry Map.insert) Map.empty
                     (Id "S", natS)]
 
 initialFresh :: Fresh
-initialFresh = Fresh { freshStage = 1 }  -- 0 is mapped to Infty
+initialFresh = Fresh { freshStage = succ inftyStageVar -- inftyStageVar is mapped to ∞
+                     , freshSort  = toEnum 0 }
 
 initialTCEnv :: TCEnv
-initialTCEnv = []
+initialTCEnv = TCEnv []
 
 typeError :: (MonadTCM tcm) => TypeError -> tcm a
 typeError = throw
@@ -214,13 +233,13 @@ addGlobal x g = do st <- get
                             }
 
 pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
-pushCtx ctx = local (reverse (Fold.toList ctx)++)
+pushCtx ctx = local (withEnv (reverse (Fold.toList ctx)++))
 
 pushType :: (MonadTCM tcm) => I.Type -> tcm a -> tcm a
-pushType tp = local (I.bindNoName tp:)
+pushType tp = local (withEnv (I.bindNoName tp:))
 
 pushBind :: (MonadTCM tcm) => I.Bind -> tcm a -> tcm a
-pushBind b = local (b:)
+pushBind b = local (withEnv (b:))
 
 -- | Returns the number of parameters of an inductive type.
 --   Assumes that the global declaration exists and that is an inductive type
@@ -229,46 +248,79 @@ numParam x = (size . I.indPars) <$> getGlobal x
 
 
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
-getLocalNames = map I.bindName <$> ask
+getLocalNames = map I.bindName . unEnv <$> ask
 
 -- We don't need the real type of the binds for scope checking, just the names
 -- Maybe should be moved to another place
 fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
-fakeBinds b = local (map (flip I.Bind (I.Sort Prop)) (reverse (getNames b))++)
-
+fakeBinds b = local (withEnv (map mkBind (reverse (getNames b))++))
+              where mkBind x = I.Bind x False (I.Sort I.Prop) Nothing
 
 -- Constraints
 
-addConstraints :: (MonadTCM tcm) => [Constraint] -> tcm ()
-addConstraints cts = do
-  modify $ \st -> st { stConstraints = addCts (stConstraints st) }
-    where
-      addCts g = insEdges cts (insNodes (newNodes g) g)
-      getNodes = foldr (\(n1,n2,_) r -> n1:n2:r) [] cts
-      newNodes g = map (\n -> (n,())) $ filter (not . flip gelem g) getNodes
+-- class HasConstraints s a where
+--   getCSet    :: s -> CSet a
+--   modifyCSet :: (CSet a -> CSet a) -> s -> s
+
+-- instance HasConstraints TCState StageVar where
+--   getCSet        = stConstraints
+--   modifyCSet f s = s { stConstraints = f (stConstraints s) }
+
+-- instance HasConstraints TCState I.SortVar where
+--   getCSet        = stTypeConstraints
+--   modifyCSet f s = s { stTypeConstraints = f (stTypeConstraints s) }
+
+-- addConstraints :: (Enum a, MonadState s m, HasConstraints s a) => [CS.Constraint a] -> m ()
+-- addConstraints cts = do
+--   st <- get
+--   put (modifyCSet (CS.addConstraints cts) st)
 
 
-removeStages :: (MonadTCM tcm) => [Int] -> tcm ()
+addStageConstraints :: (MonadTCM tcm) => [CS.Constraint StageVar] -> tcm ()
+addStageConstraints cts =
+  modify $ \st -> st { stConstraints = CS.addConstraints cts (stConstraints st) }
+
+addTypeConstraints :: (MonadTCM tcm) => [CS.Constraint I.SortVar] -> tcm ()
+addTypeConstraints cts = do
+  modify $ \st -> st { stTypeConstraints = CS.addConstraints cts (stTypeConstraints st) }
+  tpConstr <- stTypeConstraints <$> get
+  case find ((/= []) . flip CS.findNegCycle tpConstr) (CS.listNodes tpConstr) of
+    Just _ -> throw UniverseInconsistency
+    Nothing -> return ()
+  traceTCM 30 $ return (hsep (text "Adding type constraints: " :
+                              map (\(x,y,k) -> hsep [prettyPrint x,
+                                                     if k == 0 then text "<=" else text "<",
+                                                     prettyPrint y
+                                                    ]) cts))
+
+
+
+removeStages :: (MonadTCM tcm) => [StageVar] -> tcm ()
 removeStages ans =
-  modify $ \st -> st { stConstraints = delNodes ans (stConstraints st) }
+  modify $ \st -> st { stConstraints = CS.delNodes ans (stConstraints st) }
 
-allStages :: (MonadTCM tcm) => tcm [Int]
-allStages = (nodes . stConstraints) <$> get
+allStages :: (MonadTCM tcm) => tcm [StageVar]
+allStages = (CS.listNodes . stConstraints) <$> get
 
-allConstraints :: (MonadTCM tcm) => tcm ConstraintSet
+allConstraints :: (MonadTCM tcm) => tcm (CSet StageVar)
 allConstraints = stConstraints <$> get
 
-newConstraints :: (MonadTCM tcm) => ConstraintSet -> tcm ()
+newConstraints :: (MonadTCM tcm) => (CSet StageVar) -> tcm ()
 newConstraints c = modify $ \st -> st { stConstraints = c }
 
-
 --- For debugging
-traceTCM :: (MonadTCM tcm) => String -> tcm ()
-traceTCM s = liftIO $ putStrLn $ "++ " ++ s ++ " ++"
 
-traceTCM_ :: (MonadTCM tcm) => [String] -> tcm ()
-traceTCM_ = traceTCM . concat
+levelBug, levelDetail :: Verbosity
+levelBug    = 1
+levelDetail = 80
 
+getVerbosity :: (MonadTCM tcm) => tcm Verbosity
+getVerbosity = stVerbosityLevel <$> get
+
+traceTCM :: (MonadTCM tcm) => Verbosity -> tcm Doc -> tcm ()
+traceTCM n t = do k <- getVerbosity
+                  d <- t
+                  when (n <= k) $ liftIO $ print d
 
 --- For testing
 testTCM_ :: TCM a -> IO (Either TCErr a)
@@ -282,26 +334,30 @@ testTCM_ m = runTCM m'
 -- Initial signature
 natInd :: I.Global
 natInd =
-  I.Inductive { I.indPars    = empCtx,
-                I.indPol     = [],
-                I.indIndices = empCtx,
-                I.indSort    = Type 0,
-                I.indConstr  = [Id "O", Id "S"] }
+  I.Inductive { I.indKind    = I
+              , I.indPars    = empCtx
+              , I.indPol     = []
+              , I.indIndices = empCtx
+              , I.indSort    = I.Type 0
+              , I.indConstr  = [Id "O", Id "S"]
+              }
+
 natO :: I.Global
 natO =
-  I.Constructor { I.constrInd     = Id "nat",
-                  I.constrId      = 0,
-                  I.constrPars    = empCtx,
-                  I.constrArgs    = empCtx,
-                  I.constrRec     = [],
-                  I.constrIndices = [] }
+  I.Constructor { I.constrInd     = Id "nat"
+                , I.constrId      = 0
+                , I.constrPars    = empCtx
+                , I.constrArgs    = empCtx
+                , I.constrRec     = []
+                , I.constrIndices = []
+                }
 
 natS :: I.Global
 natS =
   I.Constructor { I.constrInd     = Id "nat",
                   I.constrId      = 1,
                   I.constrPars    = empCtx,
-                  I.constrArgs    = I.Bind noName (I.Ind Empty (Id "nat")) <| empCtx,
+                  I.constrArgs    = I.unNamed (I.Ind Empty (Id "nat")) <| empCtx,
                   I.constrRec     = [0],
                   I.constrIndices = [] }
 

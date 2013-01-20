@@ -43,7 +43,7 @@ import Utils.Sized
 -- | Type-checks an inductive definition returning a list of global definitions
 --   for the inductive type and the constructors
 inferInd :: (MonadTCM tcm) => A.InductiveDef -> tcm [(Name, Global)]
-inferInd ind@(A.InductiveDef name pars tp constrs) =
+inferInd ind@(A.InductiveDef name k pars tp constrs) =
     do -- traceTCM $ "Checking inductive definition\n" ++ show ind
        ((pars',pols'), _) <- inferParamList pars
        let bindPars' =  pars'
@@ -66,7 +66,7 @@ inferInd ind@(A.InductiveDef name pars tp constrs) =
            cs' = map (appSnd (replInd . replInfty)) cs
 
        removeStages annots
-       return $ (name, Inductive (replInfty pars') pols' (replInfty args) s3 constrNames) : fillIds cs'
+       return $ (name, Inductive k (replInfty pars') pols' (replInfty args) s3 constrNames) : fillIds cs'
          where fillIds cs = map (\(idConstr, (x, c)) -> (x, c { constrId = idConstr })) (zip [0..] cs)
                constrNames = map A.constrName constrs
 
@@ -87,7 +87,7 @@ inferParam (A.Parameter _ names tp) =
       where
         mkBindsSameType_ :: [(Name, Polarity)] -> Type -> Int -> (Context,[Polarity])
         mkBindsSameType_ [] _ _ = (empCtx,[])
-        mkBindsSameType_ ((x,pol):xs) t k = ((Bind x (I.lift k 0 t)) <| ctx,
+        mkBindsSameType_ ((x,pol):xs) t k = ((mkBind x (I.lift k 0 t)) <| ctx,
                                              pol : pols)
           where (ctx, pols) = mkBindsSameType_ xs t (k + 1)
 
@@ -97,16 +97,17 @@ inferParamList :: (MonadTCM tcm) => [A.Parameter] -> tcm ((Context, [Polarity]),
 inferParamList [] = return ((empCtx, []), Prop)
 inferParamList (p:ps) = do ((ctx1, pol1), s1) <- inferParam p
                            ((ctx2, pol2), s2) <- pushCtx ctx1 $ inferParamList ps
-                           return ((ctx1 +: ctx2, pol1 ++ pol2), max s1 s2)
+                           s' <- maxSort s1 s2
+                           return ((ctx1 +: ctx2, pol1 ++ pol2), s')
 
 
 checkConstr :: (MonadTCM tcm) =>  A.Constructor -> (Name, Context, Context, Sort) -> tcm (Name, Global)
 checkConstr (A.Constructor _ name tp _)
             (nmInd, parsInd, indicesInd, sortInd) =
-    do (tp', s) <- local (indBind:) $  infer tp
+    do (tp', s) <- pushBind indBind $  infer tp
        s' <- isSort s
        unless (sortInd == s') $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd
-       let indBind = Bind nmInd (mkPi (parsInd +: indicesInd) (Sort sortInd))
+       let indBind = mkBind nmInd (mkPi (parsInd +: indicesInd) (Sort sortInd))
        (args, indices, recArgs) <- pushBind indBind $
                                    isConstrType name nmInd numPars tp'
 
@@ -116,7 +117,7 @@ checkConstr (A.Constructor _ name tp _)
             indType
               | ctxLen parsInd + ctxLen indicesInd == 0 = Sort sortInd
               | otherwise = Pi (parsInd +: indicesInd) (Sort sortInd)
-            indBind = Bind nmInd indType
+            indBind = mkBind nmInd indType
 
 -- TODO: check that inductive type are applied to the parameters in order
 --       check polarities of arguments and strict positivity of the inductive
@@ -149,7 +150,7 @@ checkStrictPos :: (MonadTCM tcm) => Name -> Context -> tcm [Int]
 checkStrictPos nmConstr = cSP 0
   where
     cSP _ EmptyCtx = return []
-    cSP k (ExtendCtx b@(Bind x t) ctx)
+    cSP k (ExtendCtx b@(Bind x _ t Nothing) ctx)
       | not (isFree k t) = pushBind b $ cSP (k + 1) ctx
       | otherwise = do
         -- traceTCM_ ["considering arg ", show k, "  -->  ", show (Bind x t)]

@@ -35,13 +35,13 @@ import Syntax.InternaltoAbstract
 import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
-import Kernel.Constraints
 import Kernel.TCM
 import Kernel.Unification
 import Kernel.Permutation
 import Kernel.Whnf
 import {-# SOURCE #-} Kernel.TypeChecking
 
+import Utils.Fresh
 import Utils.Misc
 import Utils.Pretty
 import Utils.Sized
@@ -54,11 +54,13 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
 
   -- Check that the type of the argument is an inductive type and get parameters
   -- and family indices
-  (sta, nmInd, (pars, inds)) <- getInductiveType tpArg
+  (kind, sta, nmInd, (pars, inds)) <- getInductiveType tpArg
 
   -- Force the stage of the argument to be a successor
-  sta1 <- getFreshStage
-  addConstraints (sta <<= (Size (Hat (Svar sta1))))
+  sta1 <- fresh
+  case kind of
+    I   -> addStageConstraints (sta <<= (Size (Hat (Svar sta1))))
+    CoI -> addStageConstraints (Size (Hat (Svar sta1)) <<= sta)
 
   -- Check the family specification. Unify with the family of the inductive type
   -- The resulting unification is used to type-check the return type
@@ -116,17 +118,19 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
       mkCaseBinds :: Maybe Name -> Name -> [Term] -> Type -> Maybe CaseIn -> Context
       mkCaseBinds Nothing _ _ _ Nothing = empCtx
       mkCaseBinds Nothing _ _ _ (Just c) = inBind c
-      mkCaseBinds (Just x) _ _ tpArg Nothing = Bind x tpArg <| empCtx
+      mkCaseBinds (Just x) _ _ tpArg Nothing = mkBind x tpArg <| empCtx
       mkCaseBinds (Just x) nmInd pars _ (Just c) =
-         inBind c |> Bind x (mkApp (Ind Empty nmInd) (map (I.lift (size c) 0) pars ++ inArgs c))
+         inBind c |> mkBind x (mkApp (Ind Empty nmInd) (map (I.lift (size c) 0) pars ++ inArgs c))
 
       getInductiveType t = do
         t' <- whnf t
         case t' of
           App (Ind a i) args -> do
-            Inductive tpPars _ _ _ _ <- getGlobal i -- matching should not fail
-            return (a, i, splitAt (size tpPars) args)
-          Ind a i          -> return (a, i, ([], []))
+            Inductive k tpPars _ _ _ _ <- getGlobal i -- matching should not fail
+            return (k, a, i, splitAt (size tpPars) args)
+          Ind a i          -> do
+            Inductive k tpPars _ _ _ _ <- getGlobal i -- matching should not fail
+            return (k, a, i, ([], []))
           _                -> error $ "case 0. not inductive type " ++ show t
 
       listConstructors :: (MonadTCM tcm) => Name -> tcm [Name]
@@ -134,8 +138,8 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
 
       unfoldCtx ctx t = unfoldCtx_ 0 ctx t
       unfoldCtx_ k EmptyCtx t = t
-      unfoldCtx_ k (ExtendCtx (Bind _ _) ctx) t = unfoldCtx_ (k+1) ctx t
-      unfoldCtx_ k (ExtendCtx (LocalDef _ u _) ctx) t =
+      unfoldCtx_ k (ExtendCtx (Bind _ _ _ Nothing) ctx) t = unfoldCtx_ (k+1) ctx t
+      unfoldCtx_ k (ExtendCtx (Bind _ _ _ (Just u)) ctx) t =
         unfoldCtx_ k ctx (subst (I.lift k 0 u) t)
 
 
@@ -182,7 +186,7 @@ checkBranch sta asNm nmInd pars caseIn' ret'
 
 localDom :: Int -> [Term]
 localDom 0 = []
-localDom (k+1) = Bound k : localDom k
+localDom k = Bound (k-1) : localDom (k-1)
 
 
 

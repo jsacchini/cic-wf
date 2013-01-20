@@ -10,6 +10,8 @@ module Syntax.Lexer where
 
 import Control.Monad.State
 
+import Data.Char
+
 import Syntax.Tokens
 import Syntax.Alex
 import Syntax.ParseMonad
@@ -31,15 +33,11 @@ tokens :-
   "--"       { \_ _ -> skipOneLineComment }
   "{-"       { \_ _ -> skipNestedComment }
 
-
-  -- Type without a number is a synonym of Type0. See Syntax.Tokens.ident
-  -- This should be guaranteed since Alex process the action with the longest
-  -- match. Type3 should match this rule, while Type<not a number> should match
-  -- rule @ident below
-  Type @number      { typeKeyword }
+  fix @number       { fixKeyword }
 
   \(          { symbol }
   \)          { symbol }
+  \\          { ident  }
   "->"        { symbol }
   "=>"        { symbol }
   ","         { symbol }
@@ -48,7 +46,7 @@ tokens :-
   ":"         { symbol }
   "::"        { symbol }
   "|"         { symbol }
-  "+"         { symbol }
+  "+"         { symbolOrOther }
   "-"         { symbol }
   "++"        { symbol }
   "@"         { symbol }
@@ -68,13 +66,45 @@ tokens :-
 lexToken :: Parser Token
 lexToken =
   do inp <- getLexerInput
-     case alexScan inp 0 of  -- 0 is the state of the lexer. Not used now
+     case alexScan (foolAlex inp) 0 of  -- 0 is the state of the lexer. Not used now
        AlexEOF -> return TokEOF
-       AlexError _ -> parseErrorAt (lexPos inp) ("Lexical error") -- rest of input ingnored at the moment
-       AlexSkip inp' _ -> putLexerInput inp' >> lexToken
+       AlexError err -> parseErrorAt (lexPos inp) ("Lexical error : " ++ lexInput err) -- rest of input ingnored at the moment
+       AlexSkip inp' len -> putLexerInput (newInput inp inp' len) >> lexToken
        AlexToken inp' len act ->
-         do putLexerInput inp'
+         do putLexerInput (newInput inp inp' len)
             act (lexPos inp) (take len (lexInput inp))
+
+-- Stolen from Agda
+
+-- newInput undoes the effect of foolAlex
+-- | Use the input string from the previous input (with the appropriate
+--   number of characters dropped) instead of the fake input string that
+--   was given to Alex (with unicode characters removed).
+newInput :: PreviousInput -> CurrentInput -> TokenLength -> CurrentInput
+newInput inp inp' len =
+    case drop (len - 1) (lexInput inp) of
+	c:s'	-> inp' { lexInput    = s'
+			, lexPrevChar = c
+			}
+	[]	-> inp' { lexInput = [] }
+
+-- | Alex 2 can't handle unicode characters. To solve this we
+--   translate all Unicode (non-ASCII) identifiers to @z@, all Unicode
+--   operator characters to @+@, and all whitespace characters (except
+--   for @\t@ and @\n@) to ' '. It is important that there aren't any
+--   keywords containing @z@, @+@ or @ @.
+foolAlex :: AlexInput -> AlexInput
+foolAlex inp = inp { lexInput = map fool $ lexInput inp }
+    where
+	fool c
+            | isSpace c && not (c `elem` "\t\n") = ' '
+            | c `elem` ['\x2080'..'\x2089'] = '1'
+            | c == '\x03a0' {- Π -} = '+'
+            | c == '\x03bb' {- λ -} = '+'
+	    | isUnicodeId c         = if isAlpha c then 'z' else '+'
+	    | otherwise             = c
+        isUnicodeId :: Char -> Bool
+        isUnicodeId c = isPrint c && not (isAscii c)
 
 lexer :: (Token -> Parser a) -> Parser a
 lexer cont = lexToken >>= cont

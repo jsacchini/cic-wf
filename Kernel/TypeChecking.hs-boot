@@ -11,6 +11,7 @@ import Syntax.Internal
 
 import Kernel.TCM
 
+maxSort :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
 
 inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm (Context, Sort)
 

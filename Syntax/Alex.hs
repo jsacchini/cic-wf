@@ -28,6 +28,10 @@ data AlexInput = AlexInput { lexPos :: Position,  -- ^ Current position
                              lexPrevChar :: Char  -- ^ Previous read character
                            }
 
+type PreviousInput  = AlexInput
+type CurrentInput   = AlexInput
+type TokenLength    = Int
+
 initInput :: FilePath -> String -> AlexInput
 initInput path str = AlexInput (initPosFile path) str '\n'
 

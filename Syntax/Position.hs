@@ -33,13 +33,16 @@ data Range = Range { rStart, rEnd :: !Position }
            | NoRange
 
 
-data Ranged a = Ranged { rgRange :: Range,
-                         rgValue :: a }
+data Ranged a = Ranged { range :: Range,
+                         rangeValue :: a }
                 deriving(Show)
 
 
 class HasRange a where
   getRange :: a -> Range
+
+instance HasRange a => HasRange (Ranged a) where
+  getRange = getRange . range
 
 instance Show Position where
    show (Pn path line col) = concat [path, ":", show line, ":", show col]

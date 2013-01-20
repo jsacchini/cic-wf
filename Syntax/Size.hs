@@ -17,6 +17,8 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
+{-# LANGUAGE GeneralizedNewtypeDeriving
+  #-}
 -- | Sizes
 
 module Syntax.Size where
@@ -29,12 +31,26 @@ import Data.Functor
 import Utils.Pretty
 import Utils.Misc
 
+newtype StageVar = StageVar Integer
+                   deriving(Eq, Enum, Num)
+
+instance Show StageVar where
+  show (StageVar x) = show x
+
+instance Pretty StageVar where
+  prettyPrint (StageVar x) = integer x
+
+-- | inftyStageVar is a special StageVar denoting infinity
+--   It is used in the constraint solving algorithm
+inftyStageVar :: StageVar
+inftyStageVar = StageVar 0
+
 data Size =
-  Svar Int
+  Svar StageVar
   | Hat Size
   | Infty
 
-base :: Size -> Maybe Int
+base :: Size -> Maybe StageVar
 base (Svar n) = Just n
 base (Hat s) = base s
 base Infty    = Nothing
@@ -44,7 +60,7 @@ numHat (Svar _) = 0
 numHat (Hat s) = numHat s + 1
 numHat Infty    = 0
 
-normalize :: Size -> Maybe (Int, Int)
+normalize :: Size -> Maybe (StageVar, Int)
 normalize (Svar n) = Just (n, 0)
 normalize (Hat s) = appSnd (+1) <$> normalize s
 normalize Infty    = Nothing

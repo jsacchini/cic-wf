@@ -1,4 +1,4 @@
-/*
+{-
 Copyright (c) 2005-2011 Ulf Norell, Nils Anders Danielsson, Catarina
 Coquand, Makoto Takeyama, Andreas Abel, Karl Mehltretter, Marcin
 Benke, Darin Morrison.
@@ -21,7 +21,7 @@ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
 CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+-}
 
-#define __IMPOSSIBLE__ (throwImpossible (Impossible __FILE__ __LINE__))
-#define __IMPOSSIBLE_TERM__ (impossibleTerm __FILE__ __LINE__)
+#define __IMPOSSIBLE__ throwImpossible (Impossible __FILE__ __LINE__)
+#define __IMPOSSIBLE_TERM__ impossibleTerm __FILE__ __LINE__

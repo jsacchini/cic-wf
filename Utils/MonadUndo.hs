@@ -20,7 +20,7 @@ data History s = History { current :: s, undos :: [s], redos :: [s] }
 blankHistory :: s -> History s
 blankHistory s = History { current = s, undos = [], redos = [] }
 
-newtype Monad m => UndoT s m a = UndoT (StateT (History s) m a)
+newtype UndoT s m a = UndoT (StateT (History s) m a)
     deriving (Functor, Monad, MonadTrans, MonadIO)
 
 class (MonadState s m) => MonadUndo s m | m -> s where
@@ -35,10 +35,10 @@ instance (MonadReader r m) => MonadReader r (UndoT s m) where
     ask = lift ask
     local f (UndoT m) = UndoT $ local f m
 
-instance (MonadException m) => MonadException (UndoT s m) where
-    catch (UndoT f) h = UndoT $ StateT $ \ur -> runStateT f ur `catch` \e -> let UndoT h' = h e in runStateT h' ur
-    block = mapUndoT block
-    unblock = mapUndoT unblock
+-- instance (MonadException m) => MonadException (UndoT s m) where
+--     catch (UndoT f) h = UndoT $ StateT $ \ur -> runStateT f ur `catch` \e -> let UndoT h' = h e in runStateT h' ur
+--     block = mapUndoT block
+--     unblock = mapUndoT unblock
 
 instance (Monad m) => MonadState s (UndoT s m) where
     get = UndoT $ do

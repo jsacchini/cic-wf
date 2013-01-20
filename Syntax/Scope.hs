@@ -67,7 +67,7 @@ class Scope a where
   scope :: MonadTCM m => a -> m a
 
 instance Scope A.Bind where
-  scope (A.Bind r xs e) = fmap (A.Bind r xs) (scope e)
+  scope (A.Bind r impl xs e) = fmap (A.Bind r impl xs) (scope e)
 
 instance (Scope a, HasNames a) => Scope [a] where
   scope [] = return []
@@ -130,16 +130,16 @@ instance Scope A.Expr where
   scope (A.Constr _ _ _ _ _) = __IMPOSSIBLE__
   scope (A.Bound _ _ _) = __IMPOSSIBLE__
   scope (A.Number r n) = scope $ mkNat n
-    where mkNat 0     = A.Ident r (Id "O")
-          mkNat (k+1) = A.App r (A.Ident r (Id "S")) (mkNat k)
+    where mkNat 0 = A.Ident r (Id "O")
+          mkNat k = A.App r (A.Ident r (Id "S")) (mkNat (k-1))
 
 
 instance Scope A.FixExpr where
-  scope (A.FixExpr r recArg x tp body) =
-    do when (recArg <= 0) $ throw $ FixRecursiveArgumentNotPositive r
+  scope (A.FixExpr r a recArg x tp body) =
+    do when (a == I && recArg <= 0) $ throw $ FixRecursiveArgumentNotPositive r
        tp' <- scope tp
        body' <- fakeBinds x $ scope body
-       return $ A.FixExpr r recArg x tp' body'
+       return $ A.FixExpr r a recArg x tp' body'
 
 
 instance Scope A.CaseExpr where
@@ -244,12 +244,12 @@ instance Scope A.Declaration where
          return $ A.Check e1' e2'
 
 instance Scope A.InductiveDef where
-  scope (A.InductiveDef x ps e cs) =
+  scope (A.InductiveDef x k ps e cs) =
       do ps' <- scope ps
          e'  <- fakeBinds ps $ scope e
          cs' <- fakeBinds ps $ fakeBinds x $ mapM scope cs
          checkIfDefined x
-         return $ A.InductiveDef x ps' e' cs'
+         return $ A.InductiveDef x k ps' e' cs'
 
 instance Scope A.Parameter where
   scope (A.Parameter r np e) = fmap (A.Parameter r np) (scope e)

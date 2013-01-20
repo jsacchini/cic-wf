@@ -23,7 +23,8 @@
 module Syntax.Common where
 
 import qualified Data.Foldable as Fold
-import Data.Monoid
+import Data.Maybe
+import Data.Monoid hiding ((<>))
 
 import Text.PrettyPrint
 
@@ -31,7 +32,10 @@ import Utils.Pretty
 import Utils.Sized
 
 
--- | Identifiers
+------------------------------------------------------------
+-- * Identifiers
+------------------------------------------------------------
+
 newtype Name = Id { unName :: String }
                deriving(Eq, Ord)
 
@@ -67,7 +71,10 @@ instance HasNames a => HasNames (Maybe a) where
 class Rename a where
   rename :: a -> [Name] -> a
 
--- | Polarities
+------------------------------------------------------------
+-- * Polarities
+------------------------------------------------------------
+
 data Polarity = Pos
               | Neg
               | SPos
@@ -86,23 +93,12 @@ data Polarized a = Pol { polarity :: Polarity,
                          unPol :: a }
                    deriving(Show)
 
--- | Sorts
+------------------------------------------------------------
+-- * Inductive kind (data/codata, fixpoint/cofixpoint)
+------------------------------------------------------------
 
-data Sort
-    = Type Int
-    | Prop
-    deriving(Eq)
-
-instance Show Sort where
-  show Prop = "Prop"
-  show (Type n) = "Type" ++ show n
-
-instance Ord Sort where
-  compare Prop Prop = EQ
-  compare Prop (Type _) = LT
-  compare (Type _) Prop = GT
-  compare (Type m) (Type n) = compare m n
-
+data InductiveKind = I | CoI
+                   deriving(Eq,Show)
 
 ------------------------------------------------------------
 -- * Contexts
@@ -148,21 +144,19 @@ singleCtx b = b <| empCtx
 (|>) :: Ctx a -> a -> Ctx a
 (|>) c1 b = c1 +: singleCtx b
 
-ctxHd :: Ctx a -> a
-ctxHd (ExtendCtx b _) = b
-
-ctxTl :: Ctx a -> Ctx a
-ctxTl (ExtendCtx _ c) = c
+ctxSplit :: Ctx a -> (a, Ctx a)
+ctxSplit (ExtendCtx h t) = (h, t)
 
 ctxReverse :: Ctx a -> Ctx a
 ctxReverse = Fold.foldr (\c cs -> cs |> c) EmptyCtx
 
 ctxSplitAt :: Int -> Ctx a -> (Ctx a, Ctx a)
 ctxSplitAt 0 ctx = (empCtx, ctx)
-ctxSplitAt (k+1) ctx = case tail of
-                         EmptyCtx -> (head, tail)
-                         ExtendCtx b ctx' -> (head |> b, ctx')
-  where (head, tail) = ctxSplitAt k ctx
+ctxSplitAt k ctx =
+  case tail of
+    EmptyCtx -> (head, tail)
+    ExtendCtx b ctx' -> (head |> b, ctx')
+  where (head, tail) = ctxSplitAt (k-1) ctx
 
 instance Eq a => Eq (Ctx a) where
   EmptyCtx == EmptyCtx = True

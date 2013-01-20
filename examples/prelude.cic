@@ -1,4 +1,4 @@
-define id := fun (A : Type) (x : A) => x.
+define id := λ (A : Type) (x : A) => x.
 
 assume False : forall P:Type, P.
 
@@ -16,7 +16,7 @@ data vec (A:Type) : nat -> Type :=
 
 define plus : nat -> nat -> nat :=
    fix 1 plus : nat* -> nat -> nat :=
-     fun (m n : nat) => < nat >
+     λ (m n : nat) => < nat >
                         case m of
                         | O => n
                         | S m' => S (plus m' n)
@@ -24,7 +24,7 @@ define plus : nat -> nat -> nat :=
 
 define minus : nat -> nat -> nat :=
    fix 1 minus : nat* -> nat -> nat* :=
-     fun (m n : nat) => < nat >
+     λ (m n : nat) => < nat >
                         case m of
                         | O => O
                         | S m' => < nat > case n of
@@ -35,7 +35,7 @@ define minus : nat -> nat -> nat :=
 
 define mult : nat -> nat -> nat :=
    fix 1 mult : nat* -> nat -> nat :=
-     fun (m n : nat) => < nat >
+     λ (m n : nat) => < nat >
                         case m of
                         | O => O
                         | S m' => plus n (mult m' n)
@@ -44,7 +44,7 @@ define mult : nat -> nat -> nat :=
 -- div/minus does not work with separate global definitions
 -- define div : nat -> nat -> nat :=
 --    fix 1 div : nat* -> nat -> nat* :=
---      fun (m n : nat) => < nat >
+--      λ (m n : nat) => < nat >
 --                         case m of
 --                         | O => O
 --                         | S m' => S (div (minus m' n) n)
@@ -52,27 +52,27 @@ define mult : nat -> nat -> nat :=
 
 define fact : nat -> nat :=
   fix 1 fact : nat* -> nat :=
-    fun m : nat => < nat >
+    λ m : nat => < nat >
                    case m of
                    | O => 1
                    | S m' => mult (fact m') m
                    end.
 
-define vtail := fun (A : Type) (n : nat) (v : vec A (S n)) =>
+define vtail := λ (A : Type) (n : nat) (v : vec A (S n)) =>
                 < vec A n0 >
                 case v1 := v in [(n0 : nat)] vec (S n0) of
                 | vcons n1 h1 t1 => t1
                 end.
 
-define vhead := fun (A : Type) (n : nat) (v : vec A (S n)) =>
+define vhead := λ (A : Type) (n : nat) (v : vec A (S n)) =>
                 < A >
                 case v1 := v in [(n0 : nat)] vec (S n0) of
                 | vcons _ h1 _ => h1
                 end.
 
-check fun (A : Type) => vnil A.
+check λ (A : Type) => vnil A.
 
-check fun (A : Type) (m n : nat) (v : vec A n) (x : A)  => vcons A n x v.
+check λ (A : Type) (m n : nat) (v : vec A n) (x : A)  => vcons A n x v.
 
 check vtail.
 

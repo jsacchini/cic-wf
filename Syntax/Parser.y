@@ -39,21 +39,27 @@ import Utils.Misc
   'forall'         { TokKeyword KwForall $$ }
   'fun'            { TokKeyword KwFun $$ }
   'prop'           { TokKeyword KwProp $$ }
+  'type'           { TokKeyword KwType $$ }
   'assume'         { TokKeyword KwAssume $$ }
   'define'         { TokKeyword KwDefine $$ }
   'eval'           { TokKeyword KwEval $$ }
   'check'          { TokKeyword KwCheck $$ }
   'data'           { TokKeyword KwData $$ }
+  'codata'         { TokKeyword KwCodata $$ }
   'case'           { TokKeyword KwCase $$ }
   'in'             { TokKeyword KwIn $$ }
   'of'             { TokKeyword KwOf $$ }
   'fix'            { TokKeyword KwFix $$ }
+  'cofix'          { TokKeyword KwCofix $$ }
   'where'          { TokKeyword KwWhere $$ }
   'end'            { TokKeyword KwEnd $$ }
+  fixN             { TokFixNumber $$ }
 
 
   '('              { TokSymbol SymbLeftParen $$}
   ')'              { TokSymbol SymbRightParen $$}
+  '{'              { TokSymbol SymbLeftBrace $$}
+  '}'              { TokSymbol SymbRightBrace $$}
   '.'              { TokSymbol SymbDot $$ }
   ':='             { TokSymbol SymbColonEq $$ }
   ':'              { TokSymbol SymbColon $$ }
@@ -69,7 +75,6 @@ import Utils.Misc
   '>'              { TokSymbol SymbRAngle $$ }
   '['              { TokSymbol SymbLBracket $$ }
   ']'              { TokSymbol SymbRBracket $$ }
-  typeN            { TokType $$ }
   ident            { TokIdent $$ }
   identStar        { TokIdentStar $$ }
 
@@ -91,7 +96,9 @@ Decl
   | 'assume' Name ':' Exp
          { A.Assumption (fuseRange $1 $4) (snd $2) $4 }
   | 'data' Name Parameters ':' Exp ':=' Constructors
-         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) (reverse $3) $5 $7) }
+         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) I (reverse $3) $5 $7) }
+  | 'codata' Name Parameters ':' Exp ':=' Constructors
+         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) CoI (reverse $3) $5 $7) }
   | 'eval' Exp
          { A.Eval $2 }
   | 'check' Exp MaybeExp
@@ -162,12 +169,9 @@ Exp1 : '(' Exp ')'   { $2 }
                        in  A.Number (mkRangeLen pos (length (show num))) num }
 
 
--- This does not look elegant
 Sort :: { A.Expr }
-Sort : 'prop'  { A.Sort (mkRangeLen $1 4) Prop }
-     | typeN   { let (pos, lvl) = $1
-                 in  A.Sort (mkRangeLen pos (4 + length (show lvl))) (Type lvl) }
-
+Sort : 'prop'  { A.mkProp (mkRangeLen $1 4) }
+     | 'type'  { A.mkType (mkRangeLen $1 4) }
 
 MaybeExp :: { Maybe A.Expr }
 MaybeExp : ':' Exp       { Just $2 }
@@ -235,7 +239,12 @@ Assigns : Assigns '(' Name ':=' Exp ')'
 
 Fix :: { A.FixExpr }
 Fix : 'fix' number Name ':' startPosType Exp endPosType ':=' Exp
-                      { A.FixExpr (fuseRange $1 $9) (snd $2) (snd $3) $6 $9 }
+                      { A.FixExpr (fuseRange $1 $9) I (snd $2) (snd $3) $6 $9 }
+    | 'cofix' Name ':' startPosType Exp endPosType ':=' Exp
+                      { A.FixExpr (fuseRange $1 $8) CoI 0 (snd $2) $5 $8 }
+    | fixN  Name ':' startPosType Exp endPosType ':=' Exp
+                      { let (pos, num) = $1
+                        in  A.FixExpr (fuseRange pos $8) I num (snd $2) $5 $8 }
 
 startPosType :: { () }
 startPosType : {- empty -}       {% allowStar }
@@ -244,19 +253,25 @@ endPosType :: { () }
 endPosType : {- empty -}         {% forbidStar }
 
 Bindings :: { [A.Bind] }
-Bindings : Bindings '(' BasicBind ')'    { $3 : $1 }
-         | {- empty -}                   { [] }
+Bindings : Bindings '(' BasicBind ')'        { $3 : $1 }
+         | Bindings '{' BasicImplBind '}'    { $3 : $1 }
+         | {- empty -}                       { [] }
 
 Binding :: { [A.Bind] }
 Binding : BasicBind       { [$1] }
         | Bindings1       { reverse $1 }
 
 Bindings1 :: { [A.Bind] }
-Bindings1 : '(' BasicBind ')'             { [$2] }
-          | Bindings1 '(' BasicBind ')'   { $3 : $1 }
+Bindings1 : '(' BasicBind ')'                 { [$2] }
+          | '{' BasicImplBind '}'             { [$2] }
+          | Bindings1 '(' BasicBind ')'       { $3 : $1 }
+          | Bindings1 '{' BasicImplBind '}'   { $3 : $1 }
 
 BasicBind :: { A.Bind }
-BasicBind : Names ':' Exp   { A.Bind (fuseRange (snd $1) $3) (fst $1) $3 }
+BasicBind : Names ':' Exp   { A.Bind (fuseRange (snd $1) $3) False (fst $1) $3 }
+
+BasicImplBind :: { A.Bind }
+BasicImplBind : Names ':' Exp   { A.Bind (fuseRange (snd $1) $3) True (fst $1) $3 }
 
 
 Name :: { (Position, Name) }

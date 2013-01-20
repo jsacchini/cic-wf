@@ -17,8 +17,8 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
-TypeSynonymInstances, FlexibleInstances
+{-# LANGUAGE CPP, MultiParamTypeClasses, FunctionalDependencies,
+    TypeSynonymInstances, FlexibleInstances
   #-}
 
 {-|
@@ -34,6 +34,9 @@ TypeSynonymInstances, FlexibleInstances
 -}
 
 module Syntax.InternaltoAbstract where
+
+#include "../undefined.h"
+import Utils.Impossible
 
 import Control.Monad.Reader
 import Control.Monad.State
@@ -77,7 +80,7 @@ reifyPiBinds = rP []
     rP [] [] t                  = reify t
     rP bs [] t                  = do e <- reify t
                                      return $ A.Pi noRange (reverse bs) e
-    rP [] bs@(Bind x t1:bs') t2
+    rP [] bs@(Bind x impl t1 Nothing:bs') t2
       | notFree bs' t2 =
         do e1 <- reify t1
            e2 <- fakeBinds noName $ rP [] bs' t2
@@ -85,17 +88,18 @@ reifyPiBinds = rP []
       | otherwise     =
           do e1 <- reify t1
              x' <- freshName x
-             fakeBinds x' $ rP [A.Bind noRange [x'] e1] bs' t2
-    rP bs1@(A.Bind _ xs e1:bs1') bs2@(Bind y t1:bs2') t2
+             fakeBinds x' $ rP [A.Bind noRange impl [x'] e1] bs' t2
+    -- TODO: check implicit printing
+    rP bs1@(A.Bind _ impl1 xs e1:bs1') bs2@(Bind y impl2 t1 Nothing:bs2') t2
       | notFree bs2' t2 =
         do e2 <- rP [] bs2 t2
            return $ A.Pi noRange (reverse bs1) e2
       | otherwise     =
           do e1' <- reify t1
              y' <- freshName y
-             if e1 == e1'
-               then fakeBinds y' $ rP (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
-               else fakeBinds y' $ rP (A.Bind noRange [y'] e1':bs1) bs2' t2
+             if e1 == e1' && impl1 == impl2
+               then fakeBinds y' $ rP (A.Bind noRange impl1 (xs++[y']) e1:bs1') bs2' t2
+               else fakeBinds y' $ rP (A.Bind noRange impl2 [y'] e1':bs1) bs2' t2
     rP _ _ _ = error "complete rP"
     notFree :: [Bind] -> Term -> Bool
     notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
@@ -106,23 +110,30 @@ reifyLamBinds = rL []
     rL :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> Term -> tcm A.Expr
     rL bs [] t                  = do e <- reify t
                                      return $ A.Lam noRange (reverse bs) e
-    rL [] (Bind x t1:bs') t2 =
+    rL [] (Bind x impl t1 Nothing:bs') t2 =
       do e1 <- reify t1
          x' <- if notFree bs' t2 then return (Id "_") else freshName x
-         fakeBinds x' $ rL [A.Bind noRange [x'] e1] bs' t2
-    rL bs1@(A.Bind _ xs e1:bs1') (Bind y t1:bs2') t2 =
+         fakeBinds x' $ rL [A.Bind noRange impl [x'] e1] bs' t2
+    -- TODO: check implicit printing
+    rL bs1@(A.Bind _ impl1 xs e1:bs1') (Bind y impl2 t1 Nothing:bs2') t2 =
       do e1' <- reify t1
          y' <- if notFree bs2' t2 then return (Id "_") else freshName y
-         if e1 == e1'
-           then fakeBinds y' $ rL (A.Bind noRange (xs++[y']) e1:bs1') bs2' t2
-           else fakeBinds y' $ rL (A.Bind noRange [y'] e1':bs1) bs2' t2
+         if e1 == e1' && impl1 == impl2
+           then fakeBinds y' $ rL (A.Bind noRange impl1 (xs++[y']) e1:bs1') bs2' t2
+           else fakeBinds y' $ rL (A.Bind noRange impl2 [y'] e1':bs1) bs2' t2
     rL _ _ _ = error "Complete rL"
     notFree :: [Bind] -> Term -> Bool
     notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
 
 
+-- TODO: add option to print universes. If set, reify should return (Type (Just n))
+instance Reify Sort A.Sort where
+  reify Prop     = return A.Prop
+  reify (Type k) = return (A.Type (Just (fromEnum k)))
+
 instance Reify Term A.Expr where
-  reify (Sort s) = return $ A.Sort noRange s
+  reify (Sort s) = do s' <- reify s
+                      return $ A.Sort noRange s'
   reify (Pi ctx t) = do -- traceTCM $ "printing " ++ show (Pi bs t)
                              -- traceTCM $ "reifyBinds " ++ show bs
                        reifyPiBinds (Fold.toList ctx) t
@@ -133,11 +144,11 @@ instance Reify Term A.Expr where
                          then return $ A.Bound noRange (Id $ "ERROR "++show n) n
                          else return $ A.Bound noRange (xs !! n) n
   reify (Lam ctx t) = reifyLamBinds (Fold.toList ctx) t
-  reify (Fix num f args tp body) =
+  reify (Fix k num f args tp body) =
     do tp'   <- reify (mkPi args tp)
        f'    <- freshName f
        body' <- fakeBinds f' $ reify body
-       return $ A.Fix (A.FixExpr noRange num f tp' body')
+       return $ A.Fix (A.FixExpr noRange k num f tp' body')
   reify (Case c) = fmap A.Case $ reify c
   -- Special case for reification of natural numbers
   -- case O
@@ -193,11 +204,11 @@ instance Reify CaseIn A.CaseIn where
        return $ A.CaseIn noRange ctx' nmInd args'
       where reifyCtx EmptyCtx args = do args' <- mapM reify args
                                         return ([], args')
-            reifyCtx (ExtendCtx (Bind x t) ctx') args =
+            reifyCtx (ExtendCtx (Bind x impl t _) ctx') args =
               do t' <- reify t
                  x' <- freshName x
                  (bs, args') <- fakeBinds x' $ reifyCtx ctx' args
-                 return (A.Bind noRange [x'] t' : bs, args')
+                 return (A.Bind noRange impl [x'] t' : bs, args')
 
 instance Reify Branch A.Branch where
   reify (Branch nmConstr idConstr nmArgs body whSubst) =
@@ -224,10 +235,10 @@ instance Reify Name A.Declaration where
          I.Assumption t -> do e <- reify t
                               return $ A.Assumption noRange x e
          t@(I.Inductive {}) -> do
-           return $ A.Inductive noRange (A.InductiveDef x [] (A.Sort noRange Prop) [])
+           return $ A.Inductive noRange (A.InductiveDef x (I.indKind t) [] (A.mkProp noRange) [])
            -- COMPLETE THIS CASE
          t@(Constructor _ _ _ _ _ _) -> do
-           return $ A.Assumption noRange x (A.Sort noRange Prop)
+           return $ A.Assumption noRange x (A.mkProp noRange)
 
 
 --- for debugging
@@ -239,8 +250,7 @@ instance Reify [Bind] [A.Bind] where
        -- x <- freshName (bindName b)
        c' <- fakeBinds [bindName b] $ reify c
        return (b':c')
-         where rb (Bind x t) = do t' <- reify t
-                                  return $ A.Bind noRange [x] t'
-               rb (LocalDef x t1 t2) = do t1' <- reify t1
-                                          t2' <- reify t2
-                                          return $ A.Bind noRange [x] (A.Ann noRange t1' t2')
+         where rb (Bind x impl t Nothing) =
+                 do t' <- reify t
+                    return $ A.Bind noRange impl [x] t'
+               rb (Bind x impl t (Just _)) = __IMPOSSIBLE__

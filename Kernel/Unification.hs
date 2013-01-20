@@ -125,7 +125,7 @@ unifyEq ctx (Bound k, t2) js
   | k `elem` js = do (ctx', p) <- R.lift $ applyDef ctx k t2
                      -- traceTCM_ ["applyDef left result ", show ctx', "\nperm ", show p]
                      return (ctx', p, applyPerm p (js \\ [k]))
-  | otherwise   = do (unlessM (R.lift $ Bound k ~~ t2)) $ R.lift $ typeError NotUnifiable
+  | otherwise   = do (unlessM (R.lift $ Bound k ~~ t2)) $ R.lift $ typeError NotUnifiable -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
                      return (empCtx, idP (ctxLen ctx), js)
 unifyEq ctx (t1, Bound k) js = unifyEq ctx (Bound k, t1) js
 
@@ -164,8 +164,8 @@ applyDef ctx k t =
          t'   = lift (-(ctxLen cxb + 1)) 0 (applyPerm p' t)
          u'   = lift (ctxLen cxa) 0 u
      -- traceTCM_ ["applyinf def\nbefore: ", show cxa', {-"\nafter: ", show cxb',-} "\ndef: ", show (applyPerm p' t), " -> ", show (LocalDef x t' u'), "\nperm: ", show p']
-     return (ctx1 +: cxa' +: (LocalDef x t' u' <| cxb'), p')
-  where (ctx1, ExtendCtx (Bind x u) ctx0) = ctxSplitAt (ctxLen ctx - k - 1) ctx
+     return (ctx1 +: cxa' +: (Bind x False u' (Just t') <| cxb'), p')
+  where (ctx1, ExtendCtx (Bind x _ u Nothing) ctx0) = ctxSplitAt (ctxLen ctx - k - 1) ctx
 
 -- | strengthen Δ t = (Δ₀, Δ₁, p)
 --

@@ -85,8 +85,8 @@ instance ApplyPerm a => ApplyPerm [a] where
 ------------------------------------------------------------
 
 instance ApplyPerm Bind where
-  applyPerm p (Bind x t) = Bind x (applyPerm p t)
-  applyPerm p (LocalDef x t1 t2) = LocalDef x (applyPerm p t1) (applyPerm p t2)
+  applyPerm p b = b { bindType = applyPerm p (bindType b)
+                    , bindDef  = applyPerm p (bindDef b) }
 
 instance ApplyPerm a => ApplyPerm (Ctx a) where
   applyPerm p EmptyCtx = EmptyCtx
@@ -104,8 +104,8 @@ instance ApplyPerm Term where
   applyPerm p (Constr ccc x indId ps as) = Constr ccc x indId ps' as'
     where ps' = map (applyPerm p) ps
           as' = map (applyPerm p) as
-  applyPerm p (Fix n x bs t e) =
-    Fix n x (applyPerm p bs) (applyPerm (ctxLen bs <++ p) t)
+  applyPerm p (Fix a n x bs t e) =
+    Fix a n x (applyPerm p bs) (applyPerm (ctxLen bs <++ p) t)
     (applyPerm (ctxLen bs <++ p) e)
   applyPerm p (Case c) = Case (applyPerm p c)
 
@@ -157,8 +157,8 @@ instance ApplyPerm A.Expr where
 
 permBinds :: Permutation -> [A.Bind] -> [A.Bind]
 permBinds p [] = []
-permBinds p (A.Bind r xs e:bs) =
-  A.Bind r xs (applyPerm p e) : permBinds (length xs <++ p) bs
+permBinds p (A.Bind r impl xs e:bs) =
+  A.Bind r impl xs (applyPerm p e) : permBinds (length xs <++ p) bs
 
 instance ApplyPerm A.CaseExpr where
   applyPerm p (A.CaseExpr r arg cas cin whSubst ret branches) =
@@ -169,8 +169,8 @@ instance ApplyPerm A.CaseExpr where
             lencin = length (getNames cin)
 
 instance ApplyPerm A.FixExpr where
-  applyPerm p (A.FixExpr r k nm tp body) =
-    A.FixExpr r k nm (applyPerm p tp) (applyPerm (1 <++ p) body)
+  applyPerm p (A.FixExpr a r k nm tp body) =
+    A.FixExpr a r k nm (applyPerm p tp) (applyPerm (1 <++ p) body)
 
 instance ApplyPerm A.Subst where
   applyPerm p (A.Subst sg) = A.Subst (map (applyPerm p) sg)
