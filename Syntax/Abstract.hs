@@ -54,6 +54,7 @@ data Expr =
 --  | Let Range LetBind Expr
   | Case CaseExpr           -- ^ Case expressions
   | Fix FixExpr             -- ^ Fixpoints
+  | Meta Range (Maybe Int)  -- ^ Unspecified terms
 
   -- The following constructors are filled by the scope checker, but do not
   -- appear in a correctly parsed expression
@@ -259,6 +260,7 @@ instance HasRange Expr where
   getRange (Arrow r _ _) = r
   getRange (Ident r _) = r
   getRange (Bound r _ _) = r
+  getRange (Meta r _) = r
 --  getRange (EVar r _) = r
   getRange (Lam r _ _) = r
   getRange (App r _ _) = r
@@ -312,6 +314,8 @@ instance Pretty Expr where
       pp n (Arrow _ e1 e2) = parensIf (n > 0) $ hsep [pp 1 e1, arrow, pp 0 e2]
       pp _ (Ident _ x) = prettyPrint x -- text $ "[" ++ x ++ "]"
       pp _ (Bound _ x k) = prettyPrint x <> (text $ "[" ++ show k ++ "]") -- text "<" ++ x ">"
+      pp _ (Meta _ Nothing) = text "_"
+      pp _ (Meta _ (Just k)) = text "?" <> int k
 --      pp _ (EVar _ Nothing) = text "_"
 --      pp _ (EVar _ (Just n)) = char '?' <> int n
       pp n (Lam _ bs e) = parensIf (n > 0) $ nestedLam bs e
@@ -434,6 +438,8 @@ instance Show Expr where
   show (Case c) = show c
   show (Fix f) = show f
   show (Bound _ x n) = concat [show x, "[", show n, "]"]
+  show (Meta _ Nothing) = show "_"
+  show (Meta _ (Just k)) = '?' : show k
   show (Constr _ x i ps as) = concat $ [show x, show i, "(", intercalate ", " (map show (ps ++ as)), ")"]
   show (Ind _ a x) = concat [show x, "<", show a, ">"]
   show (Number _ n) = show n

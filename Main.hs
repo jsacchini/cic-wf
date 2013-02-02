@@ -36,6 +36,7 @@ import qualified Syntax.Abstract as A
 import Syntax.ParseMonad
 import Syntax.Parser
 import Syntax.Scope
+import Syntax.Internal
 
 import qualified Utils.Pretty as MP
 
@@ -45,26 +46,35 @@ import Kernel.PrettyTCM
 import Kernel.TypeChecking
 import Syntax.InternaltoAbstract
 
+import TopLevel.Monad
 import TopLevel.TopLevel
 
 
 main :: IO ()
-main = runTop loop
-  where
-    loop :: TopM ()
-    loop = do
-      minput <- getInputLine "% "
-      case minput of
-        Nothing -> loop
-        Just ":quit" -> return ()
-        -- Just ":redo" -> redo
-        -- Just ":undo" -> undo
-        Just ":show" -> do
-          liftTop $ do xs <- fmap stDefined get
-                       liftIO $ putStrLn (show xs)
-          loop
-        Just input -> liftTop (runCommand input) >> loop
+main = runTop mainLoop
 
+  -- where
+  --   loop :: TopM ()
+  --   loop = do
+  --     minput <- getInputLine "% "
+  --     case minput of
+  --       Nothing -> loop
+  --       Just ":quit" -> return ()
+  --       -- Just ":redo" -> redo
+  --       -- Just ":undo" -> undo
+  --       Just ":show" -> do
+  --         liftTop $ do xs <- fmap stDefined get
+  --                      liftIO $ putStrLn (show xs)
+  --         loop
+  --       Just ":goals" -> do
+  --         liftTop $ do gs <- listGoals
+  --                      liftIO $ putStrLn $ "Number of goals: " ++ show (length gs)
+  --                      d <- vcat (map ppGoal gs)
+  --                      liftIO $ putStrLn (PP.render d)
+  --         loop
+  --       Just input -> liftTop (runCommand input) >> loop
+  --   ppGoal :: (MonadTCM tcm) => (MetaVar, Goal) -> tcm Doc
+  --   ppGoal (k, g) = text "Goal " <> prettyPrintTCM k $$ prettyPrintTCM g
 
 -- main =
 --   do hSetBuffering stdout NoBuffering

@@ -29,6 +29,7 @@ import Control.Exception
 import Control.Monad
 
 import Data.List
+import Data.Maybe
 import qualified Data.Foldable as Fold
 import Data.Typeable
 
@@ -65,6 +66,7 @@ data TypeError
     | IdentifierNotFound Name
     | ConstantError String
     | UniverseInconsistency
+    | CannotInferMeta Range
     -- Scope checking
     | WrongNumberOfArguments Range Name Int Int
     | WrongFixNumber Range Name Int
@@ -97,6 +99,8 @@ data TCState = TCState
                  stSignature       :: Signature
                , stDefined         :: [Name] -- defined names in reverse order
                , stFresh           :: Fresh
+               , stGoals           :: Map I.MetaVar I.Goal
+               , stActiveGoal      :: Maybe I.MetaVar
                , stConstraints     :: CSet StageVar
                , stTypeConstraints :: CSet I.SortVar
                , stVerbosityLevel  :: Verbosity
@@ -107,7 +111,8 @@ type Signature = Map Name I.Global
 -- Fresh
 data Fresh = Fresh
              { freshStage :: StageVar
-             , freshSort  :: I.SortVar }
+             , freshSort  :: I.SortVar
+             , freshMeta  :: I.MetaVar }
              deriving(Show)
 
 instance HasFresh StageVar Fresh where
@@ -117,6 +122,10 @@ instance HasFresh StageVar Fresh where
 instance HasFresh I.SortVar Fresh where
   nextFresh f = (i, f { freshSort = succ i })
     where i = freshSort f
+
+instance HasFresh I.MetaVar Fresh where
+  nextFresh f = (i, f { freshMeta = succ i })
+    where i = freshMeta f
 
 -- instance HasFresh i Fresh => HasFresh i TCState where
 --   nextFresh s = (i, s { stFresh = f })
@@ -130,6 +139,10 @@ instance HasFresh StageVar TCState where
 instance HasFresh I.SortVar TCState where
   nextFresh s = (i, s { stFresh = f
                       , stTypeConstraints = CS.addNode i (stTypeConstraints s) })
+    where (i, f) = nextFresh $ stFresh s
+
+instance HasFresh I.MetaVar TCState where
+  nextFresh s = (i, s { stFresh = f })
     where (i, f) = nextFresh $ stFresh s
 
 -- Local environment
@@ -175,6 +188,8 @@ initialTCState =
   TCState { stSignature = Map.empty -- initialSignature,
           , stDefined = []
           , stFresh = initialFresh
+          , stGoals = Map.empty
+          , stActiveGoal = Nothing
           , stConstraints     = CS.addNode inftyStageVar CS.empty
           , stTypeConstraints = CS.empty
           , stVerbosityLevel = 1
@@ -190,7 +205,8 @@ initialSignature = foldr (uncurry Map.insert) Map.empty
 
 initialFresh :: Fresh
 initialFresh = Fresh { freshStage = succ inftyStageVar -- inftyStageVar is mapped to ∞
-                     , freshSort  = toEnum 0 }
+                     , freshSort  = toEnum 0
+                     , freshMeta  = toEnum 0 }
 
 initialTCEnv :: TCEnv
 initialTCEnv = TCEnv []
@@ -234,6 +250,9 @@ addGlobal x g = do st <- get
 
 pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
 pushCtx ctx = local (withEnv (reverse (Fold.toList ctx)++))
+
+withCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
+withCtx ctx = local (const (TCEnv (Fold.toList ctx)))
 
 pushType :: (MonadTCM tcm) => I.Type -> tcm a -> tcm a
 pushType tp = local (withEnv (I.bindNoName tp:))
@@ -307,6 +326,28 @@ allConstraints = stConstraints <$> get
 
 newConstraints :: (MonadTCM tcm) => (CSet StageVar) -> tcm ()
 newConstraints c = modify $ \st -> st { stConstraints = c }
+
+-- Goals
+
+listGoals :: (MonadTCM tcm) => tcm [(I.MetaVar, I.Goal)]
+listGoals = (filter (isNothing . I.goalTerm . snd) . Map.assocs . stGoals) <$> get
+
+addGoal :: (MonadTCM tcm) => I.MetaVar -> I.Goal -> tcm ()
+addGoal m g = do st <- get
+                 put $ st { stGoals = Map.insert m g (stGoals st) }
+
+setActiveGoal :: (MonadTCM tcm) => Maybe I.MetaVar -> tcm ()
+setActiveGoal k = modify $ \st -> st { stActiveGoal = k }
+
+giveTerm :: (MonadTCM tcm) => I.MetaVar -> I.Term -> tcm ()
+giveTerm k t =
+  modify $ \st -> st { stGoals = Map.adjust (\g -> g { I.goalTerm = Just t }) k (stGoals st) }
+
+getActiveGoal :: (MonadTCM tcm) => tcm (Maybe I.MetaVar)
+getActiveGoal = stActiveGoal <$> get
+
+getGoal :: (MonadTCM tcm) => I.MetaVar -> tcm (Maybe I.Goal)
+getGoal k = (Map.lookup k . stGoals) <$> get
 
 --- For debugging
 

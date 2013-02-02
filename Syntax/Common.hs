@@ -123,6 +123,9 @@ instance HasNames a => HasNames (Ctx a) where
   getNames EmptyCtx = []
   getNames (ExtendCtx b c) = getNames b ++ getNames c
 
+fromList :: [a] -> Ctx a
+fromList = foldr ExtendCtx EmptyCtx
+
 (+:) :: Ctx a -> Ctx a -> Ctx a
 (+:) = flip $ Fold.foldr ExtendCtx
 

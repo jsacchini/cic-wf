@@ -139,6 +139,10 @@ instance NormalForm Term where
                               case bindDef (unEnv e !! k) of
                                 Nothing -> return t
                                 Just t' -> normalForm (I.lift (k+1) 0 t')
+  normalForm t@(Meta k) = do (Just g) <- getGoal k
+                             case goalTerm g of
+                               Nothing -> return t
+                               Just x  -> normalForm x
   normalForm t@(Var x) = do traceTCM 30 $ hsep [text "Normalizing Var ", prettyPrintTCM x]
                             u <- getGlobal x
                             case u of

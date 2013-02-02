@@ -31,6 +31,7 @@ data Keyword = KwForall | KwFun | KwProp | KwType | KwLet | KwDefine | KwImport
              | KwEnd | KwWhere | KwOf | KwEval | KwCheck
              | KwData | KwCodata
              | KwFix | KwCofix
+             | KwMeta
              deriving(Eq,Show)
 
 data Symbol = SymbLeftParen | SymbRightParen | SymbLeftBrace | SymbRightBrace
@@ -115,6 +116,7 @@ ident pos s =
   where identList =
           [ ("forall", TokKeyword KwForall)
           , ("\\"    , TokKeyword KwFun)
+          , ("fun"   , TokKeyword KwFun)
           , ("Type"  , TokKeyword KwType)
           , ("Prop"  , TokKeyword KwProp)
           , ("define", TokKeyword KwDefine)
@@ -135,4 +137,5 @@ ident pos s =
           , ("where" , TokKeyword KwWhere)
           , ("of"    , TokKeyword KwOf)
           , ("end"   , TokKeyword KwEnd)
+          , ("_"     , TokKeyword KwMeta)
           ]

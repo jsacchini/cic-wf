@@ -75,6 +75,8 @@ import Utils.Misc
   '>'              { TokSymbol SymbRAngle $$ }
   '['              { TokSymbol SymbLBracket $$ }
   ']'              { TokSymbol SymbRBracket $$ }
+  '_'              { TokKeyword KwMeta $$ }
+
   ident            { TokIdent $$ }
   identStar        { TokIdentStar $$ }
 
@@ -164,6 +166,7 @@ Exp1 :: { A.Expr }
 Exp1 : '(' Exp ')'   { $2 }
      | Sort          { $1 }
      | Name          { A.Ident (mkRangeLen (fst $1) (length (unName (snd $1)))) (snd $1) }
+     | '_'           { A.Meta (mkRangeLen $1 1) Nothing }
      | identStar     {% unlessM starAllowed (fail $ "position type not allowed" ++ show (fst $1)) >> return (A.Ind (mkRangeLen (fst $1) (length (snd $1))) Star (Id (snd $1))) }
      | number        { let (pos, num) = $1
                        in  A.Number (mkRangeLen pos (length (show num))) num }
@@ -252,10 +255,10 @@ startPosType : {- empty -}       {% allowStar }
 endPosType :: { () }
 endPosType : {- empty -}         {% forbidStar }
 
-Bindings :: { [A.Bind] }
-Bindings : Bindings '(' BasicBind ')'        { $3 : $1 }
-         | Bindings '{' BasicImplBind '}'    { $3 : $1 }
-         | {- empty -}                       { [] }
+-- Bindings :: { [A.Bind] }
+-- Bindings : Bindings '(' BasicBind ')'        { $3 : $1 }
+--          | Bindings '{' BasicImplBind '}'    { $3 : $1 }
+--          | {- empty -}                       { [] }
 
 Binding :: { [A.Bind] }
 Binding : BasicBind       { [$1] }

@@ -52,4 +52,5 @@ Executable cicminus
                      Kernel.Fix
                      Kernel.Case
                      Kernel.Inductive
+                     TopLevel.Monad
                      TopLevel.TopLevel

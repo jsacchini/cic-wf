@@ -153,6 +153,7 @@ infer (A.App _ e1 e2) = -- inferApp e1 e2
                 w  <- whnf $ mkPi (subst t2 ct) (substN (ctxLen ct) t2 u2)
                 return (mkApp t1 [t2], w)
          _            -> throwNotFunction r1
+infer (A.Meta r _) = typeError $ CannotInferMeta r
 infer (A.Ind _ an x) =
     do t <- getGlobal x
        i <- fresh
@@ -238,6 +239,11 @@ inferDecl (A.Check e1 Nothing) =
 
 
 check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
+check (A.Meta r Nothing) u = do
+  m <- fresh
+  e <- ask
+  addGoal m (mkGoal (fromList (unEnv e)) u)
+  return (Meta m)
 check t u =   do traceTCM 30 $ (hsep [text "Checking type of", prettyPrintTCM t]
                                 <+> hsep [text "against", prettyPrintTCM u])
                  (t', r) <- infer t

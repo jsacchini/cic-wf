@@ -23,6 +23,7 @@
 module Kernel.PrettyTCM where
 
 import Control.Applicative hiding (empty)
+
 import qualified Data.Foldable as Fold
 import Data.Functor
 
@@ -116,18 +117,19 @@ instance PrettyTCM Term where
   prettyPrintTCM x = reify x >>= return . MP.prettyPrint
 
 instance PrettyTCM TCEnv where
-  prettyPrintTCM (TCEnv env) = ppEnv env
-    where
-      ppEnv :: (MonadTCM tcm) => [I.Bind] -> tcm Doc
-      ppEnv [] = text ""
-      ppEnv (Bind x impl t def: bs) = do b' <- reify t
-                                         def' <- maybeReify def
-                                         dbs <- pushBind (Bind x impl t def) $ ppEnv bs
-                                         return $ PP.hsep [ around impl
-                                                            (PP.hsep [MP.prettyPrint x,
-                                                                      ppDef def',
-                                                                      PP.text ":", MP.prettyPrint b'])
-                                                          , dbs]
+  prettyPrintTCM (TCEnv env) = do ds <- ppEnv env
+                                  return $ PP.hsep (PP.punctuate MP.comma ds)
+
+ppEnv :: (MonadTCM tcm) => [I.Bind] -> tcm [Doc]
+ppEnv [] = return []
+ppEnv (Bind x impl t def: bs) = do b' <- reify t
+                                   def' <- maybeReify def
+                                   dbs <- pushBind (Bind x impl t def) $ ppEnv bs
+                                   return $ (around impl
+                                             (PP.hsep [MP.prettyPrint x,
+                                                       ppDef def',
+                                                       PP.text ":", MP.prettyPrint b'])) : dbs
+  where
       around True x  = PP.text "{" PP.<> x PP.<> PP.text "}"
       around False x = PP.text "(" PP.<> x PP.<> PP.text ")"
       ppDef Nothing  = PP.text ""
@@ -142,8 +144,20 @@ instance PrettyTCM StageVar where
 instance PrettyTCM SortVar where
   prettyPrintTCM = return . MP.prettyPrint
 
+instance PrettyTCM MetaVar where
+  prettyPrintTCM = return . MP.prettyPrint
+
 instance PrettyTCM Context where
   prettyPrintTCM x = reify (Fold.toList x) >>= return . MP.prettyPrint
 
 instance PrettyTCM A.Expr where
   prettyPrintTCM = return . MP.prettyPrint
+
+instance PrettyTCM I.Goal where
+  prettyPrintTCM g = do ppbs <- ppEnv bs
+                        ppt <- withCtx (goalCtx g) $ prettyPrintTCM (goalType g)
+                        return $ PP.vcat (ppbs ++
+                                          [ PP.text "-------------------------"
+                                          , ppt])
+    where
+      bs = Fold.toList (goalCtx g)

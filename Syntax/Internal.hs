@@ -47,6 +47,7 @@ data Term
     | Var Name
     | Lam Context Term
     | App Term [Term]
+    | Meta MetaVar
     | Constr Context Name (Name, Int) [Term] [Term]
     | Fix InductiveKind Int Name Context Type Term
     | Case CaseTerm
@@ -109,6 +110,7 @@ data Sort = Prop
 instance Eq Sort where
   s1 == s2 = True -- TODO: fix this. Check typechecking of constructors
 
+
 -- | A Context is isomorphic to a list of binds. The reason why we do not simply
 --   use a list is that instances such as (shift, subst, isfree) are not simply
 --   mappings on the elements, since we have to take care of bound variables
@@ -117,6 +119,24 @@ type Context = Ctx Bind
 renameCtx :: Context -> [Name] -> Context
 renameCtx EmptyCtx [] = EmptyCtx
 renameCtx (ExtendCtx b c) (x:xs) = ExtendCtx (b { bindName = x }) (renameCtx c xs)
+
+-- | Goals
+data Goal = Goal { goalCtx  :: Context
+                 , goalType :: Type
+                 , goalTerm :: Maybe Term
+                 } deriving(Show)
+
+mkGoal :: Context -> Type -> Goal
+mkGoal ctx tp = Goal ctx tp Nothing
+
+newtype MetaVar = MetaVar Int
+                  deriving(Eq, Enum, Num, Ord)
+
+instance Show MetaVar where
+  show (MetaVar k) = show k
+
+instance Pretty MetaVar where
+  prettyPrint (MetaVar k) = text "?" <> int k
 
 newtype Subst = Subst { unSubst :: [(Int, Term)] }
                 deriving(Show)--,Eq)
@@ -264,6 +284,7 @@ instance HasAnnot Term where
       mSize t@(Var _) = t
       mSize (Lam c t) = Lam (modifySize f c) (mSize t)
       mSize (App t ts) = App (mSize t) (map mSize ts)
+      mSize t@(Meta _) = t
       mSize (Constr ccc nm cid pars args) = Constr ccc nm cid (map mSize pars) (map mSize args)
       mSize (Fix k n x c t1 t2) = Fix k n x (modifySize f c) (mSize t1) (mSize t2)
       mSize (Case c) = Case (modifySize f c)
@@ -275,6 +296,7 @@ instance HasAnnot Term where
   listAnnot t@(Var _) = []
   listAnnot (Lam c t) = listAnnot c ++ listAnnot t
   listAnnot (App t ts) = listAnnot t ++ listAnnot ts
+  listAnnot t@(Meta _) = []
   listAnnot (Constr _ _ _ pars args) = listAnnot pars ++ listAnnot args
   listAnnot (Fix _ _ _ c t1 t2) = listAnnot c ++ listAnnot t1 ++ listAnnot t2
   listAnnot (Case c) = listAnnot c
@@ -377,6 +399,7 @@ instance Lift Term where
   lift _ _ t@(Var _) = t
   lift k n (Lam c u) = Lam (lift k n c) (lift k (n + ctxLen c) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
+  lift k n t@(Meta _) = t
   lift _ _ t@(Ind _ _) = t
   lift k n (Constr ccc x indId ps as) = Constr ccc x indId ps' as'
                                       where ps' = map (lift k n) ps
@@ -438,6 +461,7 @@ instance SubstTerm Term where
   substN _ _ t@(Var _) = t
   substN i r (Lam c t) = Lam (substN i r c) (substN (i + ctxLen c) r t)
   substN i r (App t ts) = App (substN i r t) (substN i r ts)
+  substN i r t@(Meta _) = t
   substN _ _ t@(Ind _ _) = t
   substN i r (Constr ccc x ind ps as) = Constr ccc x ind ps' as'
                                     where ps' = map (substN i r) ps
@@ -500,6 +524,7 @@ instance IsFree Term where
   isFree _ (Var _) = False
   isFree k (Lam c t) = isFree k c || isFree (k + ctxLen c) t
   isFree k (App f ts) = isFree k f || any (isFree k) ts
+  isFree k (Meta _) = False
   isFree _ (Ind _ _) = False
   isFree k (Constr _ _ _ ps as) = any (isFree k) (ps ++ as)
   isFree k (Fix _ _ _ bs tp body) = isFree k (mkPi bs tp) || isFree (k+1) body
@@ -511,6 +536,7 @@ instance IsFree Term where
   fvN _ (Var _) = []
   fvN k (Lam c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
   fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
+  fvN k (Meta _) = []
   fvN _ (Ind _ _) = []
   fvN k (Constr _ _ _ ps as) = concatMap (fvN k) (ps ++ as)
   fvN k (Fix _ _ _ bs tp body) = fvN k (mkPi bs tp) ++ fvN (k + 1) body

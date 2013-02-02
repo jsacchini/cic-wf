@@ -24,85 +24,165 @@
 module TopLevel.TopLevel where
 
 import Prelude hiding (catch)
-import Control.Applicative
-import Control.Monad
+
 import Control.Monad.State
-import Control.Monad.Reader
+
+import Data.Char
+import Data.List
+
+import qualified Text.PrettyPrint as PP
 
 import qualified Syntax.Abstract as A
+import Syntax.Internal
 import Syntax.ParseMonad
 import Syntax.Parser
 import Syntax.Scope
 
-import qualified System.Console.Haskeline as H
-import System.Console.Haskeline.MonadException
-
 import Kernel.TCM
+import Kernel.PrettyTCM
 import Kernel.TypeChecking
 
-import qualified Utils.MonadUndo as U
+import TopLevel.Monad
 
--- TODO:
--- add top-level state: for simplicity, we consider -- for the moment -- the top-level
---                      state as part of TCState. There is less separation of concerns
---                      but it is simpler since we do not need to deal with two StateT
--- add undo: that is relatively easy, just change StateT to UndoT. We need to write
---           the MonadException transformer
-newtype TopM a = TopM { unTop :: H.InputT (U.StateT TCState IO) a }
-                 deriving(Monad, Functor, Applicative, MonadIO, MonadException)
 
-instance MonadState TCState TopM where
-  get = TopM $ lift get
-  put x = TopM $ lift (put x)
+-- | Top-level commands
 
-instance MonadTCM (ReaderT TCEnv TopM)
+data Command = ListGoals
+             | SetGoal Int
+             | LoadFile FilePath
+             | Reset
+             | Help
+             | Show
+             | Quit
+             | NoOp
+             | NoCommand String
+             deriving(Show)
 
--- problems with haskeline-0.7
--- see http://stackoverflow.com/questions/11617335/error-installing-scion-browser
-instance MonadException m => MonadException (StateT s m) where
-  controlIO f = StateT $ \s -> controlIO $ \(RunIO run) -> let
-                  run' = RunIO (fmap (StateT . const) . run . flip runStateT s)
-                  in fmap (flip runStateT s) $ f run'
 
-runTop :: TopM a -> IO a
-runTop m = fst <$> runStateT (H.runInputT settings (unTop m)) initialTCState
+data CommandSpec = Spec [String] String ([String] -> Bool) (String -> Command) String --(CompletionFunc TLM)
+
+commands :: [CommandSpec]
+commands =
+  [ Spec
+    [":goals"]
+    ""
+    none
+    (const ListGoals)
+    "show the remaining goals"
+  , Spec
+    [":setgoal"]
+    "number"
+    arg1
+    (SetGoal . read)
+    "show the remaining goals"
+  , Spec
+    [":help", ":?"]
+    ""
+    none
+    (const Help)
+    "show help"
+  , Spec
+    [":quit"]
+    ""
+    none
+    (const Quit)
+    "quits"
+  ]
   where
-    settings = H.defaultSettings { H.historyFile = Just "/home/jorge/.cicminus-history"
-                                 , H.autoAddHistory = True }
-
-liftTop :: TCM () -> TopM ()
-liftTop x = TopM (lift (runReaderT x initialTCEnv)) `catch` f
-            where
-              f :: TypeError -> TopM ()
-              f err = outputStrLn (show err)
-
-liftTopM :: TCM a -> TopM a
-liftTopM = TopM . lift . flip runReaderT initialTCEnv
-
-catchTypeError :: TopM () -> TopM ()
-catchTypeError x = x `catch` f
-                   where
-                     f :: TypeError -> TopM ()
-                     f err = outputStrLn (show err)
-
-getInputLine = TopM . H.getInputLine
-getInputChar = TopM . H.getInputChar
-outPutStr    = TopM . H.outputStr
-outputStrLn  = TopM . H.outputStrLn
-
--- undo, redo :: TopM ()
--- undo = TopM $ U.undo >> return ()
--- redo = TopM $ U.redo >> return ()
+    none = const True
+    args = (>0) . length
+    argN n = (==n) . length
+    arg1 = argN 1
+    arg0 = argN 0
 
 
-runCommand :: (MonadTCM tcm) => String -> tcm ()
-runCommand ss =
+cmdName (Spec xs _ _ _ _) = xs
+
+findMatching :: String -> [CommandSpec]
+findMatching cmd = filter (\ (Spec cs _ _ _ _) -> any (isPrefixOf cmd) cs) commands
+
+showHelp xs = "syntax: " ++ (concat $ map printHelp $ findMatching xs)
+  where printHelp (Spec cs s _ _ _) = unwords [head cs, s, "\n"]
+
+readCommand :: String -> TopM Command
+readCommand x | isPrefixOf ":" x =
+  do let (cmd,t') = break isSpace x
+         t        = dropWhile isSpace t'
+         --  find matching commands
+     case findMatching cmd of
+       [] -> do outputStrLn ("Unknown command `" ++ cmd ++ "'. Type :? for help.")
+                return NoOp
+       [Spec ns as argCheck f _] -> if argCheck $ words t
+                                      then return (f t)
+                                      else do outPutStr $ showHelp $ head ns
+                                              return NoOp
+       x -> do outputStrLn ("Ambiguous command, could be " ++
+                            concat (intersperse ", " (map (head . cmdName) x)) ++ ".")
+               return NoOp
+              | otherwise = return $ NoCommand x
+
+showPrompt :: TopM ()
+showPrompt = liftTop $ showPrompTCM
+  where
+    showPrompTCM = do g <- getActiveGoal
+                      liftIO $ putStr $ goalPrompt g
+    goalPrompt (Just x) = "?" ++ show x ++ " > "
+    goalPrompt Nothing  = "> "
+
+evalCommand :: Command -> TopM ()
+evalCommand Quit = return ()
+evalCommand ListGoals = do
+  liftTop $ do gs <- listGoals
+               liftIO $ putStrLn $ "Number of goals: " ++ show (length gs)
+               d <- vcat (map ppGoal gs)
+               liftIO $ putStrLn (PP.render d)
+  mainLoop
+  where
+    ppGoal :: (MonadTCM tcm) => (MetaVar, Goal) -> tcm Doc
+    ppGoal (k, g) = text "Goal " <> prettyPrintTCM k $$ prettyPrintTCM g
+evalCommand (SetGoal k) = do
+  liftTop $ do g <- getGoal (toEnum k)
+               case g of
+                 Just _ -> setActiveGoal (Just (toEnum k))
+                 Nothing -> liftIO $ putStrLn "Goal does not exists"
+  mainLoop
+evalCommand (NoCommand x) = do
+  liftTop $ do
+    g <- getActiveGoal
+    case g of
+      Nothing -> evalDeclaration x
+      Just _  -> evalExpression x
+  mainLoop
+evalCommand NoOp = mainLoop
+
+mainLoop :: TopM ()
+mainLoop = do
+  showPrompt
+  minput <- getInputLine ""
+  case minput of
+    Nothing -> mainLoop
+    Just x -> readCommand x >>= evalCommand
+
+evalDeclaration :: (MonadTCM tcm) => String -> tcm ()
+evalDeclaration ss =
   case parse fileParser ss of
     ParseOk ts -> typeCheckFile ts
       -- do r <- runTCM $ typeCheckFile ts
       --    case r of
       --      Left err -> putStrLn $ "Error!!!! " ++ show err
       --      Right _ -> return ()
+    ParseFail err -> liftIO $ putStrLn $ "Error (Main.hs): " ++ show err
+
+evalExpression :: (MonadTCM tcm) => String -> tcm ()
+evalExpression ss =
+  case parse exprParser ss of
+    ParseOk ts -> do
+      e <- scope ts
+      (Just k) <- getActiveGoal
+      (Just g) <- getGoal k
+      t <- withCtx (goalCtx g) (check e (goalType g))
+      giveTerm k t
+      setActiveGoal Nothing
     ParseFail err -> liftIO $ putStrLn $ "Error (Main.hs): " ++ show err
 
 typeCheckDecl :: (MonadTCM tcm) => A.Declaration -> tcm ()

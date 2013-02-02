@@ -100,6 +100,7 @@ instance Scope A.Expr where
        scopeApp func args'
       where
         (func, args) = A.destroyApp t
+  scope t@(A.Meta _ _) = return t
   scope t@(A.Ident r x) =
     do xs <- getLocalNames
        case findIndex (==x) xs of

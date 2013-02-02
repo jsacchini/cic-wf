@@ -143,6 +143,10 @@ instance Reify Term A.Expr where
                        if (n >= length xs)
                          then return $ A.Bound noRange (Id $ "ERROR "++show n) n
                          else return $ A.Bound noRange (xs !! n) n
+  reify (Meta k) = do (Just g) <- getGoal k
+                      case goalTerm g of
+                        Nothing -> return $ A.Meta noRange (Just (fromEnum k))
+                        Just t  -> reify t
   reify (Lam ctx t) = reifyLamBinds (Fold.toList ctx) t
   reify (Fix k num f args tp body) =
     do tp'   <- reify (mkPi args tp)
