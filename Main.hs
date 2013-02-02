@@ -51,61 +51,39 @@ import TopLevel.TopLevel
 
 
 main :: IO ()
-main = runTop mainLoop
+-- main = runTop mainLoop
+main = evalFile
 
-  -- where
-  --   loop :: TopM ()
-  --   loop = do
-  --     minput <- getInputLine "% "
-  --     case minput of
-  --       Nothing -> loop
-  --       Just ":quit" -> return ()
-  --       -- Just ":redo" -> redo
-  --       -- Just ":undo" -> undo
-  --       Just ":show" -> do
-  --         liftTop $ do xs <- fmap stDefined get
-  --                      liftIO $ putStrLn (show xs)
-  --         loop
-  --       Just ":goals" -> do
-  --         liftTop $ do gs <- listGoals
-  --                      liftIO $ putStrLn $ "Number of goals: " ++ show (length gs)
-  --                      d <- vcat (map ppGoal gs)
-  --                      liftIO $ putStrLn (PP.render d)
-  --         loop
-  --       Just input -> liftTop (runCommand input) >> loop
-  --   ppGoal :: (MonadTCM tcm) => (MetaVar, Goal) -> tcm Doc
-  --   ppGoal (k, g) = text "Goal " <> prettyPrintTCM k $$ prettyPrintTCM g
-
--- main =
---   do hSetBuffering stdout NoBuffering
---      args <- getArgs
---      mapM_ runFile args
---     where runFile f =
---             do h <- openFile f ReadMode
---                ss <- hGetContents h
---                case parse fileParser ss of
---                  ParseOk ts ->
---                    do putStrLn $ PP.render $ MP.prettyPrint ts
---                       r <- runTCM $ typeCheckFile ts
---                       case r of
---                         Left err -> putStrLn $ "Error!!!! " ++ show err
---                         Right _ -> return ()
---                  ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
---                hClose h
---           typeCheckDecl :: A.Declaration -> TCM ()
---           typeCheckDecl d = do d' <- scope d
---                                gs <- inferDecl d'
---                                forM_ gs (uncurry addGlobal)
---           typeCheckFile :: [A.Declaration] -> TCM ()
---           typeCheckFile ds =
---             do forM_ ds typeCheckDecl
---                csStage <- stConstraints <$> get
---                csType <- stTypeConstraints <$> get
---                traceTCM 40 $ vcat (text "Universe constraints:"
---                                    : map (\(x,y,k) -> hsep [prettyPrintTCM x,
---                                                             if k == 0 then text "<=" else text "<",
---                                                             prettyPrintTCM y
---                                                            ]) (CS.toList csType))
---                traceTCM 40 $ case find (\x -> CS.findNegCycle x csType /= []) (map (\(x,_,_)->x) (CS.toList csType)) of
---                               Just x -> hsep [text "Cycle:", prettyPrintTCM (CS.findNegCycle x csType)]
---                               Nothing -> text "No cycle"
+evalFile =
+  do hSetBuffering stdout NoBuffering
+     args <- getArgs
+     mapM_ runFile args
+    where runFile f =
+            do h <- openFile f ReadMode
+               ss <- hGetContents h
+               case parse fileParser ss of
+                 ParseOk ts ->
+                   do putStrLn $ PP.render $ MP.prettyPrint ts
+                      r <- runTCM $ typeCheckFile ts
+                      case r of
+                        Left err -> putStrLn $ "Error!!!! " ++ show err
+                        Right _ -> return ()
+                 ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
+               hClose h
+          typeCheckDecl :: A.Declaration -> TCM ()
+          typeCheckDecl d = do d' <- scope d
+                               gs <- inferDecl d'
+                               forM_ gs (uncurry addGlobal)
+          typeCheckFile :: [A.Declaration] -> TCM ()
+          typeCheckFile ds =
+            do forM_ ds typeCheckDecl
+               csStage <- stConstraints <$> get
+               csType <- stTypeConstraints <$> get
+               traceTCM 40 $ vcat (text "Universe constraints:"
+                                   : map (\(x,y,k) -> hsep [prettyPrintTCM x,
+                                                            if k == 0 then text "<=" else text "<",
+                                                            prettyPrintTCM y
+                                                           ]) (CS.toList csType))
+               traceTCM 40 $ case find (\x -> CS.findNegCycle x csType /= []) (map (\(x,_,_)->x) (CS.toList csType)) of
+                              Just x -> hsep [text "Cycle:", prettyPrintTCM (CS.findNegCycle x csType)]
+                              Nothing -> text "No cycle"
