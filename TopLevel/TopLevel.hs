@@ -65,7 +65,10 @@ instance MonadException m => MonadException (StateT s m) where
                   in fmap (flip runStateT s) $ f run'
 
 runTop :: TopM a -> IO a
-runTop m = fst <$> runStateT (H.runInputT H.defaultSettings (unTop m)) initialTCState
+runTop m = fst <$> runStateT (H.runInputT settings (unTop m)) initialTCState
+  where
+    settings = H.defaultSettings { H.historyFile = Just "/home/jorge/.cicminus-history"
+                                 , H.autoAddHistory = True }
 
 liftTop :: TCM () -> TopM ()
 liftTop x = TopM (lift (runReaderT x initialTCEnv)) `catch` f
