@@ -175,20 +175,18 @@ data InductiveDef = InductiveDef
                     }
 
 
-data Constructor = Constructor {
-  constrRange :: Range,
-  constrName  :: Name,
-  constrType  :: Expr,
-  constrId    :: Int   -- Not used now. Should be removed
-  }
+data Constructor = Constructor
+                   { constrRange :: Range
+                   , constrName  :: Name
+                   , constrType  :: Expr
+                   }
 
 
-data Parameter =
-  Parameter {
-    parRange :: Range,
-    parNamesPol :: [(Name, Polarity)],
-    parType :: Expr
-    }
+data Parameter = Parameter
+                 { parRange    :: Range
+                 , parNamesPol :: [(Name, Polarity)]
+                 , parType :: Expr
+                 }
 
 
 data Sort
@@ -275,7 +273,7 @@ instance HasRange Bind where
   getRange = getRange . bindRange
 
 instance HasRange Constructor where
-  getRange (Constructor r _ _ _) = r
+  getRange (Constructor r _ _) = r
 
 instance HasRange Branch where
   getRange = brRange
@@ -451,7 +449,7 @@ instance Show InductiveDef where
               " := "] ++ map show constr
 
 instance Show Constructor where
-  show (Constructor _ name tp _) =
+  show (Constructor _ name tp) =
     concat [" | ", show name, " : ", show tp]
 
 instance Show Parameter where

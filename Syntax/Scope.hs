@@ -255,9 +255,9 @@ instance Scope A.InductiveDef where
 instance Scope A.Parameter where
   scope (A.Parameter r np e) = fmap (A.Parameter r np) (scope e)
 
-
+-- TODO: check that the inductive type is always applied to the parameters
 instance Scope A.Constructor where
-  scope (A.Constructor r x e idConstr) =
+  scope (A.Constructor r x e) =
     do e' <- scope e
        checkIfDefined x
-       return (A.Constructor r x e' idConstr)
+       return (A.Constructor r x e')

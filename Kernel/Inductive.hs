@@ -102,7 +102,7 @@ inferParamList (p:ps) = do ((ctx1, pol1), s1) <- inferParam p
 
 
 checkConstr :: (MonadTCM tcm) =>  A.Constructor -> (Name, Context, Context, Sort) -> tcm (Name, Global)
-checkConstr (A.Constructor _ name tp _)
+checkConstr (A.Constructor _ name tp)
             (nmInd, parsInd, indicesInd, sortInd) =
     do (tp', s) <- pushBind indBind $  infer tp
        s' <- isSort s

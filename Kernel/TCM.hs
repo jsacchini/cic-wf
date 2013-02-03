@@ -222,26 +222,28 @@ throwNotFunction :: (MonadTCM tcm) => I.Term -> tcm a
 throwNotFunction t = do e <- ask
                         typeError $ NotFunction e t
 
-getSignature :: (MonadTCM tcm) => tcm Signature
-getSignature = stSignature <$> get
+getSignature :: (MonadTCM tcm) => tcm [Named I.Global]
+getSignature = (reverse . stDefined <$> get) >>= mapM mkGlobal
+  where
+    mkGlobal x = liftM (mkNamed x) (getGlobal x)
 
 lookupGlobal :: (MonadTCM tcm) => Name -> tcm (Maybe I.Global)
-lookupGlobal x = do sig <- getSignature
+lookupGlobal x = do sig <- stSignature <$> get
                     return $ Map.lookup x sig
 
 isGlobal :: (MonadTCM tcm) => Name -> tcm Bool
-isGlobal x = Map.member x <$> getSignature
+isGlobal x = Map.member x . stSignature <$> get
 
 checkIfDefined :: (MonadTCM tcm) => Name -> tcm ()
 checkIfDefined x = isGlobal x >>= flip when (throw (AlreadyDefined x))
 
 
 getGlobal :: (MonadTCM tcm) => Name -> tcm I.Global
-getGlobal x = do sig <- getSignature
-                 return $ sig Map.! x
+getGlobal x = (Map.! x) . stSignature <$> get
 
--- TODO: check that the name is not already defined
---       Should be done before typechecking a declaration
+
+-- | addGlobal adds a global definition to the signature.
+--   Checking that names are not repeated is handled by the scope checker
 addGlobal :: (MonadTCM tcm) => Name -> I.Global -> tcm ()
 addGlobal x g = do st <- get
                    put $ st { stSignature = Map.insert x g (stSignature st),
@@ -330,7 +332,7 @@ addTypeConstraints cts = do
     Nothing -> return ()
   traceTCM 30 $ return (hsep (text "Adding type constraints: " :
                               map (\(x,y,k) -> hsep [prettyPrint x,
-                                                     if k == 0 then text "<=" else text "<",
+                                                     text (if k == 0 then "<=" else "<"),
                                                      prettyPrint y
                                                     ]) cts))
 

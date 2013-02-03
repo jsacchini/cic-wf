@@ -151,6 +151,9 @@ ppEnv (Bind x impl t def: bs) = do b' <- reify t
       maybeReify (Just x) = do x' <- reify x
                                return $ Just x'
 
+instance PrettyTCM (Named Global) where
+  prettyPrintTCM g = reify g >>= return . MP.prettyPrint
+
 instance PrettyTCM StageVar where
   prettyPrintTCM = return . MP.prettyPrint
 
@@ -161,7 +164,7 @@ instance PrettyTCM MetaVar where
   prettyPrintTCM = return . MP.prettyPrint
 
 instance PrettyTCM Context where
-  prettyPrintTCM x = reify (Fold.toList x) >>= return . MP.prettyPrint
+  prettyPrintTCM x = reify x >>= return . MP.prettyPrint
 
 instance PrettyTCM A.Expr where
   prettyPrintTCM = return . MP.prettyPrint

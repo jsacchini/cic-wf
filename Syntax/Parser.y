@@ -140,7 +140,7 @@ Constr2 : {- empty -}                { [] }
 -- scope checker.
 BasicConstr :: { A.Constructor }
 BasicConstr : Name ':' Exp      { let (p,x) = $1
-                                   in A.Constructor (fuseRange p $3) x $3 0 }
+                                   in A.Constructor (fuseRange p $3) x $3 }
 
 Exp :: { A.Expr }
 Exp : 'forall' Binding ',' Exp   { A.Pi (fuseRange $1 $4) $2 $4 }

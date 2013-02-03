@@ -28,10 +28,12 @@ import Prelude hiding (catch)
 import Control.Monad.State
 
 import Data.Char
+import Data.Functor
 import Data.List
 
 import qualified Text.PrettyPrint as PP
 
+import Syntax.Common
 import qualified Syntax.Abstract as A
 import Syntax.Internal
 import Syntax.ParseMonad
@@ -157,7 +159,9 @@ evalCommand (SetGoal k) = do
 evalCommand Show = do
   liftTop $ do ag <- getActiveGoal
                case ag of
-                 Nothing -> liftIO $ putStrLn "No goal in focus"
+                 Nothing -> do sig <- map (fmap eraseSize) <$> getSignature
+                               let sig' = filter (not . isConstr . nameVal) sig
+                               printTCMLn $ vcat (map ( (<> dot) . prettyPrintTCM) sig')
                  Just (k, g) -> do d <- ppGoal (k, g)
                                    liftIO $ putStrLn (PP.render d)
   mainLoop

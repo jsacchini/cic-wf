@@ -49,6 +49,7 @@ import qualified Syntax.Abstract as A
 import Kernel.TCM
 import Syntax.Position
 import Syntax.Common
+import Syntax.Size
 import Utils.Misc
 
 class Reify a b | a -> b where
@@ -217,27 +218,59 @@ instance Reify Subst A.Subst where
                                     e <- reify t
                                     return $ A.Assign noRange (xs !! k) k e
 
-instance Reify Name A.Declaration where
-  reify x =
-    do g <- getGlobal x
-       case g of
-         I.Definition t1 t2 -> do e1 <- reify t1
-                                  e2 <- reify t2
-                                  return $ A.Definition noRange x (Just e1) e2
-         I.Assumption t -> do e <- reify t
-                              return $ A.Assumption noRange x e
-         t@(I.Inductive {}) -> do
-           return $ A.Inductive noRange (A.InductiveDef x (I.indKind t) [] (A.mkProp noRange) [])
-           -- COMPLETE THIS CASE
-         t@(Constructor _ _ _ _ _ _) -> do
-           return $ A.Assumption noRange x (A.mkProp noRange)
+instance Reify I.Bind A.Bind where
+  reify b = liftM mkB (reify (I.bindType b))
+    where
+      mkB e = A.Bind { A.bindRange    = noRange
+                     , A.bindNames    = [I.bindName b]
+                     , A.bindImplicit = I.bindImplicit b 
+                     , A.bindExpr     = e }
 
+instance Reify (Named I.Global) A.Declaration where
+  reify g = reifyGlobal (nameVal g)
+    where
+      x = name g
+      reifyGlobal :: (MonadTCM tcm) => I.Global -> tcm A.Declaration
+      reifyGlobal d@(I.Definition {}) = do
+        eTp <- reify (defType d)
+        eDef <- reify (defTerm d)
+        return $ A.Definition noRange x (Just eTp) eDef
+      reifyGlobal d@(I.Assumption {}) = do
+        e <- reify (assumeType d)
+        return $ A.Assumption noRange x e
+      reifyGlobal t@(I.Inductive {}) = do
+        pars <- reifyParCtx (I.indPars t) (I.indPol t)
+        tp   <- pushCtx (indPars t) $ reify (mkPi (I.indIndices t) (I.Sort (I.indSort t)))
+        constrs <- mapM reifyConstrInd (I.indConstr t)
+        return $ A.Inductive noRange (A.InductiveDef x (I.indKind t) pars tp constrs)
+      reifyGlobal t@(Constructor {}) = __IMPOSSIBLE__
+        -- return $ A.Assumption noRange x (A.mkProp noRange)
 
---- for debugging
+      reifyParCtx :: (MonadTCM tcm) => Context -> [Polarity] -> tcm [A.Parameter]
+      reifyParCtx EmptyCtx          []     = return []
+      reifyParCtx (ExtendCtx b ctx) (p:ps) = do
+        e <- reify (I.bindType b)
+        pars <- fakeBinds b $ reifyParCtx ctx ps
+        return $ A.Parameter noRange [(I.bindName b, p)] e : pars
 
-instance Reify [Bind] [A.Bind] where
-  reify [] = return []
-  reify (b:c) =
+      constrType :: (MonadTCM tcm) => Name -> tcm (Context, Type)
+      constrType x = do
+        c@(Constructor {}) <- getGlobal x
+        let numPars = ctxLen (I.constrPars c)
+            numArgs = ctxLen (I.constrArgs c)
+            pars = map Bound (reverse [numArgs..numArgs+numPars-1])
+            tp = mkPi (I.constrArgs c) (mkApp (Ind Empty (I.constrInd c)) (pars ++ I.constrIndices c))
+        return (I.constrPars c, tp)
+
+      reifyConstrInd :: (MonadTCM tcm) => Name -> tcm A.Constructor
+      reifyConstrInd x = do
+        (ctx, tp) <- constrType x
+        e <- pushCtx ctx $ reify tp
+        return $ A.Constructor noRange x e
+
+instance Reify Context [A.Bind] where
+  reify EmptyCtx = return []
+  reify (ExtendCtx b c) =
     do b' <- rb b
        -- x <- freshenName (bindName b)
        c' <- fakeBinds [bindName b] $ reify c

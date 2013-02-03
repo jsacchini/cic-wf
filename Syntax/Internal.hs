@@ -201,6 +201,10 @@ data Global = Definition { defType :: Type
                           }
             deriving(Show)
 
+isConstr :: Global -> Bool
+isConstr (Constructor {}) = True
+isConstr _                = False
+
 
 -- | Equality on terms is only used in the reification to terms, to group
 -- contiguous bindings with the same type

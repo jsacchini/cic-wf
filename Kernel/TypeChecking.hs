@@ -163,7 +163,8 @@ infer (A.Ind _ an x) =
 infer (A.Constr _ x _ pars args) = do
   t <- getGlobal x
   stage <- fresh
-  let replStage x = if x == Star then (Size (Svar stage)) else x
+  let -- Star signals recursive occurrences of the inductive type. See Kernel.Inductive
+      replStage x = if x == Star then (Size (Svar stage)) else x
       replFunc = modifySize replStage
   case t of
     Constructor indName idConstr tpars targs _ indices -> do

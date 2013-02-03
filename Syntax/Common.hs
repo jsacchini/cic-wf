@@ -58,6 +58,16 @@ instance Pretty Name where
                       | otherwise = text xs
 
 
+data Named a = Named { name :: Name
+                     , nameVal :: a }
+             deriving(Show)
+
+instance Functor Named where
+  fmap f (Named x a) = Named x (f a)
+
+mkNamed :: Name -> a -> Named a
+mkNamed = Named
+
 -- | Used for bindings
 class HasNames a where
   getNames :: a -> [Name]
@@ -71,8 +81,8 @@ instance HasNames Name where
 instance HasNames a => HasNames (Maybe a) where
   getNames = maybe [] getNames
 
-class Rename a where
-  rename :: a -> [Name] -> a
+instance HasNames (Named a) where
+  getNames = getNames . name
 
 ------------------------------------------------------------
 -- * Polarities
