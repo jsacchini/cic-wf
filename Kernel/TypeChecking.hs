@@ -136,11 +136,9 @@ infer (A.Bound _ _ n) =
      return (Bound n, w)
 infer (A.Ident _ x) =   do t <- getGlobal x
                            case t of
-                             Definition t1 _ -> do w <- whnF t1
-                                                   return (Var x, w)
-                             Assumption t1   -> do w <- whnF t1
-                                                   return (Var x, w)
-                             _               -> __IMPOSSIBLE__
+                             Definition {} -> return (Var x, defType t)
+                             Assumption {} -> return (Var x, assumeType t)
+                             _             -> __IMPOSSIBLE__
 infer xx@(A.Lam _ bs t) =   do (ctx, _) <- inferBinds bs
                                (t', u) <- pushCtx ctx $ infer t
                                return (mkLam (eraseSize ctx) t', mkPi ctx u)
@@ -183,7 +181,7 @@ infer (A.Constr _ x _ pars args) = do
           resType = substList (numArgs + numPars - 1) (pars'++args') genType
           -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
       -- We erase the type annotations of both parameters and arguments
-      return (Constr (replFunc tpars +: replFunc targs |> (mkBind (Id"") (Ind indStage indName)) ) x (indName, idConstr) (eraseSize pars') (eraseSize args'),
+      return (Constr x (indName, idConstr) (eraseSize pars') (eraseSize args'),
               resType)
 
     _  -> __IMPOSSIBLE__
@@ -195,13 +193,15 @@ infer (A.Number _ _) = __IMPOSSIBLE__ -- Number n is transformed into S (S... O)
 -- | Only inductive definitions return more than one global
 inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm [(Name, Global)]
 inferDecl (A.Definition _ x (Just e1) e2) =
-    do (t1, r1) <- infer e1
-       _ <- isSort r1
-       t2 <- check e2 t1
-       return [(x, Definition t1 t2)] -- (flatten t1) (flatten t2))]
+    do (tp, s) <- infer e1
+       _ <- isSort s
+       def <- check e2 tp
+       return [(x, Definition { defType = tp
+                              , defTerm = def })]
 inferDecl (A.Definition _ x Nothing e) =
-    do (t, u) <- infer e
-       return [(x, Definition u t)] -- (flatten u) (flatten t))]
+    do (def, tp) <- infer e
+       return [(x, Definition { defType = tp
+                              , defTerm = def })] -- (flatten u) (flatten t))]
 inferDecl (A.Assumption _ x e) =
     do (t, r) <- infer e
        _ <- isSort r

@@ -172,7 +172,7 @@ checkBranch sta asNm nmInd pars caseIn' ret'
 
   when (length ks > 0) $ error $ "variables not unified in branch " ++ show idConstr
 
-  let constrArg = applyPerm perm $ Constr empCtx nmConstr (nmInd, idConstr) pars (localDom numArgs)
+  let constrArg = applyPerm perm $ Constr nmConstr (nmInd, idConstr) pars (localDom numArgs)
       ret2 = ifMaybe_ asNm (subst constrArg) ret'
       ret3 = applyPerm perm $ I.lift numArgs 0 ret2
 

@@ -78,13 +78,13 @@ instance Whnf Term where
       wH t@(Var x) =
         do d <- getGlobal x
            case d of
-             Definition _ u   -> return u
-             Assumption _     -> return t
-             _                -> __IMPOSSIBLE__
+             Definition {} -> whnf (defTerm d)
+             Assumption {} -> return t
+             _             -> __IMPOSSIBLE__
       wH t@(Case c) =
         do arg' <- wH $ caseArg c
            case arg' of
-             Constr _ _ (_,cid) _ cArgs -> wH $ iotaRed cid cArgs (caseBranches c)
+             Constr _ (_,cid) _ cArgs -> wH $ iotaRed cid cArgs (caseBranches c)
              _ -> case isCofix arg' of
                     Just (_, body, cofix, args) -> wH $ Case (c { caseArg = App (subst cofix body) args })
                     Nothing -> return $ Case (c { caseArg = arg' })
@@ -153,15 +153,14 @@ instance NormalForm Term where
         traceTCM 30 $ hsep [text "Normalizing Var ", prettyPrintTCM x]
         u <- getGlobal x
         case u of
-          Definition _ t' -> do
-            traceTCM 30 $ hsep [text "global", prettyPrintTCM t']
-            nF t'
+          Definition {} -> do
+            traceTCM 30 $ hsep [text "global", prettyPrintTCM (defTerm u)]
+            nF (defTerm u)
           Assumption _    -> return t
           _               -> __IMPOSSIBLE__
       nF (Lam c t) = liftM2 Lam (normalForm c) (pushCtx c $ nF t)
       nF t@(App t1 ts) = do
-        e <- ask
-        traceTCM 30 $ hsep [text "Normalizing App in ", prettyPrintTCM e,
+        traceTCM 30 $ hsep [text "Normalizing App in ", ask >>= prettyPrintTCM,
                             text ":", prettyPrintTCM t]
         t1' <- whnf t1
         case t1' of
@@ -206,7 +205,7 @@ instance NormalForm Term where
                           $$ hsep [text "arg ", prettyPrintTCM (caseArg c)])
            arg' <- nF $ caseArg c
            case arg' of
-             Constr _ _ (_,cid) _ cArgs ->
+             Constr _ (_,cid) _ cArgs ->
                          do -- traceTCM_ ["Iota Reduction ",
                             --            show cid, " ", show cArgs,
                             --            "\nwith branches\n",
@@ -227,11 +226,11 @@ instance NormalForm Term where
                         return $ Case (c { caseArg      = arg',
                                            caseTpRet    = ret',
                                            caseBranches = branches' })
-      nF t@(Constr ccc x i ps as) =
+      nF t@(Constr x i ps as) =
         do -- traceTCM_ ["Normalizing constr ", show t]
            ps' <- mapM nF ps
            as' <- mapM nF as
-           return $ Constr ccc x i ps' as'
+           return $ Constr x i ps' as'
       nF t@(Fix a k nm c tp body) =
         liftM3 (Fix a k nm) (normalForm c) (nF tp)
                (pushBind (mkBind nm (mkPi c tp)) $ nF body)
@@ -295,11 +294,8 @@ instance MetaExp Term where
                           case goalTerm g of
                             Nothing -> return t
                             Just x -> metaexp x
-  metaexp (Constr ctx nmC nmI pars args) = do
-    ctx'  <- metaexp ctx
-    pars' <- mapM metaexp pars
-    args' <- mapM metaexp args
-    return $ Constr ctx' nmC nmI pars' args'
+  metaexp (Constr nmC nmI pars args) =
+    liftM2 (Constr nmC nmI) (mapM metaexp pars) (mapM metaexp args)
   metaexp (Fix k n nm ctx tp body) = do
     ctx'  <- metaexp ctx
     tp'   <- metaexp tp

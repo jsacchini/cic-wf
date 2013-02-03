@@ -147,7 +147,7 @@ instance Conversion Type where
   (~~) (Lam ctx1 t1) (Lam ctx2 t2) =
     ctx1 ~~ ctx2 `mAnd` pushCtx ctx1 (t1 ~~ t2)
   (~~) (App f1 ts1) (App f2 ts2) = f1 ~~ f2 `mAnd` ts1 ~~ ts2
-  (~~) (Constr _ c1 _ ps1 as1) (Constr _ c2 _ ps2 as2) =
+  (~~) (Constr c1 _ ps1 as1) (Constr c2 _ ps2 as2) =
     return (c1 == c2) `mAnd` ps1 ~~ ps2 `mAnd` as1 ~~ as2
   (~~) (Fix k1 n1 f1 ctx1 tp1 body1) (Fix k2 n2 f2 ctx2 tp2 body2) =
     return (k1 == k2) `mAnd`

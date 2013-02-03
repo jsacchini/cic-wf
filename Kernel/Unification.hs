@@ -133,7 +133,7 @@ unifyEq ctx (t1, Bound k) js = unifyEq ctx (Bound k, t1) js
 -- constructor is the same, or return negative success (Nothing) if they are
 -- different.
 -- TODO: check that Constr are not in sort Prop
-unifyEq ctx (Constr _ x1 cid1 ps1 as1, Constr _ x2 cid2 ps2 as2) js =
+unifyEq ctx (Constr x1 cid1 ps1 as1, Constr x2 cid2 ps2 as2) js =
   if x1 == x2
   then do -- traceTCM_ ["unifying constructor ", show x1, "\nnew equations: ", show (zip as1 as2)]
           unify ctx (zip as1 as2) js

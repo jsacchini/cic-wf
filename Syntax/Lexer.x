@@ -11,6 +11,7 @@ module Syntax.Lexer where
 import Control.Monad.State
 
 import Data.Char
+import Data.Word (Word8)
 
 import Syntax.Tokens
 import Syntax.Alex
@@ -122,6 +123,14 @@ skipOneLineComment =
               Just ('\n', inp') -> inp'
               Just (_   , inp') -> skip_ inp'
               Nothing           -> inp
+
+-- | To fix bug(?) in alex 3.0.1
+--   see https://github.com/yihuang/yi/commit/d9222efc16ef82b44f88878af34b41737000a455
+first :: (a -> b) -> (a, c) -> (b, c)
+first f (a, c) = (f a, c)
+
+alexGetByte :: AlexInput -> Maybe (Word8, AlexInput)
+alexGetByte = fmap (first (fromIntegral . ord)) . alexGetChar
 
 skipNestedComment :: Parser Token
 skipNestedComment =

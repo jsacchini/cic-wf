@@ -48,7 +48,7 @@ data Term
     | Lam Context Term
     | App Term [Term]
     | Meta MetaVar
-    | Constr Context Name (Name, Int) [Term] [Term]
+    | Constr Name (Name, Int) [Term] [Term]
     | Fix InductiveKind Int Name Context Type Term
     | Case CaseTerm
     | Ind Annot Name
@@ -181,8 +181,9 @@ unLam t = (empCtx, t)
 -- flatten t = t
 
 
-data Global = Definition Type Term
-            | Assumption Type
+data Global = Definition { defType :: Type
+                         , defTerm :: Term }
+            | Assumption { assumeType :: Type }
             | Inductive { indKind :: InductiveKind
                         , indPars :: Context
                         , indPol :: [Polarity]
@@ -190,15 +191,15 @@ data Global = Definition Type Term
                         , indSort :: Sort
                         , indConstr :: [Name]
                         }
-            | Constructor {
-              constrInd :: Name,
-              constrId :: Int,   -- id
-              constrPars :: Context, -- parameters, should be the same as
-                                     -- the indutive type
-              constrArgs :: Context, -- arguments
-              constrRec :: [Int],    -- indicates the recursive arguments
-              constrIndices :: [Term]
-              } deriving(Show)
+            | Constructor { constrInd :: Name
+                          , constrId :: Int   -- id
+                          , constrPars :: Context -- parameters, should be the same as
+                                                  -- the indutive type
+                          , constrArgs :: Context -- arguments
+                          , constrRec :: [Int]    -- indicates the recursive arguments
+                          , constrIndices :: [Term]
+                          }
+            deriving(Show)
 
 
 -- | Equality on terms is only used in the reification to terms, to group
@@ -285,7 +286,7 @@ instance HasAnnot Term where
       mSize (Lam c t) = Lam (modifySize f c) (mSize t)
       mSize (App t ts) = App (mSize t) (map mSize ts)
       mSize t@(Meta _) = t
-      mSize (Constr ccc nm cid pars args) = Constr ccc nm cid (map mSize pars) (map mSize args)
+      mSize (Constr nm cid pars args) = Constr nm cid (map mSize pars) (map mSize args)
       mSize (Fix k n x c t1 t2) = Fix k n x (modifySize f c) (mSize t1) (mSize t2)
       mSize (Case c) = Case (modifySize f c)
       mSize (Ind a x) = Ind (f a) x
@@ -297,7 +298,7 @@ instance HasAnnot Term where
   listAnnot (Lam c t) = listAnnot c ++ listAnnot t
   listAnnot (App t ts) = listAnnot t ++ listAnnot ts
   listAnnot t@(Meta _) = []
-  listAnnot (Constr _ _ _ pars args) = listAnnot pars ++ listAnnot args
+  listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
   listAnnot (Fix _ _ _ c t1 t2) = listAnnot c ++ listAnnot t1 ++ listAnnot t2
   listAnnot (Case c) = listAnnot c
   listAnnot (Ind a x) = case a of
@@ -401,7 +402,7 @@ instance Lift Term where
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
   lift k n t@(Meta _) = t
   lift _ _ t@(Ind _ _) = t
-  lift k n (Constr ccc x indId ps as) = Constr ccc x indId ps' as'
+  lift k n (Constr x indId ps as) = Constr x indId ps' as'
                                       where ps' = map (lift k n) ps
                                             as' = map (lift k n) as
   lift k n (Fix a m x c t e) =
@@ -463,7 +464,7 @@ instance SubstTerm Term where
   substN i r (App t ts) = App (substN i r t) (substN i r ts)
   substN i r t@(Meta _) = t
   substN _ _ t@(Ind _ _) = t
-  substN i r (Constr ccc x ind ps as) = Constr ccc x ind ps' as'
+  substN i r (Constr x ind ps as) = Constr x ind ps' as'
                                     where ps' = map (substN i r) ps
                                           as' = map (substN i r) as
   substN i r (Case c) = Case (substN i r c)
@@ -526,7 +527,7 @@ instance IsFree Term where
   isFree k (App f ts) = isFree k f || any (isFree k) ts
   isFree k (Meta _) = False
   isFree _ (Ind _ _) = False
-  isFree k (Constr _ _ _ ps as) = any (isFree k) (ps ++ as)
+  isFree k (Constr _ _ ps as) = any (isFree k) (ps ++ as)
   isFree k (Fix _ _ _ bs tp body) = isFree k (mkPi bs tp) || isFree (k+1) body
   isFree k (Case c) = isFree k c
 
@@ -538,7 +539,7 @@ instance IsFree Term where
   fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
   fvN k (Meta _) = []
   fvN _ (Ind _ _) = []
-  fvN k (Constr _ _ _ ps as) = concatMap (fvN k) (ps ++ as)
+  fvN k (Constr _ _ ps as) = concatMap (fvN k) (ps ++ as)
   fvN k (Fix _ _ _ bs tp body) = fvN k (mkPi bs tp) ++ fvN (k + 1) body
 
 instance IsFree CaseTerm where

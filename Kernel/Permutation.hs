@@ -101,7 +101,7 @@ instance ApplyPerm Term where
   applyPerm p (Lam c t) = Lam (applyPerm p c) (applyPerm (ctxLen c <++ p) t)
   applyPerm p (App t1 t2) = App (applyPerm p t1) $ map (applyPerm p) t2
   applyPerm p t@(Ind _ _) = t
-  applyPerm p (Constr ccc x indId ps as) = Constr ccc x indId ps' as'
+  applyPerm p (Constr x indId ps as) = Constr x indId ps' as'
     where ps' = map (applyPerm p) ps
           as' = map (applyPerm p) as
   applyPerm p (Fix a n x bs t e) =
