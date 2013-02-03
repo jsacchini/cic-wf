@@ -88,8 +88,8 @@ unify ctx ((t1,t2):es) ks = do
 
   -- Normalize the first equation
   -- traceTCM_ ["Unifying equation ", show ctx, "\neq  ", show t1, " === ", show t2, "\nfor ", show ks, "\nrest of eqs: ", show es]
-  w1 <- R.lift $ pushCtx ctx $ whnf t1
-  w2 <- R.lift $ pushCtx ctx $ whnf t2
+  w1 <- R.lift $ pushCtx ctx $ whnF t1
+  w2 <- R.lift $ pushCtx ctx $ whnF t2
   -- traceTCM_ ["Normalized equation: ", show w1, " === ", show w2, "\nfor ", show ks]
 
   -- Unify the first equation

@@ -123,7 +123,7 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
          inBind c |> mkBind x (mkApp (Ind Empty nmInd) (map (I.lift (size c) 0) pars ++ inArgs c))
 
       getInductiveType t = do
-        t' <- whnf t
+        t' <- whnF t
         case t' of
           App (Ind a i) args -> do
             Inductive k tpPars _ _ _ _ <- getGlobal i -- matching should not fail

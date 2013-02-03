@@ -20,7 +20,7 @@
 {-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances
   #-}
 
-module Kernel.Whnf where
+module Kernel.Whnf(whnF, nF, unfoldPi) where
 
 #include "../undefined.h"
 import Utils.Impossible
@@ -37,45 +37,58 @@ import Kernel.PrettyTCM
 
 import Utils.Pretty
 
+whnF :: (MonadTCM tcm) => Term -> tcm Term
+whnF = whnf
+
+nF :: (MonadTCM tcm) => Term -> tcm Term
+nF = normalForm
+
 class Whnf a where
   whnf :: (MonadTCM tcm) => a -> tcm a
 
 instance Whnf Term where
-  whnf (App f ts) =
-    do w <- whnf f
-       case w of
-         Lam ctx u -> whnf $ betaRed ctx u ts
-         Fix I n _ _ _ _
-           | length ts < n -> return $ App w ts
-           | otherwise ->
-             do recArg' <- normalForm recArg
-                case recArg' of
-                  Constr {} -> whnf (muRed w (first ++ recArg' : last))
-                  _ -> return $ App w ts
-           where (first, recArg, last) = splitRecArg [] (n - 1) ts
-                 splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
-                 splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
-         _         -> return $ App w ts
-  whnf t@(Bound k) = do len <- localLength
-                        when (k >= len) $ error $ "Whnf " ++ show k ++ "\nin "-- ++ show e
-                        b <- localGet k
-                        case bindDef b of
-                          Nothing -> return t
-                          Just t' -> whnf (I.lift (k+1) 0 t')
-  whnf t@(Var x) =
-    do d <- getGlobal x
-       case d of
-         Definition _ u   -> return u
-         Assumption _     -> return t
-         _                -> __IMPOSSIBLE__
-  whnf t@(Case c) =
-    do arg' <- whnf $ caseArg c
-       case arg' of
-         Constr _ _ (_,cid) _ cArgs -> whnf $ iotaRed cid cArgs (caseBranches c)
-         _ -> case isCofix arg' of
-                Just (_, body, cofix, args) -> whnf $ Case (c { caseArg = App (subst cofix body) args })
-                Nothing -> return $ Case (c { caseArg = arg' })
-  whnf t = return t
+  whnf t = metaexp t >>= wH
+    where
+      wH (App f ts) = do
+        w <- wH f
+        case w of
+          Lam ctx u -> wH $ betaRed ctx u ts
+          Fix I n _ _ _ _
+            | length ts < n -> return $ App w ts
+            | otherwise ->
+              do recArg' <- normalForm recArg
+                 case recArg' of
+                   Constr {} -> wH (muRed w (first ++ recArg' : last))
+                   _ -> return $ App w ts
+            where (first, recArg, last) = splitRecArg [] (n - 1) ts
+                  splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
+                  splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
+          _         -> return $ App w ts
+      wH t@(Bound k) = do
+        len <- localLength
+        e <- ask
+        when (k >= len) $ traceTCM 1 $ hsep [text "BUG: wH bound ",
+                                             int k,
+                                             text "in",
+                                             prettyPrintTCM e]
+        b <- localGet k
+        case bindDef b of
+          Nothing -> return t
+          Just t' -> wH (I.lift (k+1) 0 t')
+      wH t@(Var x) =
+        do d <- getGlobal x
+           case d of
+             Definition _ u   -> return u
+             Assumption _     -> return t
+             _                -> __IMPOSSIBLE__
+      wH t@(Case c) =
+        do arg' <- wH $ caseArg c
+           case arg' of
+             Constr _ _ (_,cid) _ cArgs -> wH $ iotaRed cid cArgs (caseBranches c)
+             _ -> case isCofix arg' of
+                    Just (_, body, cofix, args) -> wH $ Case (c { caseArg = App (subst cofix body) args })
+                    Nothing -> return $ Case (c { caseArg = arg' })
+      wH t = return t
 
 -- instance Whnf Bind where
 --   whnf (Bind x t) = do w <- whnf t
@@ -108,15 +121,6 @@ instance NormalForm a => NormalForm (Maybe a) where
   normalForm (Just x) = do y <- normalForm x
                            return $ Just y
 
-instance NormalForm a => NormalForm [a] where
-  normalForm [] = return []
-  normalForm (x:xs) = do y <- normalForm x
-                         ys <- normalForm xs
-                         return (y:ys)
-
-instance NormalForm Sort where
-  normalForm x = return x
-
 instance NormalForm Bind where
   normalForm (Bind x impl t def) = do t' <- normalForm t
                                       def' <- normalForm def
@@ -129,110 +133,108 @@ instance NormalForm Context where
                                   return (b' <| c)
 
 instance NormalForm Term where
-  normalForm (Sort s) = do s' <- normalForm s
-                           return $ Sort s'
-  normalForm (Pi c t) = do c' <- normalForm c
-                           t' <- pushCtx c $ normalForm t
-                           return $ Pi c' t'
-  normalForm t@(Bound k) = do e <- ask
-                              when (k >= length (unEnv e)) $ error $ "normalform out of bound: " ++ show k ++ "  " ++ show e
-                              case bindDef (unEnv e !! k) of
-                                Nothing -> return t
-                                Just t' -> normalForm (I.lift (k+1) 0 t')
-  normalForm t@(Meta k) = do (Just g) <- getGoal k
-                             case goalTerm g of
-                               Nothing -> return t
-                               Just x  -> normalForm x
-  normalForm t@(Var x) = do traceTCM 30 $ hsep [text "Normalizing Var ", prettyPrintTCM x]
-                            u <- getGlobal x
-                            case u of
-                              Definition _ t' ->
-                                do
-                                  traceTCM 30 $ hsep [text "global", prettyPrintTCM t']
-                                  normalForm t'
-                              Assumption _    -> return t
-                              _               -> __IMPOSSIBLE__
-  normalForm (Lam c t) = do c' <- normalForm c
-                            t' <- pushCtx c $ normalForm t
-                            return $ Lam c' t'
-  normalForm t@(App t1 ts) =
-    do e <- ask
-       traceTCM 30 $ hsep [text "Normalizing App in ", prettyPrintTCM e,
-                           text ":", prettyPrintTCM t]
-       t1' <- whnf t1
-       case t1' of
-         Lam ctx u  ->
-           do traceTCM 30 $ (hsep [text "Beta Reduction on ",
-                                   prettyPrintTCM t1',
-                                   text " and ",
-                                   prettyPrintTCM ts]
-                             $$ hsep [text "reduces to ", prettyPrintTCM (betaRed ctx u ts)])
-              normalForm $ betaRed ctx u ts
-         App u1 us -> do ts' <- mapM normalForm ts
-                         us' <- mapM normalForm us
-                         return $ mkApp u1 (us' ++ ts')
-         Fix I n _ _ _ _
-           | length ts < n -> do -- traceTCM_ ["Fix without enough args ", show (length ts), " < ", show n]
-                                 ts' <- mapM normalForm ts
-                                 return $ App t1' ts'
-           | otherwise ->
-             do -- traceTCM_ ["Fix enough args\nFirst ", show first, "\nRec ", show recArg, "\nLast ", show last]
-                recArg' <- normalForm recArg
-                case recArg' of
-                  Constr {} ->
-                            do -- traceTCM_ ["Mu Reduction ",
-                               --            show t1', "\non\n",
-                               --            show (first ++ recArg' : last)]
-                               normalForm (muRed t1' (first ++ recArg' : last))
-                  _    -> do -- traceTCM_ ["No recursion arg = ", show recArg']
-                             first' <- mapM normalForm first
-                             last'  <- mapM normalForm last
-                             return $ mkApp t1' (first' ++ recArg' : last')
-           where (first, recArg, last) = splitRecArg [] (n - 1) ts
-                 splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
-                 splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
-         _         -> do -- traceTCM_ ["Not handled application", show t1']
-                         ts' <- mapM normalForm ts
-                         return $ mkApp t1' ts'
-  normalForm t@(Ind _ _) = do -- traceTCM_ ["Normalizing Ind ", show t]
-                              return t
-  normalForm t@(Case c) =
-    do traceTCM 30 $ (hsep [text "Normalizing Case in ", prettyPrintTCM t]
-                      $$ hsep [text "arg ", prettyPrintTCM (caseArg c)])
-       arg' <- normalForm $ caseArg c
-       case arg' of
-         Constr _ _ (_,cid) _ cArgs ->
-                     do -- traceTCM_ ["Iota Reduction ",
-                        --            show cid, " ", show cArgs,
-                        --            "\nwith branches\n",
-                        --           show (caseBranches c)]
-                        normalForm $ iotaRed cid cArgs (caseBranches c)
-         _ -> case isCofix arg' of
-                Just (bind, body, cofix, args) ->
-                  do
-                    traceTCM 30 $ vcat [text "normal form case " <> prettyPrintTCM t,
-                                        text "body " <> pushBind bind (prettyPrintTCM body),
-                                        text "cofix " <> prettyPrintTCM cofix,
-                                        text "args " <> prettyPrintTCM args]
-                    normalForm $ Case (c { caseArg = App (subst cofix body) args })
-                Nothing ->
-                  do -- traceTCM_ ["Case in normal form ", show t]
-                    ret' <- normalForm (caseTpRet c)
-                    branches' <- mapM normalForm (caseBranches c)
-                    return $ Case (c { caseArg      = arg',
-                                       caseTpRet    = ret',
-                                       caseBranches = branches' })
-  normalForm t@(Constr ccc x i ps as) =
-    do -- traceTCM_ ["Normalizing constr ", show t]
-       ps' <- mapM normalForm ps
-       as' <- mapM normalForm as
-       return $ Constr ccc x i ps' as'
-  normalForm t@(Fix a k nm c tp body) =
-    do -- traceTCM_ ["Normalizing fix ", show t]
-       c' <- normalForm c
-       tp' <- normalForm tp
-       body' <- pushBind (mkBind nm (mkPi c tp)) $ normalForm body
-       return $ Fix a k nm c' tp' body'
+  normalForm x = metaexp x >>= nF
+    where
+      nF :: (MonadTCM tcm) => Term -> tcm Term
+      nF t@(Sort s) = return t
+      nF (Pi c t) = liftM2 Pi (normalForm c) (pushCtx c $ nF t)
+      nF t@(Bound k) = do
+        e <- ask
+        when (k >= length (unEnv e)) $ error $ "normalform out of bound: " ++ show k ++ "  " ++ show e
+        case bindDef (unEnv e !! k) of
+          Nothing -> return t
+          Just t' -> nF (I.lift (k+1) 0 t')
+      nF t@(Meta k) = do
+        (Just g) <- getGoal k
+        case goalTerm g of
+          Nothing -> return t
+          Just x  -> nF x
+      nF t@(Var x) = do
+        traceTCM 30 $ hsep [text "Normalizing Var ", prettyPrintTCM x]
+        u <- getGlobal x
+        case u of
+          Definition _ t' -> do
+            traceTCM 30 $ hsep [text "global", prettyPrintTCM t']
+            nF t'
+          Assumption _    -> return t
+          _               -> __IMPOSSIBLE__
+      nF (Lam c t) = liftM2 Lam (normalForm c) (pushCtx c $ nF t)
+      nF t@(App t1 ts) = do
+        e <- ask
+        traceTCM 30 $ hsep [text "Normalizing App in ", prettyPrintTCM e,
+                            text ":", prettyPrintTCM t]
+        t1' <- whnf t1
+        case t1' of
+          Lam ctx u  ->
+            do traceTCM 30 $ (hsep [text "Beta Reduction on ",
+                                    prettyPrintTCM t1',
+                                    text " and ",
+                                    prettyPrintTCM ts]
+                              $$ hsep [text "reduces to ", prettyPrintTCM (betaRed ctx u ts)])
+               nF $ betaRed ctx u ts
+          App u1 us -> do ts' <- mapM nF ts
+                          us' <- mapM nF us
+                          return $ mkApp u1 (us' ++ ts')
+          Fix I n _ _ _ _
+            | length ts < n -> do -- traceTCM_ ["Fix without enough args ", show (length ts), " < ", show n]
+                                  ts' <- mapM nF ts
+                                  return $ App t1' ts'
+            | otherwise ->
+              do -- traceTCM_ ["Fix enough args\nFirst ", show first, "\nRec ", show recArg, "\nLast ", show last]
+                 recArg' <- nF recArg
+                 case recArg' of
+                   Constr {} ->
+                             do -- traceTCM_ ["Mu Reduction ",
+                                --            show t1', "\non\n",
+                                --            show (first ++ recArg' : last)]
+                                nF (muRed t1' (first ++ recArg' : last))
+                   _    -> do -- traceTCM_ ["No recursion arg = ", show recArg']
+                              first' <- mapM nF first
+                              last'  <- mapM nF last
+                              return $ mkApp t1' (first' ++ recArg' : last')
+            where (first, recArg, last) = splitRecArg [] (n - 1) ts
+                  splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
+                  splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
+          _         -> do -- traceTCM_ ["Not handled application", show t1']
+                          ts' <- mapM nF ts
+                          return $ mkApp t1' ts'
+      nF t@(Ind _ _) = do
+        traceTCM 80 $ hsep [text "Normalizing Ind ", prettyPrintTCM t]
+        return t
+      nF t@(Case c) =
+        do traceTCM 30 $ (hsep [text "Normalizing Case in ", prettyPrintTCM t]
+                          $$ hsep [text "arg ", prettyPrintTCM (caseArg c)])
+           arg' <- nF $ caseArg c
+           case arg' of
+             Constr _ _ (_,cid) _ cArgs ->
+                         do -- traceTCM_ ["Iota Reduction ",
+                            --            show cid, " ", show cArgs,
+                            --            "\nwith branches\n",
+                            --           show (caseBranches c)]
+                            nF $ iotaRed cid cArgs (caseBranches c)
+             _ -> case isCofix arg' of
+                    Just (bind, body, cofix, args) ->
+                      do
+                        traceTCM 30 $ vcat [text "normal form case " <> prettyPrintTCM t,
+                                            text "body " <> pushBind bind (prettyPrintTCM body),
+                                            text "cofix " <> prettyPrintTCM cofix,
+                                            text "args " <> prettyPrintTCM args]
+                        nF $ Case (c { caseArg = App (subst cofix body) args })
+                    Nothing ->
+                      do -- traceTCM_ ["Case in normal form ", show t]
+                        ret' <- nF (caseTpRet c)
+                        branches' <- mapM normalForm (caseBranches c)
+                        return $ Case (c { caseArg      = arg',
+                                           caseTpRet    = ret',
+                                           caseBranches = branches' })
+      nF t@(Constr ccc x i ps as) =
+        do -- traceTCM_ ["Normalizing constr ", show t]
+           ps' <- mapM nF ps
+           as' <- mapM nF as
+           return $ Constr ccc x i ps' as'
+      nF t@(Fix a k nm c tp body) =
+        liftM3 (Fix a k nm) (normalForm c) (nF tp)
+               (pushBind (mkBind nm (mkPi c tp)) $ nF body)
 
 
 -- TODO: check if we need to normalize whSubst
@@ -242,12 +244,11 @@ instance NormalForm Branch where
        return $ Branch nm cid xs body' whSubst
 
 
--- | 'betaRed' bs body args  performs several beta reductions on the term
---   App (Lam bs body) args.
+-- | 'betaRed' ctx body args  performs several beta reductions on the term
+--   App (Lam ctx body) args.
 --
---   The number of beta reductions applied is min (length bs, length args)
+--   The number of beta reductions applied is min (length ctx, length args)
 betaRed :: Context -> Term -> [Term] -> Term
-betaRed EmptyCtx body [] = body
 betaRed EmptyCtx body args = mkApp body args
 betaRed ctx body [] = mkLam ctx body
 betaRed (ExtendCtx (Bind _ _ _ Nothing) ctx) body (a:as) = betaRed (subst a ctx) (substN (ctxLen ctx) a body) as
@@ -272,6 +273,84 @@ muRed t@(Fix CoI _ _ _ _ body) args = error "Implement nu-red"
 muRed t@(Fix I _ _ _ _ body) args = mkApp (subst t body) args
 muRed _ _ = __IMPOSSIBLE__
 
+
+class MetaExp a where
+  metaexp :: (MonadTCM tcm) => a -> tcm a
+
+instance MetaExp a => MetaExp (Maybe a) where
+  metaexp Nothing = return Nothing
+  metaexp (Just x) = liftM Just (metaexp x)
+
+instance MetaExp Term where
+  metaexp (Pi ctx t) = do ctx' <- metaexp ctx
+                          t' <- metaexp t
+                          return $ Pi ctx' t'
+  metaexp (Lam ctx t) = do ctx' <- metaexp ctx
+                           t' <- metaexp t
+                           return $ Lam ctx' t'
+  metaexp (App f ts) = do f' <- metaexp f
+                          ts' <- mapM metaexp ts
+                          return $ App f' ts'
+  metaexp t@(Meta k) = do (Just g) <- getGoal k
+                          case goalTerm g of
+                            Nothing -> return t
+                            Just x -> metaexp x
+  metaexp (Constr ctx nmC nmI pars args) = do
+    ctx'  <- metaexp ctx
+    pars' <- mapM metaexp pars
+    args' <- mapM metaexp args
+    return $ Constr ctx' nmC nmI pars' args'
+  metaexp (Fix k n nm ctx tp body) = do
+    ctx'  <- metaexp ctx
+    tp'   <- metaexp tp
+    body' <- metaexp body
+    return $ Fix k n nm ctx' tp' body'
+  metaexp t@(Case c) = liftM Case (metaexp c)
+  metaexp t = return t -- Sort, Bound, Var, Ind
+
+instance MetaExp Context where
+  metaexp EmptyCtx = return EmptyCtx
+  metaexp (ExtendCtx b ctx) = do tp' <- metaexp (bindType b)
+                                 def' <- metaexp (bindDef b)
+                                 ctx' <- metaexp ctx
+                                 let b' = b { bindType = tp'
+                                            , bindDef  = def' }
+                                 return $ ExtendCtx b' ctx'
+
+instance MetaExp CaseTerm where
+  metaexp c = do
+    arg' <- metaexp (caseArg c)
+    in'  <- metaexp (caseIn c)
+    tp'  <- metaexp (caseTpRet c)
+    br'  <- mapM metaexp (caseBranches c)
+    let c' = c { caseArg = arg'
+               , caseIn  = in'
+               , caseTpRet = tp'
+               , caseBranches = br' }
+    return c'
+
+instance MetaExp CaseIn where
+  metaexp i = do
+    in'   <- metaexp (inBind i)
+    args' <- mapM metaexp (inArgs i)
+    let i' = i { inBind = in'
+               , inArgs = args' }
+    return i
+
+instance MetaExp Branch where
+  metaexp b = do
+    body' <- metaexp (brBody b)
+    subst' <- metaexp (brSubst b)
+    let b' = b { brBody = body'
+               , brSubst = subst' }
+    return b'
+
+instance MetaExp Subst where
+  metaexp (Subst sg) = do sg' <- mapM metaSubst sg
+                          return $ Subst sg'
+    where
+      metaSubst (x, t) = do t' <- metaexp t
+                            return (x, t')
 
 -- Neutral term
 -- We assume that all global definitions have been unfolded (see Var case)

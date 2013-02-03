@@ -23,6 +23,7 @@
 module Kernel.PrettyTCM where
 
 import Control.Applicative hiding (empty)
+import Control.Monad.Reader
 
 import qualified Data.Foldable as Fold
 import Data.Functor
@@ -104,6 +105,13 @@ class PrettyTCM a where
 -- instance MP.Pretty a => PrettyTCM a where
 --   prettyPrintTCM = return . MP.prettyPrint
 
+printTCM :: (MonadTCM tcm) => tcm Doc -> tcm ()
+printTCM d = do d' <- d
+                liftIO $ putStr $ PP.render d'
+
+printTCMLn :: (MonadTCM tcm) => tcm Doc -> tcm ()
+printTCMLn d = printTCM (d <> text "\n") -- TODO: this does not seem the right way
+
 instance PrettyTCM a => PrettyTCM [a] where
   prettyPrintTCM = hsep . map prettyPrintTCM
 
@@ -114,7 +122,12 @@ instance PrettyTCM Name where
   prettyPrintTCM = return . MP.prettyPrint
 
 instance PrettyTCM Term where
-  prettyPrintTCM x = reify x >>= return . MP.prettyPrint
+  prettyPrintTCM x = do traceTCM 99 $ hsep [text "prettyPrintTCM term",
+                                            text ("reifying " ++ show x)]
+                        x' <- reify x
+                        traceTCM 99 $ hsep [text "reified ",
+                                            return (MP.prettyPrint x')]
+                        return (MP.prettyPrint x')
 
 instance PrettyTCM TCEnv where
   prettyPrintTCM (TCEnv env) = do ds <- ppEnv env
@@ -160,4 +173,4 @@ instance PrettyTCM I.Goal where
                                           [ PP.text "-------------------------"
                                           , ppt])
     where
-      bs = Fold.toList (goalCtx g)
+      bs = reverse $ Fold.toList (goalCtx g)

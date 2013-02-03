@@ -54,21 +54,9 @@ import Utils.Misc
 class Reify a b | a -> b where
   reify :: (MonadTCM tcm) => a -> tcm b
 
-freshName :: (MonadTCM tcm) => Name -> tcm Name
-freshName x | isNull x  = return $ Id "_"
-            | otherwise = do xs <- getLocalNames
-                             return $ doFreshName xs x
-              where
-                doFreshName xs y | y `notElem` xs = y
-                                 | otherwise = trySuffix xs y (0 :: Int)
-                trySuffix xs y n | addSuffix y n `notElem` xs = addSuffix y n
-                                 | otherwise = trySuffix xs y (n+1)
-                addSuffix (Id x) n = Id $ x ++ show n
-
-
 freshNameList :: (MonadTCM tcm) => [Name] -> tcm [Name]
 freshNameList []     = return []
-freshNameList (x:xs) = do x' <- freshName x
+freshNameList (x:xs) = do x' <- freshenName x
                           xs' <- fakeBinds x' $ freshNameList xs
                           return $ x' : xs'
 
@@ -87,7 +75,7 @@ reifyPiBinds = rP []
            return $ A.Arrow noRange e1 e2
       | otherwise     =
           do e1 <- reify t1
-             x' <- freshName x
+             x' <- freshenName x
              fakeBinds x' $ rP [A.Bind noRange impl [x'] e1] bs' t2
     -- TODO: check implicit printing
     rP bs1@(A.Bind _ impl1 xs e1:bs1') bs2@(Bind y impl2 t1 Nothing:bs2') t2
@@ -96,7 +84,7 @@ reifyPiBinds = rP []
            return $ A.Pi noRange (reverse bs1) e2
       | otherwise     =
           do e1' <- reify t1
-             y' <- freshName y
+             y' <- freshenName y
              if e1 == e1' && impl1 == impl2
                then fakeBinds y' $ rP (A.Bind noRange impl1 (xs++[y']) e1:bs1') bs2' t2
                else fakeBinds y' $ rP (A.Bind noRange impl2 [y'] e1':bs1) bs2' t2
@@ -112,12 +100,12 @@ reifyLamBinds = rL []
                                      return $ A.Lam noRange (reverse bs) e
     rL [] (Bind x impl t1 Nothing:bs') t2 =
       do e1 <- reify t1
-         x' <- if notFree bs' t2 then return (Id "_") else freshName x
+         x' <- if notFree bs' t2 then return (Id "_") else freshenName x
          fakeBinds x' $ rL [A.Bind noRange impl [x'] e1] bs' t2
     -- TODO: check implicit printing
     rL bs1@(A.Bind _ impl1 xs e1:bs1') (Bind y impl2 t1 Nothing:bs2') t2 =
       do e1' <- reify t1
-         y' <- if notFree bs2' t2 then return (Id "_") else freshName y
+         y' <- if notFree bs2' t2 then return (Id "_") else freshenName y
          if e1 == e1' && impl1 == impl2
            then fakeBinds y' $ rL (A.Bind noRange impl1 (xs++[y']) e1:bs1') bs2' t2
            else fakeBinds y' $ rL (A.Bind noRange impl2 [y'] e1':bs1) bs2' t2
@@ -150,7 +138,7 @@ instance Reify Term A.Expr where
   reify (Lam ctx t) = reifyLamBinds (Fold.toList ctx) t
   reify (Fix k num f args tp body) =
     do tp'   <- reify (mkPi args tp)
-       f'    <- freshName f
+       f'    <- freshenName f
        body' <- fakeBinds f' $ reify body
        return $ A.Fix (A.FixExpr noRange k num f tp' body')
   reify (Case c) = fmap A.Case $ reify c
@@ -210,7 +198,7 @@ instance Reify CaseIn A.CaseIn where
                                         return ([], args')
             reifyCtx (ExtendCtx (Bind x impl t _) ctx') args =
               do t' <- reify t
-                 x' <- freshName x
+                 x' <- freshenName x
                  (bs, args') <- fakeBinds x' $ reifyCtx ctx' args
                  return (A.Bind noRange impl [x'] t' : bs, args')
 
@@ -251,7 +239,7 @@ instance Reify [Bind] [A.Bind] where
   reify [] = return []
   reify (b:c) =
     do b' <- rb b
-       -- x <- freshName (bindName b)
+       -- x <- freshenName (bindName b)
        c' <- fakeBinds [bindName b] $ reify c
        return (b':c')
          where rb (Bind x impl t Nothing) =

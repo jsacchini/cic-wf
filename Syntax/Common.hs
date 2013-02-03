@@ -50,6 +50,9 @@ isNull :: Name -> Bool
 isNull (Id "") = True
 isNull _       = False
 
+mkName :: String -> Name
+mkName = Id
+
 instance Pretty Name where
   prettyPrint (Id xs) | null xs   = text "_"
                       | otherwise = text xs

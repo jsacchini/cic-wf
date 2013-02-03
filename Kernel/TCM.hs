@@ -249,16 +249,38 @@ addGlobal x g = do st <- get
                             }
 
 pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
-pushCtx ctx = local (withEnv (reverse (Fold.toList ctx)++))
+pushCtx ctx m = do ctx' <- freshenCtx ctx
+                   local (withEnv (reverse (Fold.toList ctx')++)) m
 
 withCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
 withCtx ctx = local (const (TCEnv (Fold.toList ctx)))
 
+freshenName :: (MonadTCM tcm) => Name -> tcm Name
+freshenName x | isNull x  = return $ mkName "_"
+              | otherwise = do xs <- getLocalNames
+                               return $ doFreshName xs x
+              where
+                doFreshName xs y | y `notElem` xs = y
+                                 | otherwise = trySuffix xs y (0 :: Int)
+                trySuffix xs y n | addSuffix y n `notElem` xs = addSuffix y n
+                                 | otherwise = trySuffix xs y (n+1)
+                addSuffix (Id x) n = Id $ x ++ show n
+
+freshenCtx :: (MonadTCM tcm) => I.Context -> tcm I.Context
+freshenCtx EmptyCtx          = return EmptyCtx
+freshenCtx (ExtendCtx b ctx) = do x <- freshenName (I.bindName b)
+                                  let b' = b { I.bindName = x }
+                                  ctx' <- pushBind b' (freshenCtx ctx)
+                                  return (ExtendCtx b' ctx')
+
 pushType :: (MonadTCM tcm) => I.Type -> tcm a -> tcm a
-pushType tp = local (withEnv (I.bindNoName tp:))
+pushType tp m = do x <- freshenName (mkName "x")
+                   pushBind (I.mkBind x tp) m
 
 pushBind :: (MonadTCM tcm) => I.Bind -> tcm a -> tcm a
-pushBind b = local (withEnv (b:))
+pushBind b m = do x <- freshenName (I.bindName b)
+                  let b' = b { I.bindName = x }
+                  local (withEnv (b':)) m
 
 -- | Returns the number of parameters of an inductive type.
 --   Assumes that the global declaration exists and that is an inductive type
@@ -343,8 +365,11 @@ giveTerm :: (MonadTCM tcm) => I.MetaVar -> I.Term -> tcm ()
 giveTerm k t =
   modify $ \st -> st { stGoals = Map.adjust (\g -> g { I.goalTerm = Just t }) k (stGoals st) }
 
-getActiveGoal :: (MonadTCM tcm) => tcm (Maybe I.MetaVar)
-getActiveGoal = stActiveGoal <$> get
+getActiveGoal :: (MonadTCM tcm) => tcm (Maybe (I.MetaVar, I.Goal))
+getActiveGoal = do k <- stActiveGoal <$> get
+                   case k of
+                     Nothing -> return Nothing
+                     Just k  -> getGoal k >>= \(Just g) -> return (Just (k, g))
 
 getGoal :: (MonadTCM tcm) => I.MetaVar -> tcm (Maybe I.Goal)
 getGoal k = (Map.lookup k . stGoals) <$> get

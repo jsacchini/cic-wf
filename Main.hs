@@ -51,8 +51,8 @@ import TopLevel.TopLevel
 
 
 main :: IO ()
--- main = runTop mainLoop
-main = evalFile
+main = runTop mainLoop
+-- main = evalFile
 
 evalFile =
   do hSetBuffering stdout NoBuffering

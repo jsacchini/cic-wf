@@ -92,7 +92,7 @@ collectStarsBind _ _ = __IMPOSSIBLE__
 extractIndType :: (MonadTCM tcm) => Type -> tcm (Name, InductiveKind, StageVar)
 extractIndType tp =
   do
-    tp' <- whnf tp
+    tp' <- whnF tp
     let (a, n) = case tp' of
                    App (Ind a n) _ -> (a, n)
                    Ind a n         -> (a, n)
@@ -236,7 +236,7 @@ inferFix (A.FixExpr r I num f tp body) =
 checkFixType :: (MonadTCM tcm) => Bind -> tcm StageVar
 checkFixType (Bind _ _ tp Nothing) =
   do
-    tp' <- whnf tp
+    tp' <- whnF tp
     case tp' of
       App (Ind a _) _ -> case a of
                            Size (Svar i) -> return i

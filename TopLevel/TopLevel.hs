@@ -76,6 +76,12 @@ commands =
     (SetGoal . read)
     "show the remaining goals"
   , Spec
+    [":show"]
+    ""
+    none
+    (const Show)
+    "show current goal context"
+  , Spec
     [":help", ":?"]
     ""
     none
@@ -126,8 +132,11 @@ showPrompt = liftTop $ showPrompTCM
   where
     showPrompTCM = do g <- getActiveGoal
                       liftIO $ putStr $ goalPrompt g
-    goalPrompt (Just x) = "?" ++ show x ++ " > "
+    goalPrompt (Just (x, _)) = "?" ++ show x ++ " > "
     goalPrompt Nothing  = "> "
+
+ppGoal :: (MonadTCM tcm) => (MetaVar, Goal) -> tcm Doc
+ppGoal (k, g) = text "Goal " <> prettyPrintTCM k $$ prettyPrintTCM g
 
 evalCommand :: Command -> TopM ()
 evalCommand Quit = return ()
@@ -137,14 +146,20 @@ evalCommand ListGoals = do
                d <- vcat (map ppGoal gs)
                liftIO $ putStrLn (PP.render d)
   mainLoop
-  where
-    ppGoal :: (MonadTCM tcm) => (MetaVar, Goal) -> tcm Doc
-    ppGoal (k, g) = text "Goal " <> prettyPrintTCM k $$ prettyPrintTCM g
 evalCommand (SetGoal k) = do
   liftTop $ do g <- getGoal (toEnum k)
                case g of
-                 Just _ -> setActiveGoal (Just (toEnum k))
+                 Just g -> case goalTerm g of
+                             Nothing -> setActiveGoal (Just (toEnum k))
+                             Just _  -> liftIO $ putStrLn "Goal does not exists"
                  Nothing -> liftIO $ putStrLn "Goal does not exists"
+  mainLoop
+evalCommand Show = do
+  liftTop $ do ag <- getActiveGoal
+               case ag of
+                 Nothing -> liftIO $ putStrLn "No goal in focus"
+                 Just (k, g) -> do d <- ppGoal (k, g)
+                                   liftIO $ putStrLn (PP.render d)
   mainLoop
 evalCommand (NoCommand x) = do
   liftTop $ do
@@ -177,10 +192,9 @@ evalExpression :: (MonadTCM tcm) => String -> tcm ()
 evalExpression ss =
   case parse exprParser ss of
     ParseOk ts -> do
-      e <- scope ts
-      (Just k) <- getActiveGoal
-      (Just g) <- getGoal k
-      t <- withCtx (goalCtx g) (check e (goalType g))
+      (Just (k, g)) <- getActiveGoal
+      e <- withCtx (goalCtx g) $ scope ts
+      t <- withCtx (goalCtx g) $ check e (goalType g)
       giveTerm k t
       setActiveGoal Nothing
     ParseFail err -> liftIO $ putStrLn $ "Error (Main.hs): " ++ show err

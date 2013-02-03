@@ -63,8 +63,8 @@ subSort _        _        = return False
 
 subTypeSort :: (MonadTCM tcm) => Type -> Type -> tcm Bool
 subTypeSort t1 t2 = do
-  n1 <- normalForm t1
-  n2 <- normalForm t2
+  n1 <- nF t1
+  n2 <- nF t2
   case (n1, n2) of
     (Sort s1, Sort s2) -> s1 `subSort` s2
     (Pi ctx1 t1, Pi ctx2 t2) ->
@@ -82,15 +82,15 @@ subTypeSort t1 t2 = do
 
 subType :: (MonadTCM tcm) => Term -> Term -> tcm Bool
 subType t1 t2 = do
-  n1 <- normalForm t1
-  n2 <- normalForm t2
+  n1 <- nF t1
+  n2 <- nF t2
   n1 <~ n2
 
 
 conv :: (MonadTCM tcm) => Term -> Term -> tcm Bool
 conv t1 t2 = do
-  n1 <- normalForm t1
-  n2 <- normalForm t2
+  n1 <- nF t1
+  n2 <- nF t2
   n1 ~~ n2
 
 class Conversion a where
@@ -241,8 +241,8 @@ vsubt _ _ _ = __IMPOSSIBLE__
 -- -- This instance expects that the arguments are actually types
 -- instance Conversion Term where
 --   t1 <~ t2 =
---     do n1 <- normalForm t1
---        n2 <- normalForm t2
+--     do n1 <- nF t1
+--        n2 <- nF t2
 --        case (n1, n2) of
 --          (Pi ctx1 u1, Pi ctx2 u2) ->
 --            ctx2 <~  ctx1 `mAnd` pushCtx ctx2 (u1 <~ u2)
