@@ -152,10 +152,11 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
       listConstructors :: (MonadTCM tcm) => Name -> tcm [Name]
       listConstructors i = indConstr <$> getGlobal i
 
-      unfoldCtx ctx t = unfoldCtx_ 0 (bindings ctx) t
-      unfoldCtx_ k [] t = t
-      unfoldCtx_ k (Bind _ _ _ Nothing :ctx) t = unfoldCtx_ (k+1) ctx t
-      unfoldCtx_ k (Bind _ _ _ (Just u):ctx) t =
+      unfoldCtx ctx t = unfoldCtx_ 0 ctx t
+      unfoldCtx_ k CtxEmpty t = t
+      unfoldCtx_ k (CtxExtend (Bind _ _ _ Nothing) ctx) t =
+        unfoldCtx_ (k+1) ctx t
+      unfoldCtx_ k (CtxExtend (Bind _ _ _ (Just u)) ctx) t =
         unfoldCtx_ k ctx (subst (I.lift k 0 u) t)
 
 

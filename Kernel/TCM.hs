@@ -270,14 +270,11 @@ freshenName x | isNull x  = return $ noName
                 addSuffix x n = modifyName (++ show n) x
 
 freshenCtx :: (MonadTCM tcm) => I.Context -> tcm I.Context
-freshenCtx ctx = do ys <- freshenBinds (bindings ctx)
-                    return (ctxFromList ys)
-  where
-    freshenBinds []          = return []
-    freshenBinds (b:bs) = do y <- freshenName (I.bindName b)
-                             let b' = I.setName y b
-                             bs' <- pushBind b' (freshenBinds bs)
-                             return (b':bs')
+freshenCtx CtxEmpty = return CtxEmpty
+freshenCtx (CtxExtend b bs) = do y <- freshenName (I.bindName b)
+                                 let b' = b { I.bindName = y }
+                                 bs' <- pushBind b' (freshenCtx bs)
+                                 return $ CtxExtend b' bs'
 
 pushType :: (MonadTCM tcm) => I.Type -> tcm a -> tcm a
 pushType tp m = do x <- freshenName (mkName "x")
@@ -285,7 +282,7 @@ pushType tp m = do x <- freshenName (mkName "x")
 
 pushBind :: (MonadTCM tcm) => I.Bind -> tcm a -> tcm a
 pushBind b m = do x <- freshenName (I.bindName b)
-                  let b' = I.setName x b
+                  let b' = b { I.bindName = x }
                   local (flip EnvExtend b') m
 
 -- | Returns the number of parameters of an inductive type.

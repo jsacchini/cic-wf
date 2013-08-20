@@ -23,7 +23,7 @@
 -- | Abstract syntax returned by the parser.
 --
 --   We reuse the datatype 'Expr' and related for later phases (in particular,
---   for scope checking). Constructors 'Bound', 'Constr' are not used by
+--   for scope checking). Constructors 'Bound', 'Constr', 'Ind' are not used by
 --   the parser.
 
 module Syntax.Abstract where
@@ -40,6 +40,7 @@ import Syntax.Position
 import Syntax.Size
 
 import Utils.Pretty
+
 
 -- | The main data type of expressions
 data Expr =
@@ -86,9 +87,11 @@ unApp (App _ e1 e2) = (func, args ++ [e2])
   where (func, args) = unApp e1
 unApp e             = (e, [])
 
+
 mkArrow :: Expr -> Expr -> Expr
 mkArrow e1 e2 = Pi noRange (ctxSingle (Bind noRange [noName]
                                        (mkImplicit False (Just e1)))) e2
+
 
 unPi :: Expr -> (Context, Expr)
 unPi (Pi _ ctx e) = (ctx +: ctx', e')
@@ -100,29 +103,13 @@ unPi (Arrow _ e1 e2) = (ctx', e2')
     ctx' = mkBind (range e1) noName (isImplicit e1) (implicitValue e1) <| ctx
 unPi e = (ctxEmpty, e)
 
--- class HasExpr a where
---   expr :: a -> Maybe Expr
-
--- instance HasExpr Expr where
---   expr = Just
-
--- instance HasExpr (Maybe Expr) where
---   expr = id
-
--- instance HasExpr a => HasExpr (Named a) where
---   expr = expr . namedValue
-
--- instance HasExpr a => HasExpr (Implicit a) where
---   expr = expr . implicitValue
-
--- instance HasExpr a => HasExpr (Ranged a) where
---   expr = expr . rangedValue
 
 data LetBind = LetBind Range Name (Maybe Expr) Expr
                deriving(Show)
 
 
 -- | Universes
+
 data Sort
     = Type (Maybe Int)
     | Prop
@@ -133,15 +120,18 @@ mkProp, mkType :: Range -> Expr
 mkProp r = Sort r Prop
 mkType r = Sort r (Type Nothing)
 
+
 instance Show Sort where
   show Prop = "Prop"
   show (Type (Just n)) = "Type<" ++ show n ++ ">"
   show (Type Nothing)  = "Type"
 
+
 instance Pretty Sort where
   prettyPrint Prop = text "Prop"
   prettyPrint (Type (Just n)) = text "Type" <> prettyPrintIndex n
   prettyPrint (Type Nothing)  = text "Type"
+
 
 prettyPrintIndex :: Int -> Doc
 prettyPrintIndex = text . map num2Sub . show
@@ -151,22 +141,20 @@ prettyPrintIndex = text . map num2Sub . show
 
 
 -- | Binds and context
+
 data Bind = Bind Range [Name] (Implicit (Maybe Expr))
-            deriving (Eq)
                      -- ^ e.g. @(x y : A)@. Name list must be non-empty.
                      -- Nothing name means "_" (See parsing of identifiers)
 
-instance Show Bind where
-  show (Bind _ xs t) = concat [ show xs
-                              , " : "
-                              , show t]
+type Context = Ctx Bind
 
+instance Show Bind where
+  show b@(Bind _ xs t) =
+    showImplicit b (concat [ show xs, " : "
+                           , show (implicitValue t)])
 
 instance HasNames Bind where
   name (Bind _ x _) = name x
-
-instance HasRange Bind where
-  range (Bind r _ _) = r
 
 instance SetRange Bind where
   setRange r (Bind _ x y) = Bind r x y
@@ -175,72 +163,87 @@ instance HasImplicit Bind where
   isImplicit (Bind _ _ x) = isImplicit x
   modifyImplicit f (Bind r xs i) = Bind r xs (modifyImplicit f i)
 
--- instance HasExpr Bind where
---   expr (Bind _ _ x) = expr x
 
-type Context = Ctx Bind
+mkBind :: Range -> Name -> Bool -> Expr -> Bind
+mkBind r x i e = Bind r [x] (mkImplicit i (Just e))
 
 
 -- | Case expressions
 
-data CaseExpr = CaseExpr {
-  caseRange    :: Range,
-  caseArg      :: Expr,         -- ^ Argument of the case
-  caseAsName   :: Maybe Name,   -- ^ Bind for the argument in the return type
-  caseInName   :: Maybe CaseIn, -- ^ Specification of the subfamily of the
-                                -- inductive type of the argument
-  caseWhere    :: Maybe Subst,  -- ^ Substitution that unifies the indices of
-                                -- the argument and the subfamily given in the
-                                -- specification
-  caseReturn   :: Maybe Expr,   -- ^ Return type
-  caseBranches :: [Branch]
-  } deriving(Show)
+data CaseExpr =
+  CaseExpr { caseRange    :: Range
+           , caseArg      :: Expr
+             -- ^ Argument of the case
+           , caseAsName   :: Maybe Name
+             -- ^ Bind for the argument in the return type
+           , caseInName   :: Maybe CaseIn
+             -- ^ Specification of the subfamily of the
+             -- inductive type of the argument
+           , caseWhere    :: Maybe Subst
+             -- ^ Substitution that unifies the indices of
+             -- the argument and the subfamily given in the
+             -- specification
+           , caseReturn   :: Maybe Expr
+             -- ^ Return type
+           , caseBranches :: [Branch]
+           } deriving(Show)
 
 
-data CaseIn = CaseIn {
-  inRange :: Range,
-  inBind  :: Context,     -- ^ Variables free in the indices of the subfamily
-  inInd   :: Name,        -- ^ The inductive type of the case
-  inArgs  :: [Expr]       -- ^ The specification of the subfamily
-  } deriving(Show)
+data CaseIn =
+  CaseIn { inRange :: Range
+         , inBind  :: Context
+           -- ^ Variables free in the indices of the subfamily
+         , inInd   :: Name
+           -- ^ The inductive type of the case
+         , inArgs  :: [Expr]
+           -- ^ The specification of the subfamily
+         } deriving(Show)
 
 
-data Branch = Branch {
-  brRange     :: Range,
-  brName      :: Name,
-  brConstrId  :: Int,
-  brArgsNames :: [Name],
-  brBody      :: Expr,
-  brSubst     :: Maybe Subst
-  } deriving(Show)
+data Branch =
+  Branch { brRange     :: Range
+         , brName      :: Name
+         , brConstrId  :: Int
+         , brArgsNames :: [Name]
+         , brBody      :: Expr
+         , brSubst     :: Maybe Subst
+         } deriving(Show)
 
 
 newtype Subst = Subst { unSubst :: [Assign] }
                 deriving(Show)
 
+
+data Assign =
+  Assign { assgnRange :: Range
+         , assgnName :: Name
+         , assgnBound :: Int
+         , assgnExpr :: Expr
+         } deriving(Show)
+
+
 sortSubst :: Subst -> Subst
 sortSubst (Subst sg) = Subst $ sortBy (compare `on` assgnBound) sg
 
 
-data Assign = Assign {
-  assgnRange :: Range,
-  assgnName :: Name,
-  assgnBound :: Int,
-  assgnExpr :: Expr
-  } deriving(Show)
+instance HasNames CaseIn where
+  name = name . inBind
 
 
 -- | (Co-)fix expressions
-data FixExpr = FixExpr { fixRange :: Range
-                       , fixKind  :: InductiveKind
-                       , fixNum   :: Int -- only used for fixpoints (not cofixpoints)
-                       , fixName  :: Name
-                       , fixType  :: Expr
-                       , fixBody  :: Expr
-                       } deriving(Show)
+data FixExpr =
+  FixExpr { fixRange :: Range
+          , fixKind  :: InductiveKind
+          , fixNum   :: Int
+            -- ^ Recursive arguments; only used for fixpoints (not cofixpoints)
+          , fixName  :: Name
+          , fixType  :: Expr
+          , fixBody  :: Expr
+          } deriving(Show)
 
 
 -- | Global declarations
+
 data Declaration =
   Definition Range Name (Maybe Expr) Expr
   | Assumption Range Name Expr
@@ -251,83 +254,26 @@ data Declaration =
 
 
 -- | (Co-)inductive definitions
-data InductiveDef = InductiveDef
-                    { indName   :: Name
-                    , indKind   :: InductiveKind
-                    , indPars   :: Context
-                    , indPolarities :: [Polarity]
-                    , indType   :: Expr
-                    , indConstr :: [Constructor]
-                    }
+data InductiveDef =
+  InductiveDef { indName   :: Name
+               , indKind   :: InductiveKind
+               , indPars   :: Context
+               , indPolarities :: [Polarity]
+               , indType   :: Expr
+               , indConstr :: [Constructor]
+               }
 
 
 -- | Contructors
-data Constructor = Constructor
-                   { constrRange :: Range
-                   , constrName  :: Name
-                   , constrType  :: Expr
-                   }
-
-
--- | Equality on expressions is used by the reifier ("InternaltoAbstract")
---   to join consecutive binds with the same type.
-
-deriving instance Eq Expr
-deriving instance Eq FixExpr
-deriving instance Eq CaseExpr
-deriving instance Eq Branch
-deriving instance Eq Subst
-deriving instance Eq CaseIn
-deriving instance Eq Assign
-
--- instance Eq Expr where
---   (Sort _ s1) == (Sort _ s2) = s1 == s2
---   (Pi _ ctx1 t1) == (Pi _ ctx2 t2) = ctx1 == ctx2 &&
---                                      t1 == t2
---   (Bound _ x1 n1) == (Bound _ x2 n2) = x1 == x2 && n1 == n2
---   (Ident _ x1) == (Ident _ x2) = x1 == x2
---   (Lam _ ctx1 t1) == (Lam _ ctx2 t2) = ctx1 == ctx2 &&
---                                        t1 == t2
---   (App _ e1 e2) == (App _ e3 e4) = e1 == e3 && e2 == e4
---   (Ind _ a1 i1 ps1) == (Ind _ a2 i2 ps2) = a1 == a2 && i1 == i2 && ps1 == ps2
---   _ == _ = False
-
-
-mkBind :: Range -> Name -> Bool -> Expr -> Bind
-mkBind r x i e = Bind r [x] (mkImplicit i (Just e))
+data Constructor =
+  Constructor { constrRange :: Range
+              , constrName  :: Name
+              , constrType  :: Expr
+              }
 
 
 
-
-
-
-
-
-
-
-
-
--- TODO: print implicit
--- instance Show Bind where
---   show b = around $ concat [show (name b), " : ", show (expr b)]
---     where
---       around x | isImplicit b = "{" ++ x ++ "}"
---                | otherwise    = "(" ++ x ++ ")"
-
--- instance Eq Bind where
---   (==) b1 b2 = isImplicit b1 == isImplicit b2
---                && name b1 == name b2 && expr b1 == expr b2
-
-
--- | Instances of the class HasNames. This class is used for things that behave
---   like binds
-
--- instance HasNames Bind where
---   name = name . bindNames
-
-instance HasNames CaseIn where
-  name = name . inBind
-
+-- | HasRange and SetRange instances
 
 instance HasRange Expr where
   range (Ann r _ _) = r
@@ -346,6 +292,9 @@ instance HasRange Expr where
   range (Constr r _ _ _ _) = r
   range (Ind r _ _ _) = r
   range (Number r _) = r
+
+instance HasRange Bind where
+  range (Bind r _ _) = r
 
 instance HasRange CaseExpr where
   range = caseRange
@@ -392,14 +341,12 @@ instance HasRange Assign where
 -- | Instances of Show and Pretty. For bound variables, the pretty printer uses
 --   the name directly.
 --
---   Printing a parsed expression should give the same result modulo comments
---   and whitespaces. In particular, there is no effort in removing unused
---   variable names (e.g., changing @ forall x:A, B @ for @ A -> B @ if @ x @ is
---   not free in @ B @.
-
--- TODO: pretty print binds
--- instance Pretty Bind where
---   prettyPrint b = text (show b)
+--   Printing a parsed expression should give the same result modulo comments,
+--   whitespaces, precedence and parenthesis.
+--
+--   However, there is no effort in removing unused variable names (e.g.,
+--   changing @ forall x:A, B @ for @ A -> B @ if @ x @ is not free in @ B @.
+--   This is done in the conversion from the Internal syntax.
 
 -- TODO:
 --  * check precedences
@@ -417,17 +364,18 @@ instance Pretty Expr where
         where
           dom | isImplicit e1 = braces $ pp 0 (implicitValue e1)
               | otherwise     = pp 0 (implicitValue e1)
-      pp _ (Ident _ x) = prettyPrint x -- text $ "[" ++ x ++ "]"
-      pp _ (Bound _ x k) = prettyPrint x <> (text $ "[" ++ show k ++ "]") -- text "<" ++ x ">"
+      pp _ (Ident _ x) = prettyPrint x
+      pp _ (Bound _ x k) = prettyPrint x
+                           -- <> (text $ "[" ++ show k ++ "]")
       pp _ (Meta _ Nothing) = text "_"
       pp _ (Meta _ (Just k)) = text "?" <> int k
---      pp _ (EVar _ Nothing) = text "_"
---      pp _ (EVar _ (Just n)) = char '?' <> int n
       pp n (Lam _ bs e) = parensIf (n > 0) $ nestedLam bs e
       pp n (App _ e1 e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       pp n (Case c) = parensIf (n > 0) $ prettyPrint c
       pp n (Fix f) = parensIf (n > 0) $ prettyPrint f
-      pp _ (Ind _ a x es) = hcat ([prettyPrint x, langle, prettyPrint a, rangle] ++ map prettyPrint es)
+      pp _ (Ind _ a x es) = hcat ([ prettyPrint x
+                                  , langle, prettyPrint a, rangle]
+                                  ++ map prettyPrint es)
       pp n (Constr _ x _ pars args) =
         parensIf (n > 2) $ prettyPrint x <+> hsep (map (pp lvl) (pars ++ args))
           where lvl = if length pars + length args == 0 then 0 else 3
@@ -449,13 +397,21 @@ instance Pretty Expr where
           paren = ctxLen ctx > 1
           bs = bindings ctx
 
+
+instance Pretty Bind where
+  prettyPrint b@(Bind _ xs t) =
+    prettyImplicit b $ hsep [ hsep (map prettyPrint xs)
+                            , colon, prettyPrint (fromJust (implicitValue t))]
+
+
 prettyBind :: Bool -> Bind -> Doc
 prettyBind b (Bind _ xs t) =
-  around $ hsep [ hsep (map prettyPrint xs)
-                , colon, prettyPrint (fromJust (implicitValue t))]
+   around $ hsep [ hsep (map prettyPrint xs)
+          , colon, prettyPrint (fromJust (implicitValue t))]
     where
       around | b || isImplicit t = if isImplicit t then braces else parens
              | otherwise = id
+
 
 instance Pretty CaseExpr where
   prettyPrint (CaseExpr _ arg asn inn subst ret brs) =
@@ -478,6 +434,7 @@ instance Pretty CaseExpr where
         maybePPrint :: (Pretty a) => (a -> Doc) -> Maybe a -> Doc
         maybePPrint = maybe empty
 
+
 instance Pretty CaseIn where
   prettyPrint (CaseIn _ ctx i args) =
     hsep $ context ++ [prettyPrint i] ++ map prettyPrint args
@@ -485,15 +442,19 @@ instance Pretty CaseIn where
         bs = hsep (map (prettyBind True) (bindings ctx))
         context = [lbrack, bs, rbrack]
 
+
 instance Pretty Subst where
   prettyPrint = hsep . map (parens . prettyPrint) . unSubst
+
 
 instance Pretty Assign where
   prettyPrint (Assign _ x _ e) = hsep [prettyPrint x, defEq, prettyPrint e]
 
+
 instance Pretty Branch where
   prettyPrint (Branch _ x _ args body whSubst) =
     hsep $ prettyPrint x : map prettyPrint args ++ [implies, prettyPrint body]
+
 
 instance Pretty FixExpr where
   prettyPrint (FixExpr _ k n x tp body) =
@@ -502,6 +463,7 @@ instance Pretty FixExpr where
     $$ (nest 2 $ prettyPrint body)
     where ppName I   = text "fix" <> (prettyPrintIndex n)
           ppName CoI = text "cofix"
+
 
 instance Pretty Declaration where
   prettyPrint (Definition _ x (Just e1) e2) =
@@ -522,9 +484,6 @@ instance Pretty Declaration where
       ppMaybe (Just e) = colon <+> prettyPrint e
       ppMaybe Nothing = empty
 
--- instance Pretty (Maybe Expr) where
---   prettyPrint (Just e) = empty <+> colon <+> prettyPrint e
---   prettyPrint Nothing = empty
 
 instance Pretty InductiveDef where
   prettyPrint (InductiveDef x k ps pols e cs) =
@@ -536,21 +495,14 @@ instance Pretty InductiveDef where
                      I   -> "data"
                      CoI -> "codata"
 
--- instance Pretty Parameter where
---   prettyPrint (Parameter _ np tp) =
---     parens $ hsep [ ppNames, colon, prettyPrint tp ]
---       where ppNames = hsep $ map (\(n,p) -> prettyPrint n <+> prettyPrint p) np
 
 instance Pretty Constructor where
   prettyPrint c =
     hsep [prettyPrint (constrName c), colon, prettyPrint (constrType c)]
 
+
 instance Pretty [Declaration] where
   prettyPrint = vcat . map ((<> dot) . prettyPrint)
-
-
--- instance Pretty [Bind] where
---   prettyPrint xs = foldr (\x r -> prettyPrint x <> comma <> r) (text "") xs
 
 
 
@@ -584,8 +536,3 @@ instance Show InductiveDef where
 instance Show Constructor where
   show (Constructor _ name tp) =
     concat [" | ", show name, " : ", show tp]
-
--- instance Show Parameter where
---   show (Parameter _ pol tp) = concatMap showNamePol pol ++ ": " ++ show tp
---     where showNamePol (x, p) = show x ++ show p ++ " "
-

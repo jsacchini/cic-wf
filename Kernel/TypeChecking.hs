@@ -89,27 +89,22 @@ isSort t = do t' <- whnF t
 
 -- We assume that in the global environment, types are normalized
 
--- inferBinds :: (MonadTCM tcm) => [Ranged (Implicit (Bind a (Maybe Expr)))] => tcm (Context, sort)
--- inferBinds :: (MonadTCM tcm, HasImplicit a, HasNames a) => Bindings a b -> 
 inferBinds :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
-inferBinds ctx = inferList (bindings ctx)
-    where inferList [] = return (ctxEmpty, Prop)
-          inferList (b:bs) = do (ctx1, s1) <- inferBind b
-                                (ctx2, s2) <- pushCtx ctx1 $ inferList bs
-                                s' <- maxSort s1 s2
-                                return (ctx1 +: ctx2, s')
-          inferBind (A.Bind _ [] _) = __IMPOSSIBLE__ -- return (ctxEmpty, Prop)
-          inferBind (A.Bind _ (x:xs) e) = do
-            (t1, r1) <- infer (fromJust (implicitValue e))
-            s1 <- isSort r1
-            -- (ctx, s2) <- pushBind (mkImplBind x impl t1) $ inferBind (A.Bind rg xs e)
-            -- s' <- maxSort s1 s2
-            -- return (mkBind x t1 <| ctx, s')
-            return (ctxFromList (mkCtx (x:xs) t1 0), s1)
-              where
-                impl = isImplicit e
-                mkCtx [] _ _ = []
-                mkCtx (y:ys) t k = mkImplBind y impl (I.lift k 0 t) : mkCtx ys t (k + 1)
+inferBinds CtxEmpty = return (CtxEmpty, Prop)
+inferBinds (CtxExtend b bs) = do (ctx1, s1) <- inferBind b
+                                 (ctx2, s2) <- pushCtx ctx1 $ inferBinds bs
+                                 s' <- maxSort s1 s2
+                                 return (ctx1 +: ctx2, s')
+  where
+    inferBind (A.Bind _ [] _) = __IMPOSSIBLE__
+    inferBind (A.Bind _ (x:xs) e) = do
+      (t1, r1) <- infer (fromJust (implicitValue e))
+      s1 <- isSort r1
+      return (ctxFromList (mkCtx (x:xs) t1 0), s1)
+        where
+          impl = isImplicit e
+          mkCtx [] _ _ = []
+          mkCtx (y:ys) t k = mkImplBind y impl (I.lift k 0 t) : mkCtx ys t (k + 1)
 
 
 infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
@@ -135,7 +130,7 @@ infer exp@(A.Arrow _ e1 e2) = -- TODO: check arrows with implicit arguments
      (t2, r2) <- pushType t1 $ infer e2
      s2 <- pushType t1 $ isSort r2
      s' <- checkProd s1 s2
-     return (mkPi (ctxSingle (bindNoName t1)) t2, Sort s')
+     return (mkPi (ctxSingle (unNamed t1)) t2, Sort s')
 infer (A.Bound _ _ n) =
   do len <- localLength
      traceTCM 30 $ vcat [ text "infer Bound" <+> prettyPrintTCM n
@@ -281,12 +276,10 @@ check t u =   do traceTCM 30 $ (hsep [text "Checking type of", prettyPrintTCM t]
 
 
 checkList :: (MonadTCM tcm) => [A.Expr] -> Context -> tcm [Term]
-checkList es ctx = checkWithBinds es (bindings ctx)
-  where
-    checkWithBinds [] [] = return []
-    checkWithBinds (e:es) (b:c) =
-      do
-        t <- check e (bindType b)
-        ts <- checkList es (subst t (ctxFromList c))
-        return (t:ts)
-    checkWithBinds _ _ = __IMPOSSIBLE__
+checkList es CtxEmpty = return []
+checkList (e:es) (CtxExtend b bs) =
+  do
+    t <- check e (bindType b)
+    ts <- checkList es (subst t bs)
+    return (t:ts)
+checkList _ _ = __IMPOSSIBLE__

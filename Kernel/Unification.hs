@@ -213,25 +213,22 @@ applyDef ctx k t =
 --     needed to type-check 't' and 'Δ₁' is the rest
 strengthen :: MonadTCM tcm =>
               Context -> Term -> tcm (Context,Context,Permutation)
-strengthen ctx t = do (xs1, xs2, p) <- strBinds (bindings ctx) t
-                      return (ctxFromList xs1, ctxFromList xs2, p)
-  where
-    strBinds [] _ = return ([], [], Perm [])
-    strBinds (bind:ctx) t = do
-      (ctx0, ctx1, p) <- strBinds ctx t
-      -- traceTCM_ ["in strengthen\nbefore: ", show ctx0, "\nctx1er: ", show ctx1, "\nperm: ", show p, "\nputting in the middle: ", show bind]
+strengthen CtxEmpty _ = return (CtxEmpty, CtxEmpty, Perm [])
+strengthen (CtxExtend bnd ctx) t = do
+  (ctx0, ctx1, p) <- strengthen ctx t
+  -- traceTCM_ ["in strengthen\nbefore: ", show ctx0, "\nctx1er: ", show ctx1, "\nperm: ", show p, "\nputting in the middle: ", show bnd]
 
-      -- Let bind = (x : u) or (x := u1 : u2)
-      -- If x (bound var 0) is free in ctx0, or in 't' then we add bind to ctx0,
-      -- otherwise, we add bind to ctx1. In both cases, the permutation is adjusted
-      -- as needed
-      if isFree 0 ctx0 || isFree (length ctx0 + length ctx1) t
-        then return (bind : ctx0, ctx1, p ++> 1)
-        else do
-        -- We need to shift the vars in bind by ctx0;
-        -- adjust the position of bind in ctx1 (using permutation ctx1P); and
-        -- adjust the returned permutation by inserting bind in the correct place
-        let ctx1P = insertP 0 (idP (length ctx0))
-        -- traceTCM_ ["applying ctx1P :", show ctx1P, "\non ", show ctx1]
-        return (ctx0, lift (length ctx0) 0 bind : bindings (applyPerm ctx1P (ctxFromList ctx1)),
-                insertP (length ctx1) p)
+  -- Let bnd = (x : u) or (x := u1 : u2)
+  -- If x (bound var 0) is free in ctx0, or in 't' then we add bnd to ctx0,
+  -- otherwise, we add bnd to ctx1. In both cases, the permutation is adjusted
+  -- as needed
+  if isFree 0 ctx0 || isFree (ctxLen ctx0 + ctxLen ctx1) t
+    then return (CtxExtend bnd ctx0, ctx1, p ++> 1)
+    else do
+      -- We need to shift the vars in bnd by ctx0;
+      -- adjust the position of bnd in ctx1 (using permutation ctx1P); and
+      -- adjust the returned permutation by inserting bnd in the correct place
+      let ctx1P = insertP 0 (idP (ctxLen ctx0))
+      -- traceTCM_ ["applying ctx1P :", show ctx1P, "\non ", show ctx1]
+      return (ctx0, CtxExtend (lift (ctxLen ctx0) 0 bnd) (applyPerm ctx1P ctx1),
+              insertP (ctxLen ctx1) p)

@@ -38,6 +38,7 @@ import Utils.Pretty
 import Utils.Sized
 import Utils.Value
 
+
 ------------------------------------------------------------
 -- * Identifiers
 ------------------------------------------------------------
@@ -109,6 +110,7 @@ instance HasNames (Named a) where
 instance HasNames a => HasNames (Ranged a) where
   name = name . rangedValue
 
+
 ------------------------------------------------------------
 -- * Implicit
 ------------------------------------------------------------
@@ -156,6 +158,15 @@ instance HasRange a => HasRange (Implicit a) where
 instance HasValue (Implicit a) a where
   value = implicitValue
 
+showImplicit :: (HasImplicit a) => a -> String -> String
+showImplicit b x | isImplicit b = "{" ++ x ++ "}"
+                 | otherwise    = "(" ++ x ++ ")"
+
+prettyImplicit :: (HasImplicit a) => a -> Doc -> Doc
+prettyImplicit b | isImplicit b = braces
+                 | otherwise    = parens
+
+
 ------------------------------------------------------------
 -- * Polarities
 ------------------------------------------------------------
@@ -190,12 +201,14 @@ instance HasNames a => HasNames (Polarized a) where
 mkPolarized :: Polarity -> a -> Polarized a
 mkPolarized = Pol
 
+
 ------------------------------------------------------------
 -- * Inductive kind (data/codata, fixpoint/cofixpoint)
 ------------------------------------------------------------
 
 data InductiveKind = I | CoI
                    deriving(Eq,Show)
+
 
 ------------------------------------------------------------
 -- * Contexts (isomorphic to lists)
@@ -218,6 +231,10 @@ bindings (CtxExtend x xs) = x : bindings xs
 instance HasNames a => HasNames (Ctx a) where
   name CtxEmpty = []
   name (CtxExtend x xs) = name x ++ name xs
+
+instance HasRange a => HasRange (Ctx a) where
+  range CtxEmpty = noRange
+  range (CtxExtend x xs) = fuseRange (range x) (range xs)
 
 ctxIsNull :: Ctx a -> Bool
 ctxIsNull CtxEmpty = True
@@ -257,6 +274,7 @@ ctxSplitAt :: Int -> Ctx a -> (Ctx a, Ctx a)
 ctxSplitAt 0 ctx = (ctxEmpty, ctx)
 ctxSplitAt n (CtxExtend x xs) = (CtxExtend x l, r)
   where (l, r) = ctxSplitAt (n-1) xs
+
 
 ------------------------------------------------------------
 -- * Environment (isomorphic to snoc lists)

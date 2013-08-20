@@ -63,6 +63,7 @@ insertP k (Perm xs) = Perm $ (map liftF xs) ++ [k]
 
 
 -- | Applying a permutation
+
 class ApplyPerm a where
   applyPerm :: Permutation -> a -> a
 
@@ -82,6 +83,11 @@ instance ApplyPerm a => ApplyPerm (a, a) where
 instance ApplyPerm a => ApplyPerm [a] where
   applyPerm = map . applyPerm
 
+instance (ApplyPerm a, HasNames a) => ApplyPerm (Ctx a) where
+  applyPerm p CtxEmpty = CtxEmpty
+  applyPerm p (CtxExtend x xs) =
+    CtxExtend (applyPerm p x) (applyPerm (length (name x) <++ p) xs)
+
 
 ------------------------------------------------------------
 -- instance of ApplyPerm to Intenal syntax
@@ -91,15 +97,6 @@ instance ApplyPerm Bind where
   applyPerm p b = b { bindType = applyPerm p (bindType b)
                     , bindDef  = applyPerm p (bindDef b) }
 
-instance (ApplyPerm a, HasNames a) => ApplyPerm (Ctx a) where
-  applyPerm p ctx = ctxFromList (apBinds p (bindings ctx))
-    where
-      apBinds p [] = []
-      apBinds p (x:xs) = applyPerm p x : apBinds (length (name x) <++ p) xs
-
--- applyPermCtx :: Permutation -> Context -> Context
--- applyPermCtx p [] = []
--- applyPermCtx p (b:c) = applyPerm p b : applyPermCtx (1 <++ p) c
 
 instance ApplyPerm Term where
   applyPerm _ t@(Sort _) = t

@@ -140,15 +140,10 @@ instance NormalForm Bind where
 
 
 instance NormalForm Context where
-  normalForm ctx = do xs <- nfBinds (bindings ctx)
-                      return $ ctxFromList xs
-    where
-      nfBinds [] = return []
-      nfBinds (b:bs) =
-        do
-          b' <- normalForm b
-          bs' <- pushBind b' $ nfBinds bs
-          return (b':bs')
+  normalForm CtxEmpty = return CtxEmpty
+  normalForm (CtxExtend x xs) = do x' <- normalForm x
+                                   xs' <- pushBind x' $ normalForm xs
+                                   return $ CtxExtend x' xs'
 
 
 instance NormalForm Term where
@@ -271,11 +266,10 @@ instance NormalForm Branch where
 --
 --   The number of beta reductions applied is min (length ctx, length args)
 betaRed :: Context -> Term -> [Term] -> Term
-betaRed ctx body args = betaBinds (bindings ctx) body args
-  where
-    betaBinds [] body args = mkApp body args
-    betaBinds bs body [] = mkLam (ctxFromList bs) body
-    betaBinds (b:bs) body (a:as) = betaRed (subst a (ctxFromList bs)) (substN (length bs) a body) as
+betaRed CtxEmpty body args = mkApp body args
+betaRed ctx body [] = mkLam ctx body
+betaRed (CtxExtend b bs) body (a:as) =
+  betaRed (subst a bs) (substN (ctxLen bs) a body) as
 -- betaRed (Consctx (Bind _ _ _ (Just _)) _) _ _ = __IMPOSSIBLE__
 
 
@@ -338,16 +332,11 @@ instance MetaExp FixTerm where
 
 
 instance MetaExp Context where
-  metaexp ctx = do xs <- metaexpBinds (bindings ctx)
-                   return (ctxFromList xs)
-    where
-      metaexpBinds [] = return []
-      metaexpBinds (b:bs) =
-        do
-          t <- metaexp (bindType b)
-          let b' = setBindType t b
-          bs' <- metaexpBinds bs
-          return $ b':bs'
+  metaexp CtxEmpty = return CtxEmpty
+  metaexp (CtxExtend b bs) = do t <- metaexp (bindType b)
+                                let b' = b { bindType = t }
+                                bs' <- metaexp bs
+                                return $ CtxExtend b' bs'
 
 
 instance MetaExp CaseTerm where

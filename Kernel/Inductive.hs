@@ -97,13 +97,12 @@ inferParam (A.Bind _ names tp) | isJust (implicitValue tp) =
 
 
 inferParamList :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
-inferParamList ctx = paramBinds (bindings ctx)
-  where
-    paramBinds [] = return (ctxEmpty, Prop)
-    paramBinds (p:ps) = do (ctx1, s1) <- inferParam p
-                           (ctx2, s2) <- pushCtx ctx1 $ paramBinds ps
-                           s' <- maxSort s1 s2
-                           return (ctx1 +: ctx2, s')
+inferParamList CtxEmpty = return (CtxEmpty, Prop)
+inferParamList (CtxExtend p ps) =
+  do (ctx1, s1) <- inferParam p
+     (ctx2, s2) <- pushCtx ctx1 $ inferParamList ps
+     s' <- maxSort s1 s2
+     return (ctx1 +: ctx2, s')
 
 
 checkConstr :: (MonadTCM tcm) =>  A.Constructor -> (Name, Context, Context, Sort) -> tcm (Named Global)
@@ -166,10 +165,10 @@ isConstrType nmConstr nmInd numPars tp =
 -- | Checks that the inductive type var (Bound var 0) appears strictly positive
 --   in the arguments of a constructor. Returns the list of recursive arguments.
 checkStrictPos :: (MonadTCM tcm) => Name -> Context -> tcm [Int]
-checkStrictPos nmConstr ctx = cSP 0 (bindings ctx)
+checkStrictPos nmConstr ctx = cSP 0 ctx
   where
-    cSP _ [] = return []
-    cSP k ((b@(Bind x _ t Nothing)):ctx)
+    cSP _ CtxEmpty = return []
+    cSP k (CtxExtend (b@(Bind x _ t Nothing)) ctx)
       | not (isFree k t) = pushBind b $ cSP (k + 1) ctx
       | otherwise = do
         -- traceTCM_ ["considering arg ", show k, "  -->  ", show (Bind x t)]

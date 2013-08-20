@@ -17,8 +17,7 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, UndecidableInstances,
-    OverlappingInstances
+{-# LANGUAGE FlexibleInstances, TypeSynonymInstances
   #-}
 
 module Kernel.PrettyTCM where
@@ -107,9 +106,6 @@ class PrettyTCM a where
   prettyPrintTCM = prettyPrintDecTCM 0
   prettyPrintDecTCM = const prettyPrintTCM
 
--- instance MP.Pretty a => PrettyTCM a where
---   prettyPrintTCM = return . MP.prettyPrint
-
 printTCM :: (MonadTCM tcm) => tcm Doc -> tcm ()
 printTCM d = do d' <- d
                 liftIO $ putStr $ PP.render d'
@@ -173,25 +169,17 @@ instance PrettyTCM Bind where
                                return $ Just x'
 
 instance PrettyTCM Context where
-  prettyPrintTCM ctx = do ds <- prettyCtx (bindings ctx)
+  prettyPrintTCM ctx = do ds <- prettyCtx ctx
                           return $ PP.fsep (PP.punctuate MP.comma ds)
     where
-      prettyCtx [] = return []
-      prettyCtx (b:bs) = do d <- prettyPrintTCM b
-                            ds <- pushBind b $ prettyCtx bs
-                            return (d:ds)
+      prettyCtx CtxEmpty = return []
+      prettyCtx (CtxExtend b bs) = do d <- prettyPrintTCM b
+                                      ds <- pushBind b $ prettyCtx bs
+                                      return (d:ds)
 
 instance PrettyTCM CaseIn where
   prettyPrintTCM c = do c' <- reify c
                         return $ MP.prettyPrint c'
-
--- instance (Reify a b, Show a, MP.Pretty b) => PrettyTCM a where
---   prettyPrintTCM x = do traceTCM 99 $ hsep [text "prettyPrintTCM term",
---                                             text ("reifying " ++ show x)]
---                         x' <- reify x
---                         traceTCM 99 $ hsep [text "reified ",
---                                             return (MP.prettyPrint x')]
---                         return (MP.prettyPrint x')
 
 instance PrettyTCM a => PrettyTCM [a] where
   prettyPrintTCM = brackets . hcat . punctuate (text ", ") . map prettyPrintTCM
@@ -208,9 +196,6 @@ instance PrettyTCM SortVar where
 
 instance PrettyTCM MetaVar where
   prettyPrintTCM = return . MP.prettyPrint
-
--- instance PrettyTCM Context where
---   prettyPrintTCM x = reify x >>= return . MP.prettyPrint
 
 instance PrettyTCM A.Expr where
   prettyPrintTCM = return . MP.prettyPrint

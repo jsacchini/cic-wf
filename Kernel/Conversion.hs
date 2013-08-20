@@ -112,7 +112,7 @@ instance Conversion a => Conversion (Maybe a) where
   Nothing ~~ Nothing = return True
   Just c1 ~~ Just c2 = c1 ~~ c2
   _ ~~ _ = return False
-  
+
 instance Conversion a => Conversion [a] where
   [] <~ [] = return True
   (t1:ts1) <~ (t2:ts2) = t1 <~ t2 `mAnd` ts1 <~ ts2
@@ -187,28 +187,18 @@ instance Conversion FixTerm where
   (<~) = (~~)
 
 instance Conversion Bind where
-  (<~) b1 b2 = bindType b1 <~ bindType b2 -- `mAnd` bindDef b1 ~~ bindDef b2
+  (<~) b1 b2 = bindType b1 <~ bindType b2 `mAnd` bindDef b1 ~~ bindDef b2
 
-  (~~) b1 b2 = bindType b1 ~~ bindType b2 -- `mAnd` bindDef b1 ~~ bindDef b2
-
--- conversionCtx :: (MonadTCM tcm) => Context -> Context -> tcm Bool
--- conversionCtx [] [] = return True
--- conversionCtx (b1:c1) (b2:c2) = b1 ~~ b2 `mAnd` pushBind b1 (conversionCtx c1 c2)
-
--- subCtx :: (MonadTCM tcm) => Context -> Context -> tcm Bool
--- subCtx [] [] = return True
--- subCtx (b1:c1) (b2:c2) = b1 <~ b2 `mAnd` pushBind b1 (subCtx c1 c2)
+  (~~) b1 b2 = bindType b1 ~~ bindType b2 `mAnd` bindDef b1 ~~ bindDef b2
 
 instance Conversion Context where
-  (<~) ctx1 ctx2 = subBinds (bindings ctx1) (bindings ctx2)
-    where
-      subBinds [] [] = return True
-      subBinds (b1:c1) (b2:c2) = b1 <~ b2 `mAnd` pushBind b1 (subBinds c1 c2)
+  (<~) CtxEmpty CtxEmpty = return True
+  (<~) (CtxExtend b1 c1) (CtxExtend b2 c2) =
+    b1 <~ b2 `mAnd` pushBind b1 (c1 <~ c2)
 
-  (~~) ctx1 ctx2 = convBinds (bindings ctx1) (bindings ctx2)
-    where
-      convBinds [] [] = return True
-      convBinds (b1:c1) (b2:c2) = b1 ~~ b2 `mAnd` pushBind b1 (convBinds c1 c2)
+  (~~) CtxEmpty CtxEmpty = return True
+  (~~) (CtxExtend b1 c1) (CtxExtend b2 c2) =
+    b1 ~~ b2 `mAnd` pushBind b1 (c1 ~~ c2)
 
 
 instance Conversion CaseTerm where
@@ -255,50 +245,3 @@ vsubt :: (MonadTCM tcm, Conversion a) => [Polarity] -> [a] -> [a] -> tcm Bool
 vsubt [] [] [] = return True
 vsubt (p:ps) (x:xs) (y:ys) = psubt p x y `mAnd` vsubt ps xs ys
 vsubt _ _ _ = __IMPOSSIBLE__
-
-
--- -- This instance expects that the arguments are actually types
--- instance Conversion Term where
---   t1 <~ t2 =
---     do n1 <- nF t1
---        n2 <- nF t2
---        case (n1, n2) of
---          (Pi ctx1 u1, Pi ctx2 u2) ->
---            ctx2 <~  ctx1 `mAnd` pushCtx ctx2 (u1 <~ u2)
---          -- TODO: check polarity of parameters
---          (App (Ind a1 x1) ts1, App (Ind a2 x2) ts2)
---            | x1 /= x2 -> return False
---            | otherwise -> do
---              Inductive k ctxPars pols _ _ _ <- getGlobal x1
---              let (pars1, args1) = splitAt (size ctxPars) ts1
---              let (pars2, args2) = splitAt (size ctxPars) ts2
---              -- traceTCM_ ["adding ", show a1, " <<= ", show a2]
---              case k of
---                I   -> addStageConstraints (a1 <<= a2)
---                CoI -> addStageConstraints (a2 <<= a1)
---              vsubt pols pars1 pars2 `mAnd` args1 ~~ args2
-
---          (Ind a1 x1, Ind a2 x2)
---            | x1 /= x2 -> return False
---            | otherwise -> do
---              -- traceTCM_ ["adding ", show a1, " <<= ", show a2]
---              ind <- getGlobal x1
---              case indKind ind of
---                I   -> addStageConstraints (a1 <<= a2)
---                CoI -> addStageConstraints (a2 <<= a1)
---              return True
-
---          _ -> n1 ~~ n2
-
--- instance Conversion Bind where
---   (<~) (Bind _ t1) (Bind _ t2) = (<~) t1 t2
---   (<~) (LocalDef _ t1 t2) (LocalDef _ t3 t4) = t1 ~~ t3 `mAnd` t2 <~ t4
---   (<~) _ _ = return False
-
--- instance Conversion Context  where
---   (<~) Empctx Empctx = return True
---   (<~) (Consctx b1 c1) (Consctx b2 c2) =
---     b1 <~ b2 `mAnd` pushBind b1 (c1 <~ c2)
---   (<~) _ _ = return False
-
-

@@ -58,7 +58,7 @@ collectStars :: (MonadTCM tcm) => A.Expr -> Type -> tcm [StageVar]
 collectStars e t =
   do
     rs2 <- collectStarsNonPi e' t'
-    rs1 <- collectStarsBind (bindings ctx1) (bindings ctx2)
+    rs1 <- collectStarsBind ctx1 ctx2
     return $ rs1 ++ rs2
   where
     (ctx1, e') = A.unPi e
@@ -91,12 +91,12 @@ collectStarsNonPi e               (App (Ind (Size a2) n2) args2) = do
 
 collectStarsNonPi _ _ = return []
 
-collectStarsBind :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> tcm [StageVar]
-collectStarsBind []                     []      = return []
-collectStarsBind (A.Bind r [] e:bs)     ctx     = collectStarsBind bs ctx
-collectStarsBind (A.Bind r (x:xs) e:bs) (t:ctx) = do
+collectStarsBind :: (MonadTCM tcm) => A.Context -> Context -> tcm [StageVar]
+collectStarsBind CtxEmpty CtxEmpty = return []
+collectStarsBind (CtxExtend (A.Bind r [] e) bs) ctx = collectStarsBind bs ctx
+collectStarsBind (CtxExtend (A.Bind r (x:xs) e) bs) (CtxExtend t ctx)  = do
   rs1 <- collectStars (fromJust (implicitValue e)) (bindType t)
-  rs2 <- collectStarsBind (A.Bind r xs e:bs) ctx
+  rs2 <- collectStarsBind (CtxExtend (A.Bind r xs e) bs) ctx
   return $ rs1 ++ rs2
 collectStarsBind _ _ = __IMPOSSIBLE__
 

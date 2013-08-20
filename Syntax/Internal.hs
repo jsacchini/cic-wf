@@ -40,6 +40,7 @@ import Utils.Misc
 import Utils.Sized
 import Utils.Pretty
 
+
 data Term
     = Sort Sort
     | Pi Context Term
@@ -55,102 +56,46 @@ data Term
 
 type Type = Term
 
-data Bind =
-  Bind { bindName :: Name
-       , bindImplicit :: Bool
-       , bindType :: Type
-       , bindDef :: (Maybe Term)
-       }
 
-instance HasImplicit Bind where
-  isImplicit = bindImplicit
-  modifyImplicit f (Bind x b t u) = Bind x (f b) t u
-
-instance HasNames Bind where
-  name x = [bindName x]
-
-setName :: Name -> Bind -> Bind
-setName x b = b { bindName = x }
-
-setBindType :: Type -> Bind -> Bind
-setBindType t b = b { bindType = t }
-
-type Context = Ctx Bind
-type Environment = Env Bind
-
-mkBind :: Name -> Type -> Bind
-mkBind x t = Bind x False t Nothing
-
-mkImplBind :: Name -> Bool -> Type -> Bind
-mkImplBind x b t = Bind x b t Nothing
-
-unNamed :: Type -> Bind
-unNamed t = Bind noName False t Nothing
-
-data CaseTerm = CaseTerm {
-  caseArg :: Term,
-  caseNmInd :: Name,
-  caseAsName :: Maybe Name,
-  caseIn :: Maybe CaseIn,
-  caseTpRet :: Type,
-  caseBranches :: [Branch]
-  } --deriving(Eq)
-
-data CaseIn = CaseIn {
-  inBind :: Context,
-  inInd :: Name,
-  inArgs :: [Term]
-  } --deriving(Eq)
-
-instance Sized CaseIn where
-  size = size . inBind
-
-data Branch = Branch {
-  brName :: Name,
-  brConstrId :: Int,
-  brArgNames :: [Name],
-  brBody :: Term,
-  brSubst :: Maybe Subst
-  } --deriving(Eq)
-
-data FixTerm =
-  FixTerm { fixKind :: InductiveKind
-          , fixNum :: Int
-          , fixName :: Name
-          , fixArgs :: Context
-          , fixType :: Type
-          , fixBody :: Term
-          }
+mkPi :: Context -> Term -> Term
+mkPi ctx t | ctxIsNull ctx = t
+           | otherwise = case t of
+                           Pi ctx2 t' -> Pi (ctx +: ctx2) t'
+                           _          -> Pi ctx t
 
 
-newtype SortVar = SortVar Int
-                  deriving(Show, Eq, Enum, Num)
-
-instance Pretty SortVar where
-  prettyPrint (SortVar k) = text "u" <> int k
-
-data Sort = Prop
-          | Type SortVar
-          deriving(Show)
-
-instance Eq Sort where
-  s1 == s2 = True -- TODO: fix this. Check typechecking of constructors
+unPi :: Term -> (Context, Term)
+unPi (Pi c t) = (c +: c', t')
+  where (c', t') = unPi t
+unPi t = (ctxEmpty, t)
 
 
-renameCtx :: Context -> [Name] -> Context
-renameCtx ctx xs = ctxFromList (renameBinds (bindings ctx) xs)
-  where
-    renameBinds [] [] = []
-    renameBinds (b:bs) (x:xs) = b { bindName = x } : renameBinds bs xs
+mkApp :: Term -> [Term] -> Term
+mkApp (App t as) as'    = App t (as ++ as')
+mkApp t          []     = t
+mkApp t          (a:as) = App t (a:as)
 
--- | Goals
-data Goal = Goal { goalEnv  :: Environment
-                 , goalType :: Type
-                 , goalTerm :: Maybe Term
-                 } deriving(Show)
 
-mkGoal :: Environment -> Type -> Goal
-mkGoal env tp = Goal env tp Nothing
+unApp :: Term -> (Term, [Term])
+unApp (App t ts) = (func, args++ts)
+  where (func, args) = unApp t
+unApp t = (t, [])
+
+
+mkLam :: Context -> Term -> Term
+mkLam ctx t | ctxIsNull ctx = t
+            | otherwise = case t of
+                            Lam ctx2 t' -> Lam (ctx +: ctx2) t'
+                            _           -> Lam ctx t
+
+
+unLam :: Term -> (Context, Term)
+unLam (Lam c t) = (c +: c', t')
+  where (c', t') = unLam t
+unLam t = (ctxEmpty, t)
+
+
+-- | Meta variables
 
 newtype MetaVar = MetaVar Int
                   deriving(Eq, Enum, Num, Ord)
@@ -161,70 +106,153 @@ instance Show MetaVar where
 instance Pretty MetaVar where
   prettyPrint (MetaVar k) = text "?" <> int k
 
+
+-- | Universes
+
+data Sort = Prop
+          | Type SortVar
+          deriving(Show)
+
+newtype SortVar = SortVar Int
+                  deriving(Show, Eq, Enum, Num)
+
+
+instance Pretty SortVar where
+  prettyPrint (SortVar k) = text "u" <> int k
+
+
+instance Eq Sort where
+  s1 == s2 = True -- TODO: fix this. Check typechecking of constructors
+
+
+-- | Binds, contexts, and environments
+
+data Bind =
+  Bind { bindName :: Name
+       , bindImplicit :: Bool
+       , bindType :: Type
+       , bindDef :: (Maybe Term)
+       }
+
+type Context = Ctx Bind
+
+type Environment = Env Bind
+
+
+instance HasImplicit Bind where
+  isImplicit = bindImplicit
+  modifyImplicit f (Bind x b t u) = Bind x (f b) t u
+
+instance HasNames Bind where
+  name x = [bindName x]
+
+
+mkBind :: Name -> Type -> Bind
+mkBind x t = Bind x False t Nothing
+
+
+mkImplBind :: Name -> Bool -> Type -> Bind
+mkImplBind x b t = Bind x b t Nothing
+
+
+unNamed :: Type -> Bind
+unNamed t = Bind noName False t Nothing
+
+
+renameCtx :: Context -> [Name] -> Context
+renameCtx CtxEmpty [] = CtxEmpty
+renameCtx (CtxExtend b bs) (x:xs) =
+  CtxExtend (b { bindName = x}) (renameCtx bs xs)
+
+
+-- | Case expressions
+
+data CaseTerm =
+  CaseTerm { caseArg :: Term
+           , caseNmInd :: Name
+           , caseAsName :: Maybe Name
+           , caseIn :: Maybe CaseIn
+           , caseTpRet :: Type
+           , caseBranches :: [Branch]
+           } --deriving(Eq)
+
+
+data CaseIn =
+  CaseIn { inBind :: Context
+         , inInd :: Name
+         , inArgs :: [Term]
+         } --deriving(Eq)
+
+
+data Branch =
+  Branch { brName :: Name
+         , brConstrId :: Int
+         , brArgNames :: [Name]
+         , brBody :: Term
+         , brSubst :: Maybe Subst
+         } --deriving(Eq)
+
+
 newtype Subst = Subst { unSubst :: [(Int, Term)] }
                 deriving(Show)--,Eq)
 
-mkPi :: Context -> Term -> Term
-mkPi ctx t | ctxIsNull ctx = t
-           | otherwise = case t of
-                           Pi ctx2 t' -> Pi (ctx +: ctx2) t'
-                           _          -> Pi ctx t
 
-unPi :: Term -> (Context, Term)
-unPi (Pi c t) = (c +: c', t')
-  where (c', t') = unPi t
-unPi t = (ctxEmpty, t)
+instance HasNames CaseIn where
+  name = name . inBind
 
-mkApp :: Term -> [Term] -> Term
-mkApp (App t as) as'    = App t (as ++ as')
-mkApp t          []     = t
-mkApp t          (a:as) = App t (a:as)
-
-unApp :: Term -> (Term, [Term])
-unApp (App t ts) = (func, args++ts)
-  where (func, args) = unApp t
-unApp t = (t, [])
-
-mkLam :: Context -> Term -> Term
-mkLam ctx t | ctxIsNull ctx = t
-            | otherwise = case t of
-                            Lam ctx2 t' -> Lam (ctx +: ctx2) t'
-                            _           -> Lam ctx t
-
-unLam :: Term -> (Context, Term)
-unLam (Lam c t) = (c +: c', t')
-  where (c', t') = unLam t
-unLam t = (ctxEmpty, t)
-
--- flatten :: Term -> Term
--- flatten (Pi bs t) = Pi (bs ++ bs') t'
---                     where (bs', t') = unPi t
--- flatten (Lam bs t) = Lam (bs ++ bs') t'
---                      where (bs', t') = unLam t
--- flatten (App t ts) = App func (args ++ ts)
---                      where (func, args) = findArgs t
--- flatten t = t
+instance Sized CaseIn where
+  size = size . inBind
 
 
-data Global = Definition { defType :: Type
-                         , defTerm :: Term }
-            | Assumption { assumeType :: Type }
-            | Inductive { indKind :: InductiveKind
-                        , indPars :: Context
-                        , indPol :: [Polarity]
-                        , indIndices :: Context
-                        , indSort :: Sort
-                        , indConstr :: [Name]
-                        }
-            | Constructor { constrInd :: Name
-                          , constrId :: Int   -- id
-                          , constrPars :: Context -- parameters, should be the same as
-                                                  -- the indutive type
-                          , constrArgs :: Context -- arguments
-                          , constrRec :: [Int]    -- indicates the recursive arguments
-                          , constrIndices :: [Term]
-                          }
-            deriving(Show)
+-- | (Co-)fix expressions
+data FixTerm =
+  FixTerm { fixKind :: InductiveKind
+          , fixNum :: Int
+          , fixName :: Name
+          , fixArgs :: Context
+          , fixType :: Type
+          , fixBody :: Term
+          }
+
+
+-- | Goals
+
+data Goal = Goal { goalEnv  :: Environment
+                 , goalType :: Type
+                 , goalTerm :: Maybe Term
+                 } deriving(Show)
+
+mkGoal :: Environment -> Type -> Goal
+mkGoal env tp = Goal env tp Nothing
+
+
+-- | Global declarations
+
+data Global
+  = Definition { defType :: Type
+               , defTerm :: Term
+               }
+  | Assumption { assumeType :: Type }
+  | Inductive { indKind :: InductiveKind
+              , indPars :: Context
+              , indPol :: [Polarity]
+              , indIndices :: Context
+              , indSort :: Sort
+              , indConstr :: [Name]
+              }
+  | Constructor { constrInd :: Name
+                , constrId :: Int
+                  -- ^ id
+                , constrPars :: Context
+                  -- ^ Parameters, should be the same as the indutive type
+                , constrArgs :: Context
+                  -- ^ Arguments
+                , constrRec :: [Int]
+                  -- ^ Indicates the positions of recursive arguments
+                , constrIndices :: [Term]
+                  -- ^ Indices in the return type
+                }
+  deriving(Show)
 
 isConstr :: Global -> Bool
 isConstr (Constructor {}) = True
@@ -248,22 +276,6 @@ isConstr _                = False
 --     n1 == n2 && x1 == x2 && c1 == c2 && tp1 == tp2 && body1 == body2
 --   (Case c1) == (Case c2) = c1 == c2
 --   (Ind a1 i1) == (Ind a2 i2) = i1 == i2
---   _ == _ = False
-
-
-
-
-
-instance HasNames CaseIn where
-  name = name . inBind
-
-
-bindNoName :: Type -> Bind
-bindNoName t = Bind noName False t Nothing
-
--- instance Eq Bind where
---   (Bind _ t1) == (Bind _ t2) = t1 == t2
---   (LocalDef _ t1 t2) == (LocalDef _ t3 t4) = t1 == t3 && t2 == t4
 --   _ == _ = False
 
 
@@ -392,6 +404,7 @@ instance HasAnnot Global where
     listAnnot pars ++ listAnnot args ++ listAnnot indices
 
 
+
 ------------------------------------------------------------
 -- * Operations on de Bruijn indices
 ------------------------------------------------------------
@@ -426,10 +439,8 @@ instance Lift Bind where
   lift k n (Bind x b t u) = Bind x b (lift k n t) (lift k n u)
 
 instance Lift a => Lift (Ctx a) where
-  lift k n ctx = ctxFromList $ liftBinds k n (bindings ctx)
-    where
-      liftBinds k n [] = []
-      liftBinds k n (x:xs) = lift k n x : liftBinds k (n + 1) xs
+  lift k n CtxEmpty = CtxEmpty
+  lift k n (CtxExtend x xs) = CtxExtend (lift k n x) (lift k (n+1) xs)
 
 instance Lift Term where
   lift _ _ t@(Sort _) = t
@@ -492,10 +503,8 @@ instance SubstTerm Bind where
   substN n r (Bind x b t u) = Bind x b (substN n r t) (substN n r u)
 
 instance SubstTerm a => SubstTerm (Ctx a) where
-  substN n r ctx = ctxFromList (substBinds n r (bindings ctx))
-    where
-      substBinds _ _ [] = []
-      substBinds n r (x:xs) = substN n r x : substBinds (n+1) r xs
+  substN n r CtxEmpty = CtxEmpty
+  substN n r (CtxExtend x xs) = CtxExtend (substN n r x) (substN (n+1) r xs)
 
 instance SubstTerm Term where
   substN _ _ t@(Sort _) = t
@@ -632,20 +641,11 @@ instance IsFree Bind where
   fvN k b = fvN k (bindType b) ++ fvN k (bindDef b)
 
 instance IsFree a => IsFree (Ctx a) where
-  isFree k ctx = isFreeBinds k (bindings ctx)
-    where
-      isFreeBinds k [] = False
-      isFreeBinds k (x:xs) = isFree k x || isFreeBinds (k + 1) xs
+  isFree k CtxEmpty = False
+  isFree k (CtxExtend x xs) = isFree k x || isFree (k+1) xs
 
-  fvN k ctx = fvNBinds k (bindings ctx)
-    where
-      fvNBinds k [] = []
-      fvNBinds k (x:xs) = fvN k x ++ fvNBinds (k + 1) xs
-
-isFreeList :: Int -> [Term] -> Bool
-isFreeList k = foldrAcc (\n t r -> isFree n t || r) (\n _ -> n + 1) k False
-
-
+  fvN k CtxEmpty = []
+  fvN k (CtxExtend x xs) = fvN k x ++ fvN (k+1) xs
 
 
 
@@ -668,13 +668,10 @@ deriving instance Show Branch
 --   show (Consctx b c) = show b ++ show c
 
 instance Show Bind where
-  show b = around $ concat [ show (bindName b)
-                           , showDef (bindDef b)
-                           , show (bindType b)]
+  show b = showImplicit b $ concat [ show (bindName b)
+                                   , showDef (bindDef b)
+                                   , show (bindType b)]
     where
-      around x = if isImplicit b
-                 then "{" ++ x ++ "}"
-                 else "(" ++ x ++ ")"
       showDef Nothing = ""
       showDef (Just x) = " := " ++ show x
 

@@ -149,13 +149,10 @@ instance Scope A.Expr where
 
 
 instance (Scope a, HasNames a) => Scope (Ctx a) where
-  scope ctx = do xs <- scopeBinds (bindings ctx)
-                 return (ctxFromList xs)
-    where
-      scopeBinds [] = return []
-      scopeBinds (x : xs) = do y <- scope x
-                               ys <- fakeBinds x $ scopeBinds xs
-                               return (y : ys)
+  scope CtxEmpty = return CtxEmpty
+  scope (CtxExtend x xs) = do y <- scope x
+                              ys <- fakeBinds x $ scope xs
+                              return $ CtxExtend y ys
 
 
 instance Scope A.Bind where
