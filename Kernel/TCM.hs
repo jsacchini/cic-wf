@@ -59,7 +59,7 @@ import qualified Kernel.Constraints as CS
 data TypeError
     = NotConvertible (Maybe Range) TCEnv I.Term I.Term
     | NotFunction TCEnv I.Term
-    | NotSort TCEnv I.Term
+    | NotSort Range TCEnv I.Term
     | NotArity Range I.Term
     | NotConstructor TCEnv I.Term
     | InvalidProductRule I.Sort I.Sort
@@ -191,7 +191,7 @@ initialTCState =
           , stActiveGoal = Nothing
           , stConstraints     = CS.addNode inftyStageVar CS.empty
           , stTypeConstraints = CS.empty
-          , stVerbosityLevel = 1
+          , stVerbosityLevel = 30
           }
 
 -- | 'initialSignature' contains the definition of natural numbers as an

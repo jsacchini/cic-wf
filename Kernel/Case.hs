@@ -83,7 +83,7 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
   (ret', sort) <- pushCtx caseCtx $ infer ret
   traceTCM 30 $ (hsep [ text "CASE RETURN to", prettyPrintTCM ret' ]
                  $$ hsep [ text "of type ", prettyPrintTCM sort ])
-  _ <- isSort sort
+  _ <- isSort (range ret) sort
 
   -- Check branches
   -- Find possible and impossible branches

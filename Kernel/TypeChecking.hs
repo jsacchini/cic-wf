@@ -80,12 +80,11 @@ maxSort (Type m) (Type n) = do traceTCM 30 $ hsep [text "max sort",
                                addTypeConstraints [(m, k, 0), (n, k, 0)]
                                return $ Type k
 
-isSort :: (MonadTCM tcm) => Term -> tcm Sort
-isSort t = do t' <- whnF t
-              case t' of
-                Sort s -> return s
-                _      -> do xs <- ask
-                             typeError $ NotSort xs t
+isSort :: (MonadTCM tcm) => Range -> Term -> tcm Sort
+isSort rg t = do t' <- whnF t
+                 case t' of
+                   Sort s -> return s
+                   _      -> throwNotSort rg t'
 
 -- We assume that in the global environment, types are normalized
 
@@ -99,7 +98,7 @@ inferBinds (CtxExtend b bs) = do (ctx1, s1) <- inferBind b
     inferBind (A.Bind _ [] _) = __IMPOSSIBLE__
     inferBind (A.Bind _ (x:xs) e) = do
       (t1, r1) <- infer (fromJust (implicitValue e))
-      s1 <- isSort r1
+      s1 <- isSort (range e) r1
       return (ctxFromList (mkCtx (x:xs) t1 0), s1)
         where
           impl = isImplicit e
@@ -109,7 +108,7 @@ inferBinds (CtxExtend b bs) = do (ctx1, s1) <- inferBind b
 
 infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
 infer (A.Ann _ t u) = do (u', r) <- infer u
-                         _ <- isSort r
+                         _ <- isSort (range u) r
                          t' <- check t u'
                          w <- whnF u'
                          return (t', w)
@@ -119,16 +118,16 @@ infer exp@(A.Pi _ ctx t) =
                          prettyPrintTCM exp]
      (ctx', s1) <- inferBinds ctx
      (t', r2) <- pushCtx ctx' $ infer t
-     s2 <- pushCtx ctx' $ isSort r2
+     s2 <- pushCtx ctx' $ isSort (range t) r2
      s' <- checkProd s1 s2
      return (mkPi ctx' t', Sort s')
 infer exp@(A.Arrow _ e1 e2) = -- TODO: check arrows with implicit arguments
   do traceTCM 30 $ hsep [text "Inferring arrow",
                          prettyPrintTCM exp]
      (t1, r1) <- infer (implicitValue e1)
-     s1 <- isSort r1
+     s1 <- isSort (range e1) r1
      (t2, r2) <- pushType t1 $ infer e2
-     s2 <- pushType t1 $ isSort r2
+     s2 <- pushType t1 $ isSort (range e2) r2
      s' <- checkProd s1 s2
      return (mkPi (ctxSingle (unNamed t1)) t2, Sort s')
 infer (A.Bound _ _ n) =
@@ -211,7 +210,7 @@ infer (A.Number _ _) = __IMPOSSIBLE__ -- Number n is transformed into S (S... O)
 inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm [(Named Global)]
 inferDecl (A.Definition _ x (Just e1) e2) =
     do (tp, s) <- infer e1
-       _ <- isSort s
+       _ <- isSort (range e1) s
        def <- check e2 tp
        return [mkNamed x (Definition { defType = tp
                                      , defTerm = def })]
@@ -221,7 +220,7 @@ inferDecl (A.Definition _ x Nothing e) =
                                      , defTerm = def })] -- (flatten u) (flatten t))]
 inferDecl (A.Assumption _ x e) =
     do (t, r) <- infer e
-       _ <- isSort r
+       _ <- isSort (range e) r
        return [mkNamed x (Assumption t)] -- (flatten t))]
 inferDecl (A.Inductive _ indDef) = inferInd indDef
 inferDecl (A.Eval e) =
@@ -235,7 +234,7 @@ inferDecl (A.Eval e) =
        return []
 inferDecl (A.Check e1 (Just e2)) =
     do (t2, r2) <- infer e2
-       _ <- isSort r2
+       _ <- isSort (range e2) r2
        t1 <- check e1 t2
        traceTCM 70 $ hsep [text "check ", prettyPrintTCM t1, text " : "]
        printTCMLn $ prettyPrintTCM t2

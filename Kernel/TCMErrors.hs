@@ -23,3 +23,15 @@ throwNotConvertible rg t u =
                       ]
     typeError $ NotConvertible rg e t u
 
+
+throwNotSort :: (MonadTCM tcm) => Range -> I.Term -> tcm a
+throwNotSort rg s =
+  do
+    e <- ask
+    traceTCM 1 $ vcat [ text "NOT SORT" <+> prettyPrintTCM rg
+                      , text "in CONTEXT" $$ (ask >>= prettyPrintTCM)
+                      , text "==============================="
+                      , prettyPrintTCM s
+                      ]
+    typeError $ NotSort rg e s
+

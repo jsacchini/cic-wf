@@ -31,6 +31,7 @@ import Data.List
 import Data.Maybe
 
 import Syntax.Common
+import Syntax.Position
 import Syntax.Internal as I
 import qualified Syntax.Abstract as A
 import Syntax.InternaltoAbstract
@@ -126,7 +127,7 @@ inferFix (A.FixExpr r CoI num f tp body) =
                         prettyPrintTCM tp]
     (tp', s) <- infer tp
     traceTCM 20 $ hsep [text "Result: ", prettyPrintTCM tp']
-    s' <- isSort s
+    s' <- isSort (range tp) s
 
     is <- collectStars tp tp'
     traceTCM 30 $ hsep [text "Star stages:", prettyPrintTCM is]
@@ -183,7 +184,7 @@ inferFix (A.FixExpr r I num f tp body) =
 
        -- e <- ask
        -- traceTCM_ ["V* ", show is, " in ", show tp', "\nenv :", show e]
-       _ <- isSort s
+       _ <- isSort (range tp) s
 
        -- Check that the fix type is correct
        (ctx, tpRes) <- unfoldPi tp'

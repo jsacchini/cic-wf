@@ -7,6 +7,7 @@ module Kernel.TypeChecking where
 
 import qualified Syntax.Abstract as A
 import Syntax.Common
+import Syntax.Position
 import Syntax.Internal
 
 import Kernel.TCM
@@ -21,4 +22,4 @@ check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 
 checkList :: (MonadTCM tcm) => [A.Expr] -> Context -> tcm [Term]
 
-isSort :: (MonadTCM tcm) => Term -> tcm Sort
+isSort :: (MonadTCM tcm) => Range -> Term -> tcm Sort

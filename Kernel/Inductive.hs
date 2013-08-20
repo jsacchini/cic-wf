@@ -50,7 +50,7 @@ inferInd (A.InductiveDef nmInd k pars pols tp constrs) =
        let bindPars' =  pars'
        (tp', s2)  <- pushCtx pars' $ infer tp
        -- traceTCM $ "Type\n" ++ show tp'
-       _          <- isSort s2
+       _          <- isSort (range tp) s2
        (args, s3) <- isArity (range tp) tp'
        cs         <- mapM (pushCtx pars' . flip checkConstr (nmInd, bindPars', args, s3)) constrs
        traceTCM 30 $ text ("Constructors\n" ++ show cs)
@@ -85,7 +85,7 @@ isArity _ t =
 inferParam :: (MonadTCM tcm) => A.Bind -> tcm (Context, Sort)
 inferParam (A.Bind _ names tp) | isJust (implicitValue tp) =
     do (tp', s) <- infer (fromJust (implicitValue tp))
-       s' <- isSort s
+       s' <- isSort (range tp) s
        return (ctxFromList $ mkBindsSameType names tp', s')
       where
         mkBindsSameType_ :: [Name] -> Type -> Int -> [I.Bind]
@@ -115,7 +115,7 @@ checkConstr (A.Constructor _ name tp)
        traceTCM 30 $ hsep [ text "CHECKCONSTR"
                           , text "to:" <+> (pushBind indBind $ prettyPrintTCM tp')
                           , text "of type:" <+> (pushBind indBind $ prettyPrintTCM s) ]
-       s' <- isSort s
+       s' <- isSort (range tp) s
        unless (sortInd == s') $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd
        let indBind = mkBind nmInd (mkPi (parsInd +: indicesInd) (Sort sortInd))
        (args, indices, recArgs) <- pushBind indBind $
@@ -174,14 +174,36 @@ checkStrictPos nmConstr ctx = cSP 0 ctx
         -- traceTCM_ ["considering arg ", show k, "  -->  ", show (Bind x t)]
         (ctx1, t1) <- unfoldPi t
         when (isFree k ctx1) $ error $ "inductive type not strictly positive: " ++ show nmConstr
-        case t1 of
-          App (Bound i) args -> do
+        case unApp t1 of
+          (Bound i,  args) -> do
             when (isFree (k + size ctx1) args) $ error $ "inductive type appears as argument: " ++ show nmConstr
             when (i /= k + size ctx1) $ error $ "I don't think this is possible: expected " ++ show (k + size ctx1) ++ " but found " ++ show i
             recArgs <- pushBind b $ cSP (k + 1) ctx
             return $ k : recArgs
-          Bound i -> do
-            when (i /= k + size ctx1) $ error $ "I don't think this is possible either: expected " ++ show (k + size ctx1) ++ " but found " ++ show i
+          (Ind an nmInd, args) -> do
+            ind <- getGlobal nmInd
+            let pols = indPol ind
+                numPars = length pols
+                (parsInd, argsInd) = splitAt numPars args
+            mapM_ (checkSPTypePol nmConstr (k+size ctx1)) (zip pols parsInd)
             recArgs <- pushBind b $ cSP (k + 1) ctx
             return $ k : recArgs
           _ -> error $ "not valid type " ++ show nmConstr
+    checkSPTypePol :: (MonadTCM tcm) => Name -> Int -> (Polarity, Type) -> tcm ()
+    checkSPTypePol nmConstr idx (SPos, tp) =
+      do
+        (ctx1, t1) <- unfoldPi tp
+        when (isFree idx ctx1) $ error $ "inductive type not strictly positive: " ++ show nmConstr
+        case unApp t1 of
+          (Bound i,  args) -> do
+            when (isFree (idx + size ctx1) args) $ error $ "inductive type appears as argument: " ++ show nmConstr
+            when (i /= idx + size ctx1) $ error $ "I don't think this is possible: expected " ++ show (idx + size ctx1) ++ " but found " ++ show i
+          (Ind an nmInd, args) -> do
+            ind <- getGlobal nmInd
+            let pols = indPol ind
+                numPars = length pols
+                (parsInd, argsInd) = splitAt numPars args
+            mapM_ (checkSPTypePol nmConstr (idx+size ctx1)) (zip pols parsInd)
+          _ -> error $ "not valid type " ++ show nmConstr
+    checkSPTypePol nmConstr idx (pol, tp) =
+      when (isFree idx tp) $ error ("not strictly positive in " ++ show nmConstr)
