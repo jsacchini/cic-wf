@@ -5,9 +5,17 @@ data vec (A : Type) : nat -> Type :=
 | vcons : forall (n : nat), A -> vec A n -> vec A (S n).
 
 
-define t1 := fun (A : Type) (n : nat) (v : vec A (S n)) =>
-             < vec A n0 > case v1 := v in [(n0 : nat)] vec (S n0) of
-                          | vnil => O
-                          end.
+define head :=
+  fun (A : Type) (n : nat) (v : vec A (S n)) =>
+  < A > case v1 := v in [(n0 : nat)] vec (S n0) of
+    | vcons n x xs => x
+  end.
 
-check t1.
+define tail :=
+  fun (A : Type) (n : nat) (v : vec A (S n)) =>
+  < vec A n0 > case v1 := v in [(n0 : nat)] vec (S n0) of
+    | vcons n x xs => xs
+  end.
+
+check head.
+check tail.

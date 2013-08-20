@@ -13,7 +13,7 @@ define leqS_False :=
               | lS x y H' => LL y H' where (x := S y)
               end.
 
-check fun (x y z: nat) (H : leq x y) => lS x y H.
+check fun (x y z : nat) (H : leq x y) => lS x y H.
 
 check fun (x y z : nat) (H : leq x y) => lO x.
 
