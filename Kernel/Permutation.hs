@@ -70,7 +70,10 @@ instance ApplyPerm Int where
   applyPerm (Perm xs) k | k < length xs = xs !! k
                         | otherwise     = k
 
-instance ApplyPerm a => ApplyPerm (Maybe a) where
+instance (ApplyPerm a) => ApplyPerm (Maybe a) where
+  applyPerm = fmap . applyPerm
+
+instance (ApplyPerm a) => ApplyPerm (Implicit a) where
   applyPerm = fmap . applyPerm
 
 instance ApplyPerm a => ApplyPerm (a, a) where
@@ -88,9 +91,15 @@ instance ApplyPerm Bind where
   applyPerm p b = b { bindType = applyPerm p (bindType b)
                     , bindDef  = applyPerm p (bindDef b) }
 
-instance ApplyPerm a => ApplyPerm (Ctx a) where
-  applyPerm p EmptyCtx = EmptyCtx
-  applyPerm p (ExtendCtx b c) = ExtendCtx (applyPerm p b) (applyPerm (1 <++ p) c)
+instance (ApplyPerm a, HasNames a) => ApplyPerm (Ctx a) where
+  applyPerm p ctx = ctxFromList (apBinds p (bindings ctx))
+    where
+      apBinds p [] = []
+      apBinds p (x:xs) = applyPerm p x : apBinds (length (name x) <++ p) xs
+
+-- applyPermCtx :: Permutation -> Context -> Context
+-- applyPermCtx p [] = []
+-- applyPermCtx p (b:c) = applyPerm p b : applyPermCtx (1 <++ p) c
 
 instance ApplyPerm Term where
   applyPerm _ t@(Sort _) = t
@@ -104,11 +113,13 @@ instance ApplyPerm Term where
   applyPerm p (Constr x indId ps as) = Constr x indId ps' as'
     where ps' = map (applyPerm p) ps
           as' = map (applyPerm p) as
-  applyPerm p (Fix a n x bs t e) =
-    Fix a n x (applyPerm p bs) (applyPerm (ctxLen bs <++ p) t)
-    (applyPerm (ctxLen bs <++ p) e)
+  applyPerm p (Fix f) = Fix (applyPerm p f)
   applyPerm p (Case c) = Case (applyPerm p c)
 
+instance ApplyPerm FixTerm where
+  applyPerm p (FixTerm a n x bs t e) =
+    FixTerm a n x (applyPerm p bs) (applyPerm (ctxLen bs <++ p) t)
+    (applyPerm (ctxLen bs <++ p) e)
 
 instance ApplyPerm CaseTerm where
   applyPerm p (CaseTerm arg nm cas cin ret branches) =
@@ -137,7 +148,7 @@ instance ApplyPerm A.Expr where
   applyPerm p (A.Ann r e1 e2) = A.Ann r (applyPerm p e1) (applyPerm p e2)
   applyPerm _ t@(A.Sort _ _) = t
   applyPerm p (A.Pi r bs e) =
-    A.Pi r (permBinds p bs) (applyPerm (length (getNames bs) <++ p) e)
+    A.Pi r (applyPerm p bs) (applyPerm (length (name bs) <++ p) e)
   applyPerm p (A.Arrow r e1 e2) =
     A.Arrow r (applyPerm p e1) (applyPerm (1 <++ p) e2)
   applyPerm p t@(A.Bound r x k)
@@ -145,9 +156,9 @@ instance ApplyPerm A.Expr where
     | otherwise = t
   applyPerm _ t@(A.Ident _ _) = t
   applyPerm p (A.Lam r bs e) =
-    A.Lam r (permBinds p bs) (applyPerm (length (getNames bs) <++ p) e)
+    A.Lam r (applyPerm p bs) (applyPerm (length (name bs) <++ p) e)
   applyPerm p (A.App r e1 e2) = A.App r (applyPerm p e1) (applyPerm p e2)
-  applyPerm p t@(A.Ind _ _ _) = t
+  applyPerm p t@(A.Ind _ _ _ _) = t
   applyPerm p (A.Constr r x indId ps as) = A.Constr r x indId ps' as'
     where ps' = map (applyPerm p) ps
           as' = map (applyPerm p) as
@@ -155,18 +166,21 @@ instance ApplyPerm A.Expr where
   applyPerm p (A.Case c) = A.Case $ applyPerm p c
   applyPerm p (A.Number _ _) = __IMPOSSIBLE__
 
-permBinds :: Permutation -> [A.Bind] -> [A.Bind]
-permBinds p [] = []
-permBinds p (A.Bind r impl xs e:bs) =
-  A.Bind r impl xs (applyPerm p e) : permBinds (length xs <++ p) bs
+instance ApplyPerm A.Bind where
+  applyPerm p (A.Bind r xs e) = A.Bind r xs (applyPerm p e)
+
+-- permBinds :: Permutation -> [A.Bind] -> [A.Bind]
+-- permBinds p [] = []
+-- permBinds p (A.Bind r xs e:bs) =
+--   A.Bind r xs (applyPerm p e) : permBinds (length xs <++ p) bs
 
 instance ApplyPerm A.CaseExpr where
   applyPerm p (A.CaseExpr r arg cas cin whSubst ret branches) =
     A.CaseExpr r (applyPerm p arg) cas (applyPerm p cin)
     (applyPerm p whSubst)
     (applyPerm (len <++ p) ret) (map (applyPerm (lencin <++ p)) branches)
-      where len = length (getNames cas) + lencin
-            lencin = length (getNames cin)
+      where len = length (name cas) + lencin
+            lencin = length (name cin)
 
 instance ApplyPerm A.FixExpr where
   applyPerm p (A.FixExpr a r k nm tp body) =
@@ -180,8 +194,8 @@ instance ApplyPerm A.Assign where
 
 instance ApplyPerm A.CaseIn where
   applyPerm p (A.CaseIn r binds nmInd args) =
-    A.CaseIn r (permBinds p binds) nmInd
-    (map (applyPerm (length (getNames binds) <++ p)) args)
+    A.CaseIn r (applyPerm p binds) nmInd
+    (map (applyPerm (length (name binds) <++ p)) args)
 
 instance ApplyPerm A.Branch where
   applyPerm p (A.Branch r nm cid nmArgs body whSubst) =

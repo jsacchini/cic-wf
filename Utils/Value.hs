@@ -17,15 +17,19 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-module Utils.Sized where
+{-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies,
+    FlexibleInstances
+  #-}
 
-import Data.List
+module Utils.Value where
 
-class Sized a where
-  size :: (Num t) => a -> t
+newtype Value a = Value { unValue :: a }
 
-instance Sized a => Sized (Maybe a) where
-  size = maybe 0 size
+class HasValue a b | a -> b where
+  value :: a -> b
 
-instance Sized [a] where
-  size = genericLength
+instance Functor Value where
+  fmap f (Value x) = Value (f x)
+
+instance HasValue (Value a) a where
+  value = unValue

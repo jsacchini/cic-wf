@@ -49,18 +49,34 @@ data Term
     | App Term [Term]
     | Meta MetaVar
     | Constr Name (Name, Int) [Term] [Term]
-    | Fix InductiveKind Int Name Context Type Term
+    | Fix FixTerm
     | Case CaseTerm
     | Ind Annot Name
 
 type Type = Term
 
-data Bind = Bind
-            { bindName     :: Name
-            , bindImplicit :: Bool
-            , bindType     :: Type
-            , bindDef      :: Maybe Term
-            }
+data Bind =
+  Bind { bindName :: Name
+       , bindImplicit :: Bool
+       , bindType :: Type
+       , bindDef :: (Maybe Term)
+       }
+
+instance HasImplicit Bind where
+  isImplicit = bindImplicit
+  modifyImplicit f (Bind x b t u) = Bind x (f b) t u
+
+instance HasNames Bind where
+  name x = [bindName x]
+
+setName :: Name -> Bind -> Bind
+setName x b = b { bindName = x }
+
+setBindType :: Type -> Bind -> Bind
+setBindType t b = b { bindType = t }
+
+type Context = Ctx Bind
+type Environment = Env Bind
 
 mkBind :: Name -> Type -> Bind
 mkBind x t = Bind x False t Nothing
@@ -97,6 +113,16 @@ data Branch = Branch {
   brSubst :: Maybe Subst
   } --deriving(Eq)
 
+data FixTerm =
+  FixTerm { fixKind :: InductiveKind
+          , fixNum :: Int
+          , fixName :: Name
+          , fixArgs :: Context
+          , fixType :: Type
+          , fixBody :: Term
+          }
+
+
 newtype SortVar = SortVar Int
                   deriving(Show, Eq, Enum, Num)
 
@@ -111,23 +137,20 @@ instance Eq Sort where
   s1 == s2 = True -- TODO: fix this. Check typechecking of constructors
 
 
--- | A Context is isomorphic to a list of binds. The reason why we do not simply
---   use a list is that instances such as (shift, subst, isfree) are not simply
---   mappings on the elements, since we have to take care of bound variables
-type Context = Ctx Bind
-
 renameCtx :: Context -> [Name] -> Context
-renameCtx EmptyCtx [] = EmptyCtx
-renameCtx (ExtendCtx b c) (x:xs) = ExtendCtx (b { bindName = x }) (renameCtx c xs)
+renameCtx ctx xs = ctxFromList (renameBinds (bindings ctx) xs)
+  where
+    renameBinds [] [] = []
+    renameBinds (b:bs) (x:xs) = b { bindName = x } : renameBinds bs xs
 
 -- | Goals
-data Goal = Goal { goalCtx  :: Context
+data Goal = Goal { goalEnv  :: Environment
                  , goalType :: Type
                  , goalTerm :: Maybe Term
                  } deriving(Show)
 
-mkGoal :: Context -> Type -> Goal
-mkGoal ctx tp = Goal ctx tp Nothing
+mkGoal :: Environment -> Type -> Goal
+mkGoal env tp = Goal env tp Nothing
 
 newtype MetaVar = MetaVar Int
                   deriving(Eq, Enum, Num, Ord)
@@ -142,14 +165,15 @@ newtype Subst = Subst { unSubst :: [(Int, Term)] }
                 deriving(Show)--,Eq)
 
 mkPi :: Context -> Term -> Term
-mkPi EmptyCtx t = t
-mkPi c1 (Pi c2 t) = Pi (c1 +: c2) t
-mkPi bs t = Pi bs t
+mkPi ctx t | ctxIsNull ctx = t
+           | otherwise = case t of
+                           Pi ctx2 t' -> Pi (ctx +: ctx2) t'
+                           _          -> Pi ctx t
 
 unPi :: Term -> (Context, Term)
 unPi (Pi c t) = (c +: c', t')
   where (c', t') = unPi t
-unPi t = (empCtx, t)
+unPi t = (ctxEmpty, t)
 
 mkApp :: Term -> [Term] -> Term
 mkApp (App t as) as'    = App t (as ++ as')
@@ -162,14 +186,15 @@ unApp (App t ts) = (func, args++ts)
 unApp t = (t, [])
 
 mkLam :: Context -> Term -> Term
-mkLam EmptyCtx t = t
-mkLam c1 (Lam c2 t) = Lam (c1 +: c2) t
-mkLam c t = Lam c t
+mkLam ctx t | ctxIsNull ctx = t
+            | otherwise = case t of
+                            Lam ctx2 t' -> Lam (ctx +: ctx2) t'
+                            _           -> Lam ctx t
 
 unLam :: Term -> (Context, Term)
 unLam (Lam c t) = (c +: c', t')
   where (c', t') = unLam t
-unLam t = (empCtx, t)
+unLam t = (ctxEmpty, t)
 
 -- flatten :: Term -> Term
 -- flatten (Pi bs t) = Pi (bs ++ bs') t'
@@ -229,15 +254,9 @@ isConstr _                = False
 
 
 
-instance HasNames Bind where
-  getNames b = [bindName b]
-
 instance HasNames CaseIn where
-  getNames = getNames . inBind
+  name = name . inBind
 
-
-bind :: Bind -> Type
-bind = bindType
 
 bindNoName :: Type -> Bind
 bindNoName t = Bind noName False t Nothing
@@ -270,10 +289,16 @@ class HasAnnot a where
                                 | otherwise -> Empty
                          Nothing            -> Empty
 
-instance HasAnnot a => HasAnnot (Maybe a) where
+instance (HasAnnot a) => HasAnnot (Maybe a) where
   modifySize = fmap . modifySize
 
   listAnnot = maybe [] listAnnot
+
+instance (HasAnnot a) => HasAnnot (Implicit a) where
+  modifySize = fmap . modifySize
+
+  listAnnot = listAnnot . implicitValue
+
 
 instance HasAnnot a => HasAnnot [a] where
   modifySize f = map (modifySize f)
@@ -291,7 +316,7 @@ instance HasAnnot Term where
       mSize (App t ts) = App (mSize t) (map mSize ts)
       mSize t@(Meta _) = t
       mSize (Constr nm cid pars args) = Constr nm cid (map mSize pars) (map mSize args)
-      mSize (Fix k n x c t1 t2) = Fix k n x (modifySize f c) (mSize t1) (mSize t2)
+      mSize (Fix c) = Fix (modifySize f c)
       mSize (Case c) = Case (modifySize f c)
       mSize (Ind a x) = Ind (f a) x
 
@@ -303,11 +328,17 @@ instance HasAnnot Term where
   listAnnot (App t ts) = listAnnot t ++ listAnnot ts
   listAnnot t@(Meta _) = []
   listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
-  listAnnot (Fix _ _ _ c t1 t2) = listAnnot c ++ listAnnot t1 ++ listAnnot t2
+  listAnnot (Fix c) = listAnnot c
   listAnnot (Case c) = listAnnot c
   listAnnot (Ind a x) = case a of
                           (Size (Svar i)) -> [i]
                           _ -> []
+
+instance HasAnnot FixTerm where
+  modifySize f (FixTerm k n x c t1 t2) =
+    FixTerm k n x (modifySize f c) (modifySize f t1) (modifySize f t2)
+
+  listAnnot (FixTerm _ _ _ c t1 t2) = listAnnot c ++ listAnnot t1 ++ listAnnot t2
 
 instance HasAnnot CaseTerm where
   modifySize f (CaseTerm arg nm asName cin ret bs) =
@@ -336,8 +367,7 @@ instance HasAnnot Subst where
   listAnnot (Subst sg) = concatMap (listAnnot . snd) sg
 
 instance HasAnnot Bind where
-  modifySize f b = b { bindType = modifySize f (bindType b)
-                     , bindDef  = modifySize f (bindDef b) }
+  modifySize f (Bind x b t u) = Bind x b (modifySize f t) (modifySize f u)
 
   listAnnot b = listAnnot (bindType b) ++ listAnnot (bindDef b)
 
@@ -383,19 +413,23 @@ instance (Lift a, Lift b) => Lift (a, b) where
 instance Lift a => Lift (Maybe a) where
   lift k n = fmap (lift k n)
 
-instance Lift a => Lift [a] where
-  lift k n = map (lift k n)
+instance Lift a => Lift (Implicit a) where
+  lift k n = fmap (lift k n)
+
+-- instance Lift a => Lift [a] where
+--   lift k n = map (lift k n)
 
 instance Lift Subst where
   lift k n (Subst sg) = Subst $ map (lift k n) sg
 
 instance Lift Bind where
-  lift k n b = b { bindType = lift k n (bindType b)
-                 , bindDef  = lift k n (bindDef b) }
+  lift k n (Bind x b t u) = Bind x b (lift k n t) (lift k n u)
 
 instance Lift a => Lift (Ctx a) where
-  lift k n EmptyCtx = EmptyCtx
-  lift k n (ExtendCtx b c) = ExtendCtx (lift k n b) (lift k (n + 1) c)
+  lift k n ctx = ctxFromList $ liftBinds k n (bindings ctx)
+    where
+      liftBinds k n [] = []
+      liftBinds k n (x:xs) = lift k n x : liftBinds k (n + 1) xs
 
 instance Lift Term where
   lift _ _ t@(Sort _) = t
@@ -409,15 +443,17 @@ instance Lift Term where
   lift k n (Constr x indId ps as) = Constr x indId ps' as'
                                       where ps' = map (lift k n) ps
                                             as' = map (lift k n) as
-  lift k n (Fix a m x c t e) =
-    Fix a m x (lift k n c) (lift k (n + ctxLen c) t) (lift k (n + 1) e)
+  lift k n (Fix f) = Fix (lift k n f)
   lift k n (Case c) = Case (lift k n c)
 
+instance Lift FixTerm where
+  lift k n (FixTerm a m x c t e) =
+    FixTerm a m x (lift k n c) (lift k (n + ctxLen c) t) (lift k (n + 1) e)
 
 instance Lift CaseTerm where
   lift k n (CaseTerm arg nm asName cin ret branches) =
     CaseTerm (lift k n arg) nm asName (lift k n cin) (lift k (n + len) ret) (map (lift k n) branches)
-      where len = length (getNames asName ++ getNames cin)
+      where len = length (name asName ++ name cin)
 
 instance Lift CaseIn where
   lift k n (CaseIn binds nmInd args) = CaseIn (lift k n binds) nmInd (map (lift k (n + ctxLen binds)) args)
@@ -443,19 +479,23 @@ substList :: (SubstTerm a) => Int -> [Term] -> a -> a
 substList k xs t = foldl (flip (uncurry substN)) t (zip ks xs)
                    where ks = reverse [k - (length xs) + 1..k]
 
-instance SubstTerm a => SubstTerm (Maybe a) where
+instance (SubstTerm a) => SubstTerm (Implicit a) where
+  substN k = fmap . substN k
+
+instance (SubstTerm a) => SubstTerm (Maybe a) where
   substN k = fmap . substN k
 
 instance SubstTerm a => SubstTerm [a] where
   substN n r = map (substN n r)
 
 instance SubstTerm Bind where
-  substN n r b = b { bindType = substN n r (bindType b)
-                   , bindDef  = substN n r (bindDef b) }
+  substN n r (Bind x b t u) = Bind x b (substN n r t) (substN n r u)
 
 instance SubstTerm a => SubstTerm (Ctx a) where
-  substN n r EmptyCtx = EmptyCtx
-  substN n r (ExtendCtx b c) = ExtendCtx (substN n r b) (substN (n + 1) r c)
+  substN n r ctx = ctxFromList (substBinds n r (bindings ctx))
+    where
+      substBinds _ _ [] = []
+      substBinds n r (x:xs) = substN n r x : substBinds (n+1) r xs
 
 instance SubstTerm Term where
   substN _ _ t@(Sort _) = t
@@ -465,26 +505,30 @@ instance SubstTerm Term where
                          | otherwise = Bound (n - 1)
   substN _ _ t@(Var _) = t
   substN i r (Lam c t) = Lam (substN i r c) (substN (i + ctxLen c) r t)
-  substN i r (App t ts) = App (substN i r t) (substN i r ts)
+  substN i r (App t ts) = App (substN i r t) (map (substN i r) ts)
   substN i r t@(Meta _) = t
   substN _ _ t@(Ind _ _) = t
   substN i r (Constr x ind ps as) = Constr x ind ps' as'
                                     where ps' = map (substN i r) ps
                                           as' = map (substN i r) as
   substN i r (Case c) = Case (substN i r c)
-  substN i r (Fix a k nm c tp body) =
-    Fix a k nm (substN i r c) (substN (i + ctxLen c) r tp) (substN (i + 1) r body)
+  substN i r (Fix f) = Fix (substN i r f)
+
+instance SubstTerm FixTerm where
+  substN i r (FixTerm a k nm c tp body) =
+    FixTerm a k nm (substN i r c) (substN (i + ctxLen c) r tp) (substN (i + 1) r body)
 
 
 instance SubstTerm CaseTerm where
   substN i r (CaseTerm arg nm cas cin ret branches) =
     CaseTerm (substN i r arg) nm cas (substN i r cin) (substN (i + len) r ret) branches'
-      where branches' = map (substN i r) branches
-            len = length (getNames cas ++ getNames cin)
+      where
+        branches' = map (substN i r) branches
+        len = length (name cas ++ name cin)
 
 instance SubstTerm CaseIn where
   substN i r (CaseIn binds nmInd args) =
-    CaseIn (substN i r binds) nmInd (substN (i + ctxLen binds) r args)
+    CaseIn (substN i r binds) nmInd (map (substN (i + ctxLen binds) r) args)
 
 instance SubstTerm Branch where
   substN i r (Branch nm cid xs body whSubst) =
@@ -517,6 +561,11 @@ instance IsFree a => IsFree (Maybe a) where
 
   fvN = maybe [] . fvN
 
+instance IsFree a => IsFree (Implicit a) where
+  isFree k = isFree k . implicitValue
+
+  fvN k = fvN k . implicitValue
+
 instance IsFree a => IsFree [a] where
   isFree k = any (isFree k)
 
@@ -532,7 +581,7 @@ instance IsFree Term where
   isFree k (Meta _) = False
   isFree _ (Ind _ _) = False
   isFree k (Constr _ _ ps as) = any (isFree k) (ps ++ as)
-  isFree k (Fix _ _ _ bs tp body) = isFree k (mkPi bs tp) || isFree (k+1) body
+  isFree k (Fix f) = isFree k f
   isFree k (Case c) = isFree k c
 
   fvN _ (Sort _) = []
@@ -544,7 +593,13 @@ instance IsFree Term where
   fvN k (Meta _) = []
   fvN _ (Ind _ _) = []
   fvN k (Constr _ _ ps as) = concatMap (fvN k) (ps ++ as)
-  fvN k (Fix _ _ _ bs tp body) = fvN k (mkPi bs tp) ++ fvN (k + 1) body
+  fvN k (Fix f) = fvN k f
+
+instance IsFree FixTerm where
+  isFree k (FixTerm _ _ _ bs tp body) = isFree k (mkPi bs tp) || isFree (k+1) body
+
+  fvN k (FixTerm _ _ _ bs tp body) = fvN k (mkPi bs tp) ++ fvN (k + 1) body
+
 
 instance IsFree CaseTerm where
   isFree k (CaseTerm arg _ _ cin tpRet branches) =
@@ -572,16 +627,20 @@ instance IsFree Subst where
   fvN k (Subst sg) = concatMap (fvN k . snd) sg
 
 instance IsFree Bind where
-  isFree k b = isFree k (bindType b) || isFree k (bindType b)
+  isFree k b = isFree k (bindType b) || isFree k (bindDef b)
 
   fvN k b = fvN k (bindType b) ++ fvN k (bindDef b)
 
 instance IsFree a => IsFree (Ctx a) where
-  isFree k EmptyCtx = False
-  isFree k (ExtendCtx b c) = isFree k b || isFree (k + 1) c
+  isFree k ctx = isFreeBinds k (bindings ctx)
+    where
+      isFreeBinds k [] = False
+      isFreeBinds k (x:xs) = isFree k x || isFreeBinds (k + 1) xs
 
-  fvN k EmptyCtx = []
-  fvN k (ExtendCtx b c) = fvN k b ++ fvN (k + 1) c
+  fvN k ctx = fvNBinds k (bindings ctx)
+    where
+      fvNBinds k [] = []
+      fvNBinds k (x:xs) = fvN k x ++ fvNBinds (k + 1) xs
 
 isFreeList :: Int -> [Term] -> Bool
 isFreeList k = foldrAcc (\n t r -> isFree n t || r) (\n _ -> n + 1) k False
@@ -600,19 +659,20 @@ isFreeList k = foldrAcc (\n t r -> isFree n t || r) (\n _ -> n + 1) k False
 
 deriving instance Show Term
 deriving instance Show CaseTerm
+deriving instance Show FixTerm
 deriving instance Show CaseIn
 deriving instance Show Branch
 
-instance Show a => Show (Ctx a) where
-  show EmptyCtx = ""
-  show (ExtendCtx b c) = show b ++ show c
+-- instance Show a => Show (Ctx a) where
+--   show Empctx = ""
+--   show (Consctx b c) = show b ++ show c
 
 instance Show Bind where
   show b = around $ concat [ show (bindName b)
                            , showDef (bindDef b)
                            , show (bindType b)]
     where
-      around x = if bindImplicit b
+      around x = if isImplicit b
                  then "{" ++ x ++ "}"
                  else "(" ++ x ++ ")"
       showDef Nothing = ""

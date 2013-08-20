@@ -52,39 +52,51 @@ import Utils.Sized
 --   Returns the list of stage variables occuring in @t@ whose corresponding
 --   position in @e@ has a star.
 --   @t@ is the typed version of @e@ so they should have the same shape.
---   For now, we assume that @e@ and @t@ are simple types, so star occur in
+--   For now, we assume that @e@ and @t@ are "simple" types, so star occur in
 --   (co-)inductive types directly under products.
 collectStars :: (MonadTCM tcm) => A.Expr -> Type -> tcm [StageVar]
-collectStars (A.Pi _ bs e)     (Pi ctx t)    = do
-  rs2 <- collectStars e t
-  rs1 <- collectStarsBind bs ctx
-  return $ rs1 ++ rs2
-collectStars e                 (Pi EmptyCtx t2) = collectStars e t2
-collectStars (A.Arrow _ e1 e2) (Pi (ExtendCtx t1 ctx) t2) = do
-  traceTCM 85 $ text "here"
-  rs2 <- collectStars e2 (Pi ctx t2)
-  rs1 <- collectStars e1 (bindType t1)
-  return $  rs1 ++ rs2
-collectStars (A.Ind _ a1 n1) (Ind a2 n2) | n1 /= n2 = __IMPOSSIBLE__
-collectStars (A.Ind _ a1 n1) (Ind (Size a2) n2) | n1 == n2 = return res
+collectStars e t =
+  do
+    rs2 <- collectStarsNonPi e' t'
+    rs1 <- collectStarsBind (bindings ctx1) (bindings ctx2)
+    return $ rs1 ++ rs2
   where
-    res | a1 /= Star || base a2 == Nothing = []
-        | a1 == Star                       = [fromJust (base a2)]
-collectStars e               (App (Ind (Size a2) n2) args2) = do
-  rs <- zipWithM collectStars args1 args2
-  return $ res ++ concat rs
-  where
-    (A.Ind _ a1 n1, args1) = A.destroyApp e
-    res | a1 /= Star || base a2 == Nothing = []
-        | a1 == Star                       = [fromJust (base a2)]
-collectStars _ _ = return []
+    (ctx1, e') = A.unPi e
+    (ctx2, t') = unPi t
 
-collectStarsBind :: (MonadTCM tcm) => [A.Bind] -> Context -> tcm [StageVar]
-collectStarsBind []                     EmptyCtx          = return []
-collectStarsBind (A.Bind r _ [] e:bs)     (ExtendCtx _ ctx) = collectStarsBind bs ctx
-collectStarsBind (A.Bind r _ (x:xs) e:bs) (ExtendCtx t ctx) = do
-  rs1 <- collectStars e (bindType t)
-  rs2 <- collectStarsBind (A.Bind r False xs e:bs) (ExtendCtx t ctx)
+-- collectStars e                 (Pi ctx t2) | ctxIsNull ctx = collectStars e t2
+collectStarsNonPi :: (MonadTCM tcm) => A.Expr -> Type -> tcm [StageVar]
+-- collectStars (A.Arrow _ e1 e2) (Pi ctx t2) =
+--   do
+--     rs2 <- collectStars e2 (mkPi ctx' t2)
+--     rs1 <- collectStars (implicitValue e1) (bindType b1)
+--     return $  rs1 ++ rs2
+--   where
+--     (b1, ctx') = ctxSplit ctx
+collectStarsNonPi (A.Ind _ a1 n1 _) (Ind a2 n2) | n1 /= n2 = __IMPOSSIBLE__
+collectStarsNonPi (A.Ind _ a1 n1 _) (Ind (Size a2) n2) | n1 == n2 = return res
+  where
+    res | a1 /= Star || base a2 == Nothing = []
+        | a1 == Star                       = [fromJust (base a2)]
+collectStarsNonPi e               (App (Ind (Size a2) n2) args2) = do
+  traceTCM 30 $ hsep [ text "collect stars _ IND:"
+                     , prettyPrintTCM e ]
+  return []
+  -- rs <- zipWithM collectStars args1 args2
+  -- return $ res ++ concat rs
+  -- where
+  --   (A.Ind _ a1 n1 _, args1) = A.destroyApp e
+  --   res | a1 /= Star || base a2 == Nothing = []
+  --       | a1 == Star                       = [fromJust (base a2)]
+
+collectStarsNonPi _ _ = return []
+
+collectStarsBind :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> tcm [StageVar]
+collectStarsBind []                     []      = return []
+collectStarsBind (A.Bind r [] e:bs)     ctx     = collectStarsBind bs ctx
+collectStarsBind (A.Bind r (x:xs) e:bs) (t:ctx) = do
+  rs1 <- collectStars (fromJust (implicitValue e)) (bindType t)
+  rs2 <- collectStarsBind (A.Bind r xs e:bs) ctx
   return $ rs1 ++ rs2
 collectStarsBind _ _ = __IMPOSSIBLE__
 
@@ -146,8 +158,9 @@ inferFix (A.FixExpr r CoI num f tp body) =
                                     text "vNeq = " <> prettyPrintTCM vNeq,
                                     text "C = " <> text (show cOld)]))
     -- add Constraints to ensure that alpha appears positively in the return type
-    traceTCM 30 $ (hsep [text "shifting ", prettyPrintTCM sctx, text " <~ ",
-                        prettyPrintTCM ctx])
+    traceTCM 30 $ (hsep [text "shifting "--, prettyPrintTCM sctx
+                        , text " <~ "--, prettyPrintTCM ctx])
+                        ])
     _ <- sctx <~ ctx
 
     let recRes = recCheck alpha is vNeq cOld
@@ -156,7 +169,7 @@ inferFix (A.FixExpr r CoI num f tp body) =
       Left cNew -> do newConstraints cNew
       Right xs  -> do error "COFIX"
 
-    return (Fix CoI num f empCtx (eraseSize tp') body', tp')
+    return (Fix (FixTerm CoI num f ctxEmpty (eraseSize tp') body'), tp')
 
 
 inferFix (A.FixExpr r I num f tp body) =
@@ -177,7 +190,8 @@ inferFix (A.FixExpr r I num f tp body) =
        when (size ctx < num) $ error $ "error " ++ show r ++ ": fix should have at least " ++ show num ++ " argument" ++ if num > 0 then "s" else ""
        -- traceTCM_ ["unfold type fix\n", show ctx, "   ->   ", show tpRes]
 
-       let (args, ExtendCtx recArg rest) = ctxSplitAt (num - 1) ctx
+       let (args, ctx') = ctxSplitAt (num - 1) ctx
+           (recArg, rest) = ctxSplit ctx'
        -- TODO: check what to do with star appearing in args before recArg
        --       for the moment, assume that no star appear before recArg
            shiftStar s@(Size (Svar x)) | x `elem` is = Size (Hat (Svar x))
@@ -231,7 +245,7 @@ inferFix (A.FixExpr r I num f tp body) =
        -- traceTCM_ ["checked fix\n", show (Fix num f empCtx tp' body'), "\n", show r, "\nof type ", show tp']
 
        -- Final result
-       return (Fix I num f (eraseSize empCtx) (eraseSize tp') body', tp')
+       return (Fix (FixTerm I num f (eraseSize ctxEmpty) (eraseSize tp') body'), tp')
 
 checkFixType :: (MonadTCM tcm) => Bind -> tcm StageVar
 checkFixType (Bind _ _ tp Nothing) =
@@ -246,4 +260,5 @@ checkFixType (Bind _ _ tp Nothing) =
                            _ -> __IMPOSSIBLE__ -- sanity check
       _ -> error "recursive argument is not of inductive type"
 checkFixType _ = error "recursive argument is a definition"
+
 

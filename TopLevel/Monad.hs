@@ -32,7 +32,7 @@ import Control.Monad.Reader
 import qualified Syntax.Abstract as A
 import Syntax.Internal hiding (lift)
 import Syntax.ParseMonad
-import Syntax.Parser
+-- import Syntax.Parser
 import Syntax.Scope
 
 import qualified System.Console.Haskeline as H

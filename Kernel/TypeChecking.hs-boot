@@ -13,7 +13,7 @@ import Kernel.TCM
 
 maxSort :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
 
-inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm (Context, Sort)
+inferBinds :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
 
 infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
 

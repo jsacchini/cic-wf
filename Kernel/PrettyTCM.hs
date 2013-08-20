@@ -17,7 +17,8 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, UndecidableInstances
+{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, UndecidableInstances,
+    OverlappingInstances
   #-}
 
 module Kernel.PrettyTCM where
@@ -26,7 +27,6 @@ import Control.Applicative hiding (empty)
 import Control.Monad.Reader
 
 import qualified Data.Foldable as Fold
-import Data.Functor
 
 import qualified Text.PrettyPrint as PP
 
@@ -62,17 +62,20 @@ rangle      = return MP.rangle
 comma       = return MP.comma
 text :: (MonadTCM tcm) => String -> tcm Doc
 text s	    = return $ PP.text s
-sep, fsep, hsep, vcat :: (MonadTCM tcm) => [tcm Doc] -> tcm Doc
+sep, fsep, hsep, hcat, vcat :: (MonadTCM tcm) => [tcm Doc] -> tcm Doc
 sep ds	    = PP.sep <$> sequence ds
 fsep ds     = PP.fsep <$> sequence ds
 hsep ds     = PP.hsep <$> sequence ds
+hcat ds     = PP.hcat <$> sequence ds
 vcat ds     = PP.vcat <$> sequence ds
 ($$), ($+$), (<>), (<+>) :: (MonadTCM tcm) => tcm Doc -> tcm Doc -> tcm Doc
 d1 $$ d2    = (PP.$$) <$> d1 <*> d2
 d1 $+$ d2   = (PP.$+$) <$> d1 <*> d2
 d1 <> d2    = (PP.<>) <$> d1 <*> d2
 d1 <+> d2   = (PP.<+>) <$> d1 <*> d2
+nest :: (MonadTCM tcm) => Int -> tcm Doc -> tcm Doc
 nest n d    = PP.nest n <$> d
+braces, brackets, parens :: (MonadTCM tcm) => tcm Doc -> tcm Doc
 braces d    = PP.braces <$> d
 brackets d  = PP.brackets <$> d
 parens d    = PP.parens <$> d
@@ -83,8 +86,10 @@ parensIf :: (MonadTCM tcm) => Bool -> tcm Doc -> tcm Doc
 parensIf True = fmap PP.parens
 parensIf False = id
 
+prettyList :: (MonadTCM tcm) => [tcm Doc] -> tcm Doc
 prettyList ds = brackets $ fsep $ punctuate comma ds
 
+punctuate :: (MonadTCM tcm) => tcm Doc -> [tcm Doc] -> [tcm Doc]
 punctuate _ [] = []
 punctuate d ds = zipWith (<>) ds (replicate n d ++ [empty])
     where
@@ -112,11 +117,18 @@ printTCM d = do d' <- d
 printTCMLn :: (MonadTCM tcm) => tcm Doc -> tcm ()
 printTCMLn d = printTCM (d <> text "\n") -- TODO: this does not seem the right way
 
-instance PrettyTCM a => PrettyTCM [a] where
-  prettyPrintTCM = hsep . map prettyPrintTCM
-
 instance PrettyTCM Int where
   prettyPrintTCM = int
+
+instance PrettyTCM Range where
+  prettyPrintTCM = return . MP.prettyPrint
+
+instance PrettyTCM a => PrettyTCM (Maybe a) where
+  prettyPrintTCM (Just x) = prettyPrintTCM x
+  prettyPrintTCM Nothing = empty
+
+instance PrettyTCM a => PrettyTCM (a,a) where
+  prettyPrintTCM (x,y) = parens $ prettyPrintTCM x <> comma <+> prettyPrintTCM y
 
 instance PrettyTCM Name where
   prettyPrintTCM = return . MP.prettyPrint
@@ -129,20 +141,29 @@ instance PrettyTCM Term where
                                             return (MP.prettyPrint x')]
                         return (MP.prettyPrint x')
 
-instance PrettyTCM TCEnv where
-  prettyPrintTCM (TCEnv env) = do ds <- ppEnv env
-                                  return $ PP.hsep (PP.punctuate MP.comma ds)
 
-ppEnv :: (MonadTCM tcm) => [I.Bind] -> tcm [Doc]
-ppEnv [] = return []
-ppEnv (Bind x impl t def: bs) = do b' <- reify t
-                                   def' <- maybeReify def
-                                   dbs <- pushBind (Bind x impl t def) $ ppEnv bs
-                                   return $ (around impl
-                                             (PP.hsep [MP.prettyPrint x,
-                                                       ppDef def',
-                                                       PP.text ":", MP.prettyPrint b'])) : dbs
-  where
+instance PrettyTCM A.Declaration where
+  prettyPrintTCM = return . MP.prettyPrint
+
+instance PrettyTCM TCEnv where
+  prettyPrintTCM env = do ds <- ppEnv env
+                          return $ PP.fsep (PP.punctuate MP.comma ds)
+    where
+      ppEnv EnvEmpty = return []
+      ppEnv (EnvExtend es e) = do ds <- ppEnv es
+                                  d <- local (const es) $ prettyPrintTCM e
+                                  return (ds ++ [d])
+
+instance PrettyTCM Bind where
+  prettyPrintTCM b =
+    do
+      b' <- reify (I.bindType b)
+      def' <- maybeReify (I.bindDef b)
+      return $ (around (isImplicit b)
+                (PP.hsep [MP.prettyPrint (I.bindName b),
+                          ppDef def',
+                          PP.text ":", MP.prettyPrint b']))
+    where
       around True x  = PP.text "{" PP.<> x PP.<> PP.text "}"
       around False x = PP.text "(" PP.<> x PP.<> PP.text ")"
       ppDef Nothing  = PP.text ""
@@ -150,6 +171,31 @@ ppEnv (Bind x impl t def: bs) = do b' <- reify t
       maybeReify Nothing = return Nothing
       maybeReify (Just x) = do x' <- reify x
                                return $ Just x'
+
+instance PrettyTCM Context where
+  prettyPrintTCM ctx = do ds <- prettyCtx (bindings ctx)
+                          return $ PP.fsep (PP.punctuate MP.comma ds)
+    where
+      prettyCtx [] = return []
+      prettyCtx (b:bs) = do d <- prettyPrintTCM b
+                            ds <- pushBind b $ prettyCtx bs
+                            return (d:ds)
+
+instance PrettyTCM CaseIn where
+  prettyPrintTCM c = do c' <- reify c
+                        return $ MP.prettyPrint c'
+
+-- instance (Reify a b, Show a, MP.Pretty b) => PrettyTCM a where
+--   prettyPrintTCM x = do traceTCM 99 $ hsep [text "prettyPrintTCM term",
+--                                             text ("reifying " ++ show x)]
+--                         x' <- reify x
+--                         traceTCM 99 $ hsep [text "reified ",
+--                                             return (MP.prettyPrint x')]
+--                         return (MP.prettyPrint x')
+
+instance PrettyTCM a => PrettyTCM [a] where
+  prettyPrintTCM = brackets . hcat . punctuate (text ", ") . map prettyPrintTCM
+
 
 instance PrettyTCM (Named Global) where
   prettyPrintTCM g = reify g >>= return . MP.prettyPrint
@@ -163,17 +209,14 @@ instance PrettyTCM SortVar where
 instance PrettyTCM MetaVar where
   prettyPrintTCM = return . MP.prettyPrint
 
-instance PrettyTCM Context where
-  prettyPrintTCM x = reify x >>= return . MP.prettyPrint
+-- instance PrettyTCM Context where
+--   prettyPrintTCM x = reify x >>= return . MP.prettyPrint
 
 instance PrettyTCM A.Expr where
   prettyPrintTCM = return . MP.prettyPrint
 
 instance PrettyTCM I.Goal where
-  prettyPrintTCM g = do ppbs <- ppEnv bs
-                        ppt <- withCtx (goalCtx g) $ prettyPrintTCM (goalType g)
-                        return $ PP.vcat (ppbs ++
-                                          [ PP.text "-------------------------"
-                                          , ppt])
-    where
-      bs = reverse $ Fold.toList (goalCtx g)
+  prettyPrintTCM g =
+    vcat [ prettyPrintTCM (goalEnv g)
+         , text "-------------------------"
+         , local (const (goalEnv g)) $ prettyPrintTCM (goalType g)]

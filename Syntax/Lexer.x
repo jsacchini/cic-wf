@@ -55,6 +55,8 @@ tokens :-
   ">"         { symbol }
   "["         { symbol }
   "]"         { symbol }
+  "{"         { symbol }
+  "}"         { symbol }
 
   @ident      { ident }
   @ident "*"  { identStar }

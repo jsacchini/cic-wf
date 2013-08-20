@@ -28,6 +28,8 @@ import Control.Monad.Reader
 
 import qualified Control.Exception as E
 
+import Text.PrettyPrint.HughesPJ (render)
+
 import Syntax.Common
 import Syntax.Position
 import Syntax.Internal as I
@@ -36,6 +38,7 @@ import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
+import Kernel.PrettyTCM
 import Kernel.Unification
 import Kernel.Permutation
 import Kernel.Whnf
@@ -50,11 +53,15 @@ inferCase :: (MonadTCM tcm) => A.CaseExpr -> tcm (Term, Type)
 inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
 
   -- Typecheck the argument
+  traceTCM 30 $ hsep [ text "CASE ARGUMENT from", prettyPrintTCM arg ]
   (arg', tpArg) <- infer arg
+  traceTCM 30 $ (hsep [ text "CASE ARGUMENT to", prettyPrintTCM arg' ]
+                 $$ hsep [ text "of type ", prettyPrintTCM tpArg ])
 
   -- Check that the type of the argument is an inductive type and get parameters
   -- and family indices
   (kind, sta, nmInd, (pars, inds)) <- getInductiveType tpArg
+  traceTCM 30 $ hsep [ text "CASE INDUCTIVE TYPE", prettyPrintTCM nmInd ]
 
   -- Force the stage of the argument to be a successor
   sta1 <- fresh
@@ -64,13 +71,18 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
 
   -- Check the family specification. Unify with the family of the inductive type
   -- The resulting unification is used to type-check the return type
+  traceTCM 30 $ hsep [ text "CASE IN from", text (render $ prettyPrint caseIn) ]
   (caseIn',ctx) <- checkCaseIn caseIn nmInd pars inds
+  traceTCM 30 $ hsep [ text "CASE IN to", prettyPrintTCM caseIn' ]
 
   -- Context for the return type
   let caseCtx = mkCaseBinds asNm nmInd pars tpArg caseIn'
 
   -- Check the return type and check that its type is a sort
+  traceTCM 30 $ hsep [ text "CASE RETURN from", pushCtx caseCtx $ prettyPrintTCM ret ]
   (ret', sort) <- pushCtx caseCtx $ infer ret
+  traceTCM 30 $ (hsep [ text "CASE RETURN to", prettyPrintTCM ret' ]
+                 $$ hsep [ text "of type ", prettyPrintTCM sort ])
   _ <- isSort sort
 
   -- Check branches
@@ -80,9 +92,11 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
       negConstrs = allConstrs \\ posConstrs
   -- traceTCM_ ["+++ : ", show posConstrs, "\n_|_ :", show negConstrs]
 
+  traceTCM 30 $ hsep [ text "POSSIBLE branches", text (show posConstrs) ]
   -- Checking possible
   posBranches <- mapM (checkBranch (Size (Svar sta1)) asNm nmInd pars caseIn' ret') branches
 
+  traceTCM 30 $ hsep [ text "IMPOSSIBLE branches", text (show negConstrs) ]
   -- Checking impossible branches
   _ <- mapM (checkImpossBranch pars caseIn') negConstrs
 
@@ -93,22 +107,24 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
       -- unifying the CaseIn family specification
       ret2 = unfoldCtx ctx ret1
 
-  
+
   -- traceTCM_ ["checked case ", show rg, "\nof type", show ret2]
   -- Final result
-  return (Case (CaseTerm arg' nmInd asNm caseIn' (eraseSize ret') posBranches), 
+  return (Case (CaseTerm arg' nmInd asNm caseIn' (eraseSize ret') posBranches),
           ret2)
 
     where
       checkCaseIn :: (MonadTCM tcm) =>
                      Maybe A.CaseIn -> Name -> [Term] -> [Term] ->
                      tcm (Maybe (I.CaseIn), Context)
-      checkCaseIn Nothing _ _ _ = return (Nothing, empCtx)
+      checkCaseIn Nothing _ _ _ = return (Nothing, ctxEmpty)
       checkCaseIn (Just c) nmInd pars inds
         | A.inInd c /= nmInd = error "wrong inductive type in case"
         | otherwise = do
           i <- getGlobal nmInd
+          traceTCM 30 $ vcat [ text "check IN context" <+> text (show (A.inBind c)) ]
           (inBind', _) <- inferBinds $ A.inBind c
+          traceTCM 30 $ vcat [ text "check SUBFAMILY indices" <+> prettyPrintTCM (A.inArgs c) ]
           inArgs' <- pushCtx inBind' $ checkList (A.inArgs c) (foldr subst (indIndices i) pars)
           let liftInds = map (I.lift (size inBind') 0) inds
           (bs'', p, ks) <- unifyPos inBind' (zip liftInds inArgs') [0..size inBind'-1]
@@ -116,11 +132,11 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
           return (Just (I.CaseIn inBind' nmInd inArgs'), bs'')
 
       mkCaseBinds :: Maybe Name -> Name -> [Term] -> Type -> Maybe CaseIn -> Context
-      mkCaseBinds Nothing _ _ _ Nothing = empCtx
+      mkCaseBinds Nothing _ _ _ Nothing = ctxEmpty
       mkCaseBinds Nothing _ _ _ (Just c) = inBind c
-      mkCaseBinds (Just x) _ _ tpArg Nothing = mkBind x tpArg <| empCtx
+      mkCaseBinds (Just x) _ _ tpArg Nothing = ctxSingle $ mkBind x tpArg
       mkCaseBinds (Just x) nmInd pars _ (Just c) =
-         inBind c |> mkBind x (mkApp (Ind Empty nmInd) (map (I.lift (size c) 0) pars ++ inArgs c))
+         inBind c |> (mkBind x (mkApp (Ind Empty nmInd) (map (I.lift (size c) 0) pars ++ inArgs c)))
 
       getInductiveType t = do
         t' <- whnF t
@@ -136,10 +152,10 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
       listConstructors :: (MonadTCM tcm) => Name -> tcm [Name]
       listConstructors i = indConstr <$> getGlobal i
 
-      unfoldCtx ctx t = unfoldCtx_ 0 ctx t
-      unfoldCtx_ k EmptyCtx t = t
-      unfoldCtx_ k (ExtendCtx (Bind _ _ _ Nothing) ctx) t = unfoldCtx_ (k+1) ctx t
-      unfoldCtx_ k (ExtendCtx (Bind _ _ _ (Just u)) ctx) t =
+      unfoldCtx ctx t = unfoldCtx_ 0 (bindings ctx) t
+      unfoldCtx_ k [] t = t
+      unfoldCtx_ k (Bind _ _ _ Nothing :ctx) t = unfoldCtx_ (k+1) ctx t
+      unfoldCtx_ k (Bind _ _ _ (Just u):ctx) t =
         unfoldCtx_ k ctx (subst (I.lift k 0 u) t)
 
 
@@ -153,8 +169,9 @@ checkBranch :: (MonadTCM tcm) =>
 checkBranch sta asNm nmInd pars caseIn' ret'
   (A.Branch _ nmConstr idConstr nmArgs body whSubst) = do
 
+  traceTCM 30 $ hsep [ text "Checking branch", prettyPrintTCM nmConstr ]
   (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
-  
+
   -- TODO: replace star for the appropiate stage
   let replStage x = if x == Star then sta else x
 
@@ -162,7 +179,7 @@ checkBranch sta asNm nmInd pars caseIn' ret'
       numPars = length pars
       numArgs = size tpArgs'
       inds' = substList (numArgs + numPars - 1) pars inds
-      inCtx = maybe empCtx inBind caseIn'
+      inCtx = maybe ctxEmpty inBind caseIn'
       inFam = maybe [] inArgs caseIn'
       whDom = case whSubst of
                 Just ws -> map A.assgnBound (A.unSubst ws)
@@ -176,6 +193,13 @@ checkBranch sta asNm nmInd pars caseIn' ret'
       ret2 = ifMaybe_ asNm (subst constrArg) ret'
       ret3 = applyPerm perm $ I.lift numArgs 0 ret2
 
+  pushCtx permCtx
+    $ traceTCM 30
+    $ vcat [ text "Checking BODY" <+> prettyPrintTCM nmConstr
+           , text "body:" <+> prettyPrintTCM (applyPerm perm body)
+           , text "against:" <+> prettyPrintTCM ret3
+           , text "in ctx" <+> (ask >>= prettyPrintTCM)
+           ]
   -- Check body
   body' <- pushCtx permCtx $ check (applyPerm perm body) ret3
 
@@ -197,14 +221,15 @@ checkImpossBranch :: (MonadTCM tcm) =>
 checkImpossBranch pars caseIn' nmConstr = do
   (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
 
+  traceTCM 30 $ hsep [ text "Checking impossible branch", prettyPrintTCM nmConstr ]
   -- TODO: replace star for the appropiate stage
   let replStage x = if x == Star then (Size Infty) else x
 
   let tpArgs' = foldr subst (modifySize replStage tpArgs) pars
       inds'   = foldr subst inds pars
       numArgs = size tpArgs'
-      ctx = maybe empCtx inBind caseIn' +: tpArgs'
+      ctx = maybe ctxEmpty inBind caseIn' +: tpArgs'
       eqs = zip (map (I.lift numArgs 0) (maybe [] inArgs caseIn')) inds'
-      freeVars = [0..size (maybe empCtx inBind caseIn') + numArgs - 1]
+      freeVars = [0..size (maybe ctxEmpty inBind caseIn') + numArgs - 1]
   unifyNeg ctx eqs freeVars
   -- traceTCM_ ["Impossible branch ", show nmConstr]

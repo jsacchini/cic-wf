@@ -31,11 +31,8 @@ class Pretty a where
 instance Pretty Doc where
   prettyPrint = id
 
--- instance Pretty a => Pretty (Maybe a) where
---   prettyPrint = maybe empty prettyPrint
-maybePPrint :: (Pretty a) => (a -> Doc) -> Maybe a -> Doc
-maybePPrint = maybe empty
-
+instance Pretty a => Pretty (Maybe a) where
+  prettyPrint = maybe empty prettyPrint
 
 parensIf :: Bool -> Doc -> Doc
 parensIf True = PP.parens

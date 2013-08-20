@@ -39,6 +39,7 @@ import Control.Monad.Reader
 import Control.Exception
 
 import Data.Function
+import Data.Functor
 import Data.List
 import Data.Traversable (traverse)
 
@@ -52,6 +53,10 @@ import Kernel.TCM
 
 import Utils.Misc
 import Utils.Sized
+import Utils.Value
+
+
+-- Scope errors
 
 wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
 wrongArg r x m n = typeError $ WrongNumberOfArguments r x m n
@@ -62,18 +67,25 @@ undefinedName r x = typeError $ UndefinedName r x
 constrNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
 constrNotApplied r x = typeError $ ConstructorNotApplied r x
 
+
 -- | We reuse the type-checking monad for scope checking
 class Scope a where
   scope :: MonadTCM m => a -> m a
 
-instance Scope A.Bind where
-  scope (A.Bind r impl xs e) = fmap (A.Bind r impl xs) (scope e)
 
-instance (Scope a, HasNames a) => Scope [a] where
-  scope [] = return []
-  scope (x:xs) = do s <- scope x
-                    ss <- fakeBinds x $ scope xs
-                    return (s:ss)
+instance (Scope a) => Scope (Maybe a) where
+    scope (Just x) = do s <- scope x
+                        return $ Just s
+    scope Nothing = return Nothing
+
+
+instance (Scope a) => Scope (Implicit a) where
+  scope x = do v <- scope (implicitValue x)
+               return $ v <$ x
+
+
+instance (Scope a) => Scope [a] where
+  scope = mapM scope
 
 
 instance Scope A.Expr where
@@ -83,13 +95,13 @@ instance Scope A.Expr where
        return $ A.Ann r e1' e2'
   scope t@(A.Sort _ _) = return t
   -- scope t@(EVar _ _) = return t
-  scope (A.Pi r bs e) =
-    do bs' <- scope bs
-       e' <- fakeBinds bs $ scope e
+  scope (A.Pi r ctx e) =
+    do bs' <- scope ctx
+       e' <- fakeBinds ctx $ scope e
        return $ A.Pi r bs' e'
   scope (A.Arrow r e1 e2) =
     do e1' <- scope e1
-       e2' <- fakeBinds noName $ scope e2
+       e2' <- pushBind (I.mkBind noName (I.Sort I.Prop)) $ scope e2
        return $ A.Arrow r e1' e2'
   scope (A.Lam r bs e) =
     do bs' <- scope bs
@@ -99,16 +111,17 @@ instance Scope A.Expr where
     do args' <- mapM scope args
        scopeApp func args'
       where
-        (func, args) = A.destroyApp t
+        (func, args) = A.unApp t
   scope t@(A.Meta _ _) = return t
   scope t@(A.Ident r x) =
     do xs <- getLocalNames
+       -- liftIO $ print ("scope ident " ++ show x ++ " in " ++ show xs)
        case findIndex (==x) xs of
          Just n -> return $ A.Bound r x n
          Nothing ->
            do g <- lookupGlobal x
               case g of
-                Just (I.Inductive {}) -> return $ A.Ind r Empty x
+                Just (I.Inductive {}) -> return $ A.Ind r Empty x []
                 Just c@(I.Constructor {}) ->
                   do when (numArgs /= 0) $ constrNotApplied r x
                      return $ A.Constr r x indId [] []
@@ -121,18 +134,33 @@ instance Scope A.Expr where
   scope (A.Fix f) = fmap A.Fix (scope f)
   -- Ind can appear after parsing for position types (only annotated with star)
   -- We just check that the identifier is actually an inductive type
-  scope e@(A.Ind r Star x) =
+  scope e@(A.Ind r Star x _) =
     do g <- lookupGlobal x
        case g of
          Just (I.Inductive {}) -> return e
          Just _                -> typeError $ NotInductive x
          Nothing               -> typeError $ UndefinedName r x
-  scope (A.Ind _ _ _) = __IMPOSSIBLE__
+  scope (A.Ind _ _ _ _) = __IMPOSSIBLE__
   scope (A.Constr _ _ _ _ _) = __IMPOSSIBLE__
   scope (A.Bound _ _ _) = __IMPOSSIBLE__
   scope (A.Number r n) = scope $ mkNat n
-    where mkNat 0 = A.Ident r (Id "O")
-          mkNat k = A.App r (A.Ident r (Id "S")) (mkNat (k-1))
+    where mkNat 0 = A.Ident r (mkName "O")
+          mkNat k = A.App r (A.Ident r (mkName "S")) (mkNat (k-1))
+
+
+instance (Scope a, HasNames a) => Scope (Ctx a) where
+  scope ctx = do xs <- scopeBinds (bindings ctx)
+                 return (ctxFromList xs)
+    where
+      scopeBinds [] = return []
+      scopeBinds (x : xs) = do y <- scope x
+                               ys <- fakeBinds x $ scopeBinds xs
+                               return (y : ys)
+
+
+instance Scope A.Bind where
+  scope (A.Bind r ns x) = do y <- scope x
+                             return $ A.Bind r ns y
 
 
 instance Scope A.FixExpr where
@@ -151,6 +179,7 @@ instance Scope A.CaseExpr where
        bs'     <- mapM (fakeBinds inName . scope) bs
        let sortbs = sortBy (compare `on` A.brConstrId) bs'
        return $ A.CaseExpr r arg' asName inName' subst ret' sortbs
+
 
 instance Scope A.CaseIn where
   scope (A.CaseIn r bs ind args) =
@@ -180,6 +209,7 @@ instance Scope A.Branch where
          Just _ -> throw $ PatternNotConstructor name
          Nothing -> throw $ UndefinedName r name
 
+
 scopeAssign :: (MonadTCM tcm) => Int -> A.Assign -> tcm A.Assign
 scopeAssign k an = do xs <- getLocalNames
                       case findIndex (==A.assgnName an) xs of
@@ -189,6 +219,7 @@ scopeAssign k an = do xs <- getLocalNames
                                | otherwise -> error "scope: assign var out of bound"
                         Nothing -> error "scope: var not found"
 
+
 scopeSubst :: (MonadTCM tcm) => Int -> A.Subst -> tcm A.Subst
 scopeSubst k (A.Subst sg) = mapM (scopeAssign k) sg >>= return . A.Subst
 
@@ -197,11 +228,11 @@ scopeApp :: (MonadTCM tcm) => A.Expr -> [A.Expr] -> tcm A.Expr
 scopeApp e@(A.Ident r x) args =
   do xs <- getLocalNames
      case findIndex (==x) xs of
-       Just n -> return $ A.buildApp (A.Bound r x n) args
+       Just n -> return $ A.mkApp (A.Bound r x n) args
        Nothing ->
          do g <- lookupGlobal x
             case g of
-              Just (I.Inductive {}) -> return $ A.buildApp (A.Ind r Empty x) args
+              Just (I.Inductive {}) -> return $ A.mkApp (A.Ind r Empty x []) args
               Just (I.Constructor i idConstr parsTp argsTp _ _) ->
                   if expLen /= givenLen
                   then wrongArg cRange x expLen givenLen
@@ -213,16 +244,10 @@ scopeApp e@(A.Ident r x) args =
                   expLen = parLen + argLen
                   (cpars, cargs) = splitAt parLen args
                   cRange = fuseRange r args
-              Just _ -> return $ A.buildApp e args
+              Just _ -> return $ A.mkApp e args
               Nothing -> undefinedName r x
 scopeApp e args = do e' <- scope e
-                     return $ A.buildApp e' args
-
-
-instance (Scope a) => Scope (Maybe a) where
-    scope (Just x) = do s <- scope x
-                        return $ Just s
-    scope Nothing = return Nothing
+                     return $ A.mkApp e' args
 
 
 instance Scope A.Declaration where
@@ -244,16 +269,15 @@ instance Scope A.Declaration where
          e2' <- scope e2
          return $ A.Check e1' e2'
 
+
 instance Scope A.InductiveDef where
-  scope (A.InductiveDef x k ps e cs) =
+  scope (A.InductiveDef x k ps pols e cs) =
       do ps' <- scope ps
          e'  <- fakeBinds ps $ scope e
          cs' <- fakeBinds ps $ fakeBinds x $ mapM scope cs
          checkIfDefined x
-         return $ A.InductiveDef x k ps' e' cs'
+         return $ A.InductiveDef x k ps' pols e' cs'
 
-instance Scope A.Parameter where
-  scope (A.Parameter r np e) = fmap (A.Parameter r np) (scope e)
 
 -- TODO: check that the inductive type is always applied to the parameters
 instance Scope A.Constructor where

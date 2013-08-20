@@ -38,7 +38,7 @@ import qualified Data.Map as Map
 
 import qualified Data.Graph.Inductive as GI
 
-import Text.PrettyPrint
+import Text.PrettyPrint.HughesPJ
 
 import Control.Monad.State
 import Control.Monad.Reader
@@ -57,7 +57,7 @@ import qualified Kernel.Constraints as CS
 -- Type checking errors
 -- We include scope errors, so we have to catch only one type
 data TypeError
-    = NotConvertible TCEnv I.Term I.Term
+    = NotConvertible (Maybe Range) TCEnv I.Term I.Term
     | NotFunction TCEnv I.Term
     | NotSort TCEnv I.Term
     | NotArity Range I.Term
@@ -77,18 +77,18 @@ data TypeError
     | FixRecursiveArgumentNotPositive Range
     | AlreadyDefined Name
     -- Unification
-    | NotUnifiable
+    | NotUnifiable Int
     | NotImpossibleBranch
     deriving(Show, Typeable)
 
 -- instance Show TypeError where
 --     show (NotConvertible e t1 t2) = "NotConvertible " ++ ppTerm (map bind e) t1 ++ " =!= " ++ ppTerm (map bind e) t2
---     show (NotFunction e t1) = "NotFunction " ++ ppI.Term (map bind e) t1
---     show (NotSort e t1) = "NotSort " ++ ppI.Term (map bind e) t1
---     show (NotArity e t1) = "NotArity " ++ ppI.Term (map bind e) t1
---     show (InvalidProductRule s1 s2) = "InvalidProductRule " ++ show s1 ++ " " ++ show s2
---     show (IdentifierNotFound x) = "IdentifierNotFound " ++ x
---     show (ConstantError s) = "ConstantError " ++ s
+    -- show (NotFunction e t1) = "NotFunction " ++ ppI.Term (map bind e) t1
+    -- show (NotSort e t1) = "NotSort " ++ ppI.Term (map bind e) t1
+    -- show (NotArity e t1) = "NotArity " ++ ppI.Term (map bind e) t1
+    -- show (InvalidProductRule s1 s2) = "InvalidProductRule " ++ show s1 ++ " " ++ show s2
+    -- show (IdentifierNotFound x) = "IdentifierNotFound " ++ x
+    -- show (ConstantError s) = "ConstantError " ++ s
 
 instance Exception TypeError
 
@@ -146,18 +146,17 @@ instance HasFresh I.MetaVar TCState where
     where (i, f) = nextFresh $ stFresh s
 
 -- Local environment
-newtype TCEnv = TCEnv { unEnv :: [I.Bind] }
-                deriving (Show)
+type TCEnv = Env I.Bind
 
--- What combinator is this?
-withEnv :: ([I.Bind] -> [I.Bind])-> TCEnv -> TCEnv
-withEnv f (TCEnv x) = TCEnv (f x)
+-- -- What combinator is this?
+-- withEnv :: (Env I.Bind -> Env I.Bind)-> TCEnv -> TCEnv
+-- withEnv f (TCEnv x) = TCEnv (f x)
 
 localLength :: (MonadTCM tcm) => tcm Int
-localLength = liftM (length . unEnv) ask
+localLength = liftM envLen ask
 
 localGet :: (MonadTCM tcm) => Int -> tcm I.Bind
-localGet k = liftM ((!! k) . unEnv) ask
+localGet k = liftM (flip envGet k) ask
 
 data TCErr = TCErr TypeError
              deriving(Show, Typeable)
@@ -199,9 +198,9 @@ initialTCState =
 --   inductive type
 initialSignature :: Signature
 initialSignature = foldr (uncurry Map.insert) Map.empty
-                   [(Id "nat", natInd),
-                    (Id "O", natO),
-                    (Id "S", natS)]
+                   [(mkName "nat", natInd),
+                    (mkName "O", natO),
+                    (mkName "S", natS)]
 
 initialFresh :: Fresh
 initialFresh = Fresh { freshStage = succ inftyStageVar -- inftyStageVar is mapped to ∞
@@ -209,14 +208,10 @@ initialFresh = Fresh { freshStage = succ inftyStageVar -- inftyStageVar is mappe
                      , freshMeta  = toEnum 0 }
 
 initialTCEnv :: TCEnv
-initialTCEnv = TCEnv []
+initialTCEnv = EnvEmpty
 
 typeError :: (MonadTCM tcm) => TypeError -> tcm a
 typeError = throw
-
-throwNotConvertible :: (MonadTCM tcm) => I.Term -> I.Term -> tcm a
-throwNotConvertible t u = do e <- ask
-                             typeError $ NotConvertible e t u
 
 throwNotFunction :: (MonadTCM tcm) => I.Term -> tcm a
 throwNotFunction t = do e <- ask
@@ -244,21 +239,27 @@ getGlobal x = (Map.! x) . stSignature <$> get
 
 -- | addGlobal adds a global definition to the signature.
 --   Checking that names are not repeated is handled by the scope checker
-addGlobal :: (MonadTCM tcm) => Name -> I.Global -> tcm ()
-addGlobal x g = do st <- get
-                   put $ st { stSignature = Map.insert x g (stSignature st),
-                              stDefined = x : stDefined st
-                            }
+addGlobal :: (MonadTCM tcm) => Named I.Global -> tcm ()
+addGlobal g = do st <- get
+                 put $ st { stSignature = Map.insert x d (stSignature st)
+                          , stDefined = x : stDefined st
+                          }
+  where
+    x = nameTag g
+    d = namedValue g
 
 pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
 pushCtx ctx m = do ctx' <- freshenCtx ctx
-                   local (withEnv (reverse (Fold.toList ctx')++)) m
+                   local (+:+ ctx') m
 
 withCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
-withCtx ctx = local (const (TCEnv (Fold.toList ctx)))
+withCtx ctx = local (const (ctxToEnv ctx))
+
+withEnv :: (MonadTCM tcm) => TCEnv -> tcm a -> tcm a
+withEnv = local . const
 
 freshenName :: (MonadTCM tcm) => Name -> tcm Name
-freshenName x | isNull x  = return $ mkName "_"
+freshenName x | isNull x  = return $ noName
               | otherwise = do xs <- getLocalNames
                                return $ doFreshName xs x
               where
@@ -266,14 +267,17 @@ freshenName x | isNull x  = return $ mkName "_"
                                  | otherwise = trySuffix xs y (0 :: Int)
                 trySuffix xs y n | addSuffix y n `notElem` xs = addSuffix y n
                                  | otherwise = trySuffix xs y (n+1)
-                addSuffix (Id x) n = Id $ x ++ show n
+                addSuffix x n = modifyName (++ show n) x
 
 freshenCtx :: (MonadTCM tcm) => I.Context -> tcm I.Context
-freshenCtx EmptyCtx          = return EmptyCtx
-freshenCtx (ExtendCtx b ctx) = do x <- freshenName (I.bindName b)
-                                  let b' = b { I.bindName = x }
-                                  ctx' <- pushBind b' (freshenCtx ctx)
-                                  return (ExtendCtx b' ctx')
+freshenCtx ctx = do ys <- freshenBinds (bindings ctx)
+                    return (ctxFromList ys)
+  where
+    freshenBinds []          = return []
+    freshenBinds (b:bs) = do y <- freshenName (I.bindName b)
+                             let b' = I.setName y b
+                             bs' <- pushBind b' (freshenBinds bs)
+                             return (b':bs')
 
 pushType :: (MonadTCM tcm) => I.Type -> tcm a -> tcm a
 pushType tp m = do x <- freshenName (mkName "x")
@@ -281,8 +285,8 @@ pushType tp m = do x <- freshenName (mkName "x")
 
 pushBind :: (MonadTCM tcm) => I.Bind -> tcm a -> tcm a
 pushBind b m = do x <- freshenName (I.bindName b)
-                  let b' = b { I.bindName = x }
-                  local (withEnv (b':)) m
+                  let b' = I.setName x b
+                  local (flip EnvExtend b') m
 
 -- | Returns the number of parameters of an inductive type.
 --   Assumes that the global declaration exists and that is an inductive type
@@ -291,13 +295,18 @@ numParam x = (size . I.indPars) <$> getGlobal x
 
 
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
-getLocalNames = map I.bindName . unEnv <$> ask
+getLocalNames = ask >>= return . name
 
 -- We don't need the real type of the binds for scope checking, just the names
 -- Maybe should be moved to another place
 fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
-fakeBinds b = local (withEnv (map mkBind (reverse (getNames b))++))
-              where mkBind x = I.Bind x False (I.Sort I.Prop) Nothing
+fakeBinds b = pushCtx (mkFakeCtx b)
+  where
+    mkFakeCtx = ctxFromList . map mkFakeBind . name
+    mkFakeBind x = I.mkBind x (I.Sort I.Prop)
+
+fakeNames :: (MonadTCM tcm) => Name -> tcm a -> tcm a
+fakeNames x = pushCtx $ ctxSingle (I.mkBind x (I.Sort I.Prop))
 
 -- Constraints
 
@@ -330,7 +339,7 @@ addTypeConstraints cts = do
   case find ((/= []) . flip CS.findNegCycle tpConstr) (CS.listNodes tpConstr) of
     Just _ -> throw UniverseInconsistency
     Nothing -> return ()
-  traceTCM 30 $ return (hsep (text "Adding type constraints: " :
+  traceTCM 40 $ return (hsep (text "Adding type constraints: " :
                               map (\(x,y,k) -> hsep [prettyPrint x,
                                                      text (if k == 0 then "<=" else "<"),
                                                      prettyPrint y
@@ -393,9 +402,9 @@ traceTCM n t = do k <- getVerbosity
 --- For testing
 testTCM_ :: TCM a -> IO (Either TCErr a)
 testTCM_ m = runTCM m'
-  where m' = do addGlobal (Id "nat") natInd
-                addGlobal (Id "O")   natO
-                addGlobal (Id "S")   natS
+  where m' = do addGlobal (mkNamed (mkName "nat") natInd)
+                addGlobal (mkNamed (mkName "O")   natO)
+                addGlobal (mkNamed (mkName "S")   natS)
                 m
 
 
@@ -403,29 +412,30 @@ testTCM_ m = runTCM m'
 natInd :: I.Global
 natInd =
   I.Inductive { I.indKind    = I
-              , I.indPars    = empCtx
+              , I.indPars    = ctxEmpty
               , I.indPol     = []
-              , I.indIndices = empCtx
+              , I.indIndices = ctxEmpty
               , I.indSort    = I.Type 0
-              , I.indConstr  = [Id "O", Id "S"]
+              , I.indConstr  = [mkName "O", mkName "S"]
               }
 
 natO :: I.Global
 natO =
-  I.Constructor { I.constrInd     = Id "nat"
+  I.Constructor { I.constrInd     = mkName "nat"
                 , I.constrId      = 0
-                , I.constrPars    = empCtx
-                , I.constrArgs    = empCtx
+                , I.constrPars    = ctxEmpty
+                , I.constrArgs    = ctxEmpty
                 , I.constrRec     = []
                 , I.constrIndices = []
                 }
 
 natS :: I.Global
 natS =
-  I.Constructor { I.constrInd     = Id "nat",
-                  I.constrId      = 1,
-                  I.constrPars    = empCtx,
-                  I.constrArgs    = I.unNamed (I.Ind Empty (Id "nat")) <| empCtx,
-                  I.constrRec     = [0],
-                  I.constrIndices = [] }
+  I.Constructor { I.constrInd     = mkName "nat"
+                , I.constrId      = 1
+                , I.constrPars    = ctxEmpty
+                , I.constrArgs    = ctxSingle (I.unNamed (I.Ind Empty (mkName "nat")))
+                , I.constrRec     = [0]
+                , I.constrIndices = []
+                }
 

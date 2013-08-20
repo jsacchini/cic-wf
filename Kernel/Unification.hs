@@ -32,6 +32,7 @@ import Syntax.Internal as I
 import Syntax.InternaltoAbstract
 
 import Kernel.TCM
+import Kernel.PrettyTCM
 import Kernel.Whnf
 import Kernel.Conversion
 import Kernel.Permutation
@@ -51,10 +52,24 @@ instance SubstTerm Equation where
 --   exception if unification succeedes negatively or fails
 unifyPos :: (MonadTCM tcm) =>
             Context -> [Equation] -> [Int] -> tcm (Context, Permutation, [Int])
-unifyPos ctx eqs ks = do r <- runMT $ unify ctx eqs ks
-                         case r of
-                           Just x -> return x
-                           Nothing -> typeError NotUnifiable
+unifyPos ctx eqs ks =
+  do
+    traceTCM 30 $ vcat [ text "UNIFY POS"
+                       , text "in env:" <+> (ask >>= prettyPrintTCM)
+                       , text "in context:" <+> prettyPrintTCM ctx
+                       , text "EQs" <+> (pushCtx ctx $ prettyPrintTCM eqs)
+                       , text "FOR" <+> prettyPrintTCM ks ]
+    r <- runMT $ unify ctx eqs ks
+    case r of
+      Just x@(ctxr, permr, ksr) ->
+        do
+          traceTCM 30 $ vcat [ text "UNIFY POS RESULT"
+                             , text "in env:" <+> (ask >>= prettyPrintTCM)
+                             , text "result context:" <+> prettyPrintTCM ctxr
+                             , text "perm result" <+> prettyPrintTCM (unPerm permr)
+                             , text "for result" <+> prettyPrintTCM ksr ]
+          return x
+      Nothing -> typeError $ NotUnifiable 1
 
 
 -- | unifyNeg returns () if the unification succeedes negatively or throws an
@@ -62,10 +77,17 @@ unifyPos ctx eqs ks = do r <- runMT $ unify ctx eqs ks
 --   impossible branches
 unifyNeg :: (MonadTCM tcm) =>
             Context -> [Equation] -> [Int] -> tcm ()
-unifyNeg ctx eqs ks = do r <- runMT $ unify ctx eqs ks
-                         case r of
-                           Just x -> typeError NotImpossibleBranch
-                           Nothing -> return ()
+unifyNeg ctx eqs ks =
+  do
+    traceTCM 30 $ vcat [ text "UNIFY NEG"
+                       , text "in env:" <+> (ask >>= prettyPrintTCM)
+                       , text "in context:" <+> prettyPrintTCM ctx
+                       , text "EQs" <+> prettyPrintTCM eqs
+                       , text "FOR" <+> prettyPrintTCM ks ]
+    r <- runMT $ unify ctx eqs ks
+    case r of
+      Just x -> typeError NotImpossibleBranch
+      Nothing -> return ()
 
 
 -- | unify Δ (u = v) ζ computes the first-order unification of 'u' and 'v' under
@@ -93,7 +115,17 @@ unify ctx ((t1,t2):es) ks = do
   -- traceTCM_ ["Normalized equation: ", show w1, " === ", show w2, "\nfor ", show ks]
 
   -- Unify the first equation
+  R.lift $ traceTCM 30 $ vcat [ text "unifying equation" <+> prettyPrintTCM (length es + 1)
+                              , text "ctx" <+> prettyPrintTCM ctx
+                              , text "EQ " <+> (pushCtx ctx $ prettyPrintTCM (w1, w2))
+                              , text "for"
+                              , prettyPrintTCM ks ]
   (ctx1, p1, ks1) <- unifyEq ctx (w1,w2) ks
+  R.lift $ traceTCM 30 $ vcat [ text "result"
+                              , prettyPrintTCM ctx1
+                              , text "perm" <+> prettyPrintTCM (unPerm p1)
+                              , text "for"
+                              , prettyPrintTCM ks1 ]
   -- traceTCM_ ["result unifyEq ", show ctx1, " left ", show ks1, "\n perm : ", show p1]
   -- traceTCM_ ["REST ", show ctx1, "\neq  ", show $ map (applyPerm p1) es, "\nfor ", show ks1]
 
@@ -119,14 +151,20 @@ unifyEq ctx (Bound k1, Bound k2) js
   | k2 `elem` js = do (ctx', p) <- R.lift $ applyDef ctx k2 (Bound k1)
                       -- traceTCM_ ["applyDef right result ", show ctx', "\nperm ", show p]
                       return (ctx', p, applyPerm p (js \\ [k2]))
-  | otherwise    = do unless (k1 == k2) $ R.lift $ typeError NotUnifiable
-                      return (ctx, idP (size ctx), js)
+  | otherwise    =
+    do
+      unless (k1 == k2) $ R.lift $ (do traceTCM 1 $ vcat [ text "NOT UNIFIABLE"
+                                                         , text "env:" <+> (ask >>= prettyPrintTCM)
+                                                         , hsep [text "unif:", text "bound", prettyPrintTCM k1, text "and bound", prettyPrintTCM k2, text "for", prettyPrintTCM js]
+                                                         ]
+                                       typeError $ NotUnifiable 2)
+      return (ctx, idP (size ctx), js)
 unifyEq ctx (Bound k, t2) js
   | k `elem` js = do (ctx', p) <- R.lift $ applyDef ctx k t2
                      -- traceTCM_ ["applyDef left result ", show ctx', "\nperm ", show p]
                      return (ctx', p, applyPerm p (js \\ [k]))
-  | otherwise   = do (unlessM (R.lift $ Bound k ~~ t2)) $ R.lift $ typeError NotUnifiable -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
-                     return (empCtx, idP (ctxLen ctx), js)
+  | otherwise   = do (unlessM (R.lift $ Bound k ~~ t2)) $ R.lift $ typeError $ NotUnifiable 3 -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
+                     return (ctxEmpty, idP (ctxLen ctx), js)
 unifyEq ctx (t1, Bound k) js = unifyEq ctx (Bound k, t1) js
 
 -- If both terms are in constructor form, we unify the arguments if the
@@ -141,8 +179,8 @@ unifyEq ctx (Constr x1 cid1 ps1 as1, Constr x2 cid2 ps2 as2) js =
 -- Otherwise, we have to check that both terms are convertible. If they are not
 -- the problem is too difficult and we raise an exception.
 unifyEq ctx (t1, t2) js =
-  do unlessM (R.lift $ t1 ~~ t2) $ R.lift $ typeError NotUnifiable
-     return (empCtx, idP (ctxLen ctx), js)
+  do unlessM (R.lift $ t1 ~~ t2) $ R.lift $ typeError $ NotUnifiable 4
+     return (ctxEmpty, idP (ctxLen ctx), js)
 
 
 
@@ -165,7 +203,8 @@ applyDef ctx k t =
          u'   = lift (ctxLen cxa) 0 u
      -- traceTCM_ ["applyinf def\nbefore: ", show cxa', {-"\nafter: ", show cxb',-} "\ndef: ", show (applyPerm p' t), " -> ", show (LocalDef x t' u'), "\nperm: ", show p']
      return (ctx1 +: cxa' +: (Bind x False u' (Just t') <| cxb'), p')
-  where (ctx1, ExtendCtx (Bind x _ u Nothing) ctx0) = ctxSplitAt (ctxLen ctx - k - 1) ctx
+  where (ctx1, ctx0') = ctxSplitAt (ctxLen ctx - k - 1) ctx
+        (Bind x _ u Nothing, ctx0) = ctxSplit ctx0'
 
 -- | strengthen Δ t = (Δ₀, Δ₁, p)
 --
@@ -174,22 +213,25 @@ applyDef ctx k t =
 --     needed to type-check 't' and 'Δ₁' is the rest
 strengthen :: MonadTCM tcm =>
               Context -> Term -> tcm (Context,Context,Permutation)
-strengthen EmptyCtx _ = return (empCtx, empCtx, Perm [])
-strengthen (ExtendCtx bind ctx) t = do
-  (ctx0, ctx1, p) <- strengthen ctx t
-  -- traceTCM_ ["in strengthen\nbefore: ", show ctx0, "\nctx1er: ", show ctx1, "\nperm: ", show p, "\nputting in the middle: ", show bind]
+strengthen ctx t = do (xs1, xs2, p) <- strBinds (bindings ctx) t
+                      return (ctxFromList xs1, ctxFromList xs2, p)
+  where
+    strBinds [] _ = return ([], [], Perm [])
+    strBinds (bind:ctx) t = do
+      (ctx0, ctx1, p) <- strBinds ctx t
+      -- traceTCM_ ["in strengthen\nbefore: ", show ctx0, "\nctx1er: ", show ctx1, "\nperm: ", show p, "\nputting in the middle: ", show bind]
 
-  -- Let bind = (x : u) or (x := u1 : u2)
-  -- If x (bound var 0) is free in ctx0, or in 't' then we add bind to ctx0,
-  -- otherwise, we add bind to ctx1. In both cases, the permutation is adjusted
-  -- as needed
-  if isFree 0 ctx0 || isFree (ctxLen ctx0 + ctxLen ctx1) t
-    then return (bind <| ctx0, ctx1, p ++> 1)
-    else do
-      -- We need to shift the vars in bind by ctx0;
-      -- adjust the position of bind in ctx1 (using permutation ctx1P); and
-      -- adjust the returned permutation by inserting bind in the correct place
-      let ctx1P = insertP 0 (idP (ctxLen ctx0))
-      -- traceTCM_ ["applying ctx1P :", show ctx1P, "\non ", show ctx1]
-      return (ctx0, lift (ctxLen ctx0) 0 bind <| applyPerm ctx1P ctx1,
-              insertP (ctxLen ctx1) p)
+      -- Let bind = (x : u) or (x := u1 : u2)
+      -- If x (bound var 0) is free in ctx0, or in 't' then we add bind to ctx0,
+      -- otherwise, we add bind to ctx1. In both cases, the permutation is adjusted
+      -- as needed
+      if isFree 0 ctx0 || isFree (length ctx0 + length ctx1) t
+        then return (bind : ctx0, ctx1, p ++> 1)
+        else do
+        -- We need to shift the vars in bind by ctx0;
+        -- adjust the position of bind in ctx1 (using permutation ctx1P); and
+        -- adjust the returned permutation by inserting bind in the correct place
+        let ctx1P = insertP 0 (idP (length ctx0))
+        -- traceTCM_ ["applying ctx1P :", show ctx1P, "\non ", show ctx1]
+        return (ctx0, lift (length ctx0) 0 bind : bindings (applyPerm ctx1P (ctxFromList ctx1)),
+                insertP (length ctx1) p)

@@ -27,6 +27,7 @@ import Utils.Impossible
 
 import Data.List
 import qualified Data.Foldable as Fold
+import Data.Functor
 import Control.Monad.Reader
 
 import Syntax.Common
@@ -46,6 +47,10 @@ nF = normalForm
 class Whnf a where
   whnf :: (MonadTCM tcm) => a -> tcm a
 
+instance Whnf a => Whnf (Implicit a) where
+  whnf x = do y <- whnf $ implicitValue x
+              return $ y <$ x
+
 instance Whnf Term where
   whnf t = metaexp t >>= wH
     where
@@ -53,16 +58,18 @@ instance Whnf Term where
         w <- wH f
         case w of
           Lam ctx u -> wH $ betaRed ctx u ts
-          Fix I n _ _ _ _
+          Fix f
             | length ts < n -> return $ App w ts
             | otherwise ->
               do recArg' <- normalForm recArg
                  case recArg' of
-                   Constr {} -> wH (muRed w (first ++ recArg' : last))
+                   Constr {} -> wH (muRed f (first ++ recArg' : last))
                    _ -> return $ App w ts
-            where (first, recArg, last) = splitRecArg [] (n - 1) ts
-                  splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
-                  splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
+            where
+              n = fixNum f
+              (first, recArg, last) = splitRecArg [] (n - 1) ts
+              splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
+              splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
           _         -> return $ App w ts
       wH t@(Bound k) = do
         len <- localLength
@@ -99,8 +106,8 @@ instance Whnf Term where
 
 -- isCofix (App (cofix f:T := M) ts) = Just (f, T, M, cofix f := M, ts)
 isCofix :: Term -> Maybe (Bind, Term, Term, [Term])
-isCofix t@(Fix CoI _ f ctx tp body)          = Just (mkBind f (mkPi ctx tp), body, t, [])
-isCofix (App t@(Fix CoI _ f ctx tp body) ts) = Just (mkBind f (mkPi ctx tp), body, t, ts)
+isCofix t@(Fix (FixTerm CoI _ f ctx tp body))          = Just (mkBind f (mkPi ctx tp), body, t, [])
+isCofix (App t@(Fix (FixTerm CoI _ f ctx tp body)) ts) = Just (mkBind f (mkPi ctx tp), body, t, ts)
 isCofix _                                    = Nothing
 
 unfoldPi :: (MonadTCM tcm) => Type -> tcm (Context, Type)
@@ -110,7 +117,7 @@ unfoldPi t =
        Pi ctx1 t1 -> do (ctx2, t2) <- pushCtx ctx1 $ unfoldPi t1
                         t2' <- pushCtx (ctx1 +: ctx1) $ whnf t2
                         return (ctx1 +: ctx2, t2')
-       _          -> return (empCtx, t')
+       _          -> return (ctxEmpty, t')
 
 
 class NormalForm a where
@@ -121,16 +128,28 @@ instance NormalForm a => NormalForm (Maybe a) where
   normalForm (Just x) = do y <- normalForm x
                            return $ Just y
 
+instance NormalForm a => NormalForm (Implicit a) where
+  normalForm x = do y <- normalForm (implicitValue x)
+                    return $ y <$ x
+
 instance NormalForm Bind where
-  normalForm (Bind x impl t def) = do t' <- normalForm t
-                                      def' <- normalForm def
-                                      return $ Bind x impl t' def'
+  normalForm b =
+    do t <- normalForm (bindType b)
+       u <- normalForm (bindDef b)
+       return $ b { bindType = t, bindDef = u }
+
 
 instance NormalForm Context where
-  normalForm EmptyCtx = return EmptyCtx
-  normalForm (ExtendCtx b c) = do b' <- normalForm b
-                                  c' <- pushBind b' $ normalForm c
-                                  return (b' <| c)
+  normalForm ctx = do xs <- nfBinds (bindings ctx)
+                      return $ ctxFromList xs
+    where
+      nfBinds [] = return []
+      nfBinds (b:bs) =
+        do
+          b' <- normalForm b
+          bs' <- pushBind b' $ nfBinds bs
+          return (b':bs')
+
 
 instance NormalForm Term where
   normalForm x = metaexp x >>= nF
@@ -140,8 +159,8 @@ instance NormalForm Term where
       nF (Pi c t) = liftM2 Pi (normalForm c) (pushCtx c $ nF t)
       nF t@(Bound k) = do
         e <- ask
-        when (k >= length (unEnv e)) $ error $ "normalform out of bound: " ++ show k ++ "  " ++ show e
-        case bindDef (unEnv e !! k) of
+        when (k >= envLen e) $ error $ "normalform out of bound: " ++ show k ++ "  " ++ show e
+        case bindDef (envGet e k) of
           Nothing -> return t
           Just t' -> nF (I.lift (k+1) 0 t')
       nF t@(Meta k) = do
@@ -160,8 +179,8 @@ instance NormalForm Term where
           _               -> __IMPOSSIBLE__
       nF (Lam c t) = liftM2 Lam (normalForm c) (pushCtx c $ nF t)
       nF t@(App t1 ts) = do
-        traceTCM 30 $ hsep [text "Normalizing App in ", ask >>= prettyPrintTCM,
-                            text ":", prettyPrintTCM t]
+        traceTCM 30 $ vcat [ text "Normalizing in ", ask >>= prettyPrintTCM
+                           , text "APP :" <+> prettyPrintTCM t]
         t1' <- whnf t1
         case t1' of
           Lam ctx u  ->
@@ -174,7 +193,7 @@ instance NormalForm Term where
           App u1 us -> do ts' <- mapM nF ts
                           us' <- mapM nF us
                           return $ mkApp u1 (us' ++ ts')
-          Fix I n _ _ _ _
+          Fix (f@(FixTerm I n _ _ _ _))
             | length ts < n -> do -- traceTCM_ ["Fix without enough args ", show (length ts), " < ", show n]
                                   ts' <- mapM nF ts
                                   return $ App t1' ts'
@@ -186,7 +205,7 @@ instance NormalForm Term where
                              do -- traceTCM_ ["Mu Reduction ",
                                 --            show t1', "\non\n",
                                 --            show (first ++ recArg' : last)]
-                                nF (muRed t1' (first ++ recArg' : last))
+                                nF (muRed f (first ++ recArg' : last))
                    _    -> do -- traceTCM_ ["No recursion arg = ", show recArg']
                               first' <- mapM nF first
                               last'  <- mapM nF last
@@ -231,9 +250,13 @@ instance NormalForm Term where
            ps' <- mapM nF ps
            as' <- mapM nF as
            return $ Constr x i ps' as'
-      nF t@(Fix a k nm c tp body) =
-        liftM3 (Fix a k nm) (normalForm c) (nF tp)
-               (pushBind (mkBind nm (mkPi c tp)) $ nF body)
+      nF t@(Fix f) = liftM Fix (normalForm f)
+
+
+instance NormalForm FixTerm where
+  normalForm (FixTerm a k nm c tp body) =
+    liftM3 (FixTerm a k nm) (normalForm c) (nF tp)
+    (pushBind (mkBind nm (mkPi c tp)) $ nF body)
 
 
 -- TODO: check if we need to normalize whSubst
@@ -248,10 +271,12 @@ instance NormalForm Branch where
 --
 --   The number of beta reductions applied is min (length ctx, length args)
 betaRed :: Context -> Term -> [Term] -> Term
-betaRed EmptyCtx body args = mkApp body args
-betaRed ctx body [] = mkLam ctx body
-betaRed (ExtendCtx (Bind _ _ _ Nothing) ctx) body (a:as) = betaRed (subst a ctx) (substN (ctxLen ctx) a body) as
-betaRed (ExtendCtx (Bind _ _ _ (Just _)) _) _ _ = __IMPOSSIBLE__
+betaRed ctx body args = betaBinds (bindings ctx) body args
+  where
+    betaBinds [] body args = mkApp body args
+    betaBinds bs body [] = mkLam (ctxFromList bs) body
+    betaBinds (b:bs) body (a:as) = betaRed (subst a (ctxFromList bs)) (substN (length bs) a body) as
+-- betaRed (Consctx (Bind _ _ _ (Just _)) _) _ _ = __IMPOSSIBLE__
 
 
 -- | 'iotaRed' @cid@ @args@ @branches@ performs a iota reduction where the
@@ -267,10 +292,12 @@ iotaRed cid args branches =
 -- | 'muRed' @fix@ @args@ unfolds the fixpoint and applies it to the arguments
 --   @args@ shoudl have a length greater or equal than the recursive argument of
 --   fix and the recursive argument should be in constructor form
-muRed :: Term -> [Term] -> Term
-muRed t@(Fix CoI _ _ _ _ body) args = error "Implement nu-red"
-muRed t@(Fix I _ _ _ _ body) args = mkApp (subst t body) args
-muRed _ _ = __IMPOSSIBLE__
+muRed :: FixTerm -> [Term] -> Term
+-- muRed t@(Fix CoI _ _ _ _ body) args = error "Implement nu-red"
+muRed f args = mkApp (subst (Fix f) (fixBody f)) args
+-- muRed _ _ = __IMPOSSIBLE__
+
+
 
 
 class MetaExp a where
@@ -296,22 +323,32 @@ instance MetaExp Term where
                             Just x -> metaexp x
   metaexp (Constr nmC nmI pars args) =
     liftM2 (Constr nmC nmI) (mapM metaexp pars) (mapM metaexp args)
-  metaexp (Fix k n nm ctx tp body) = do
-    ctx'  <- metaexp ctx
-    tp'   <- metaexp tp
-    body' <- metaexp body
-    return $ Fix k n nm ctx' tp' body'
+  metaexp (Fix f) = liftM Fix (metaexp f)
   metaexp t@(Case c) = liftM Case (metaexp c)
   metaexp t = return t -- Sort, Bound, Var, Ind
 
+instance MetaExp FixTerm where
+  metaexp (FixTerm k n nm ctx tp body) =
+    do
+      ctx'  <- metaexp ctx
+      tp'   <- metaexp tp
+      body' <- metaexp body
+      return $ FixTerm k n nm ctx' tp' body'
+
+
+
 instance MetaExp Context where
-  metaexp EmptyCtx = return EmptyCtx
-  metaexp (ExtendCtx b ctx) = do tp' <- metaexp (bindType b)
-                                 def' <- metaexp (bindDef b)
-                                 ctx' <- metaexp ctx
-                                 let b' = b { bindType = tp'
-                                            , bindDef  = def' }
-                                 return $ ExtendCtx b' ctx'
+  metaexp ctx = do xs <- metaexpBinds (bindings ctx)
+                   return (ctxFromList xs)
+    where
+      metaexpBinds [] = return []
+      metaexpBinds (b:bs) =
+        do
+          t <- metaexp (bindType b)
+          let b' = setBindType t b
+          bs' <- metaexpBinds bs
+          return $ b':bs'
+
 
 instance MetaExp CaseTerm where
   metaexp c = do
@@ -331,7 +368,7 @@ instance MetaExp CaseIn where
     args' <- mapM metaexp (inArgs i)
     let i' = i { inBind = in'
                , inArgs = args' }
-    return i
+    return i'
 
 instance MetaExp Branch where
   metaexp b = do

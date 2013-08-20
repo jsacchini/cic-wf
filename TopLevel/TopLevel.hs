@@ -160,7 +160,7 @@ evalCommand Show = do
   liftTop $ do ag <- getActiveGoal
                case ag of
                  Nothing -> do sig <- map (fmap eraseSize) <$> getSignature
-                               let sig' = filter (not . isConstr . nameVal) sig
+                               let sig' = filter (not . isConstr . namedValue) sig
                                printTCMLn $ vcat (map ( (<> dot) . prettyPrintTCM) sig')
                  Just (k, g) -> do d <- ppGoal (k, g)
                                    liftIO $ putStrLn (PP.render d)
@@ -197,16 +197,18 @@ evalExpression ss =
   case parse exprParser ss of
     ParseOk ts -> do
       (Just (k, g)) <- getActiveGoal
-      e <- withCtx (goalCtx g) $ scope ts
-      t <- withCtx (goalCtx g) $ check e (goalType g)
+      e <- withEnv (goalEnv g) $ scope ts
+      t <- withEnv (goalEnv g) $ check e (goalType g)
       giveTerm k t
       setActiveGoal Nothing
     ParseFail err -> liftIO $ putStrLn $ "Error (Main.hs): " ++ show err
 
 typeCheckDecl :: (MonadTCM tcm) => A.Declaration -> tcm ()
 typeCheckDecl d = do d' <- scope d
+                     traceTCM 30 $ hsep [ text "  INFER GLOBAL DECL: "
+                                        , prettyPrintTCM d' ]
                      gs <- inferDecl d'
-                     forM_ gs (uncurry addGlobal)
+                     forM_ gs addGlobal
 
 typeCheckFile :: (MonadTCM tcm) => [A.Declaration] -> tcm ()
 typeCheckFile ds =

@@ -112,7 +112,7 @@ instance Conversion a => Conversion (Maybe a) where
   Nothing ~~ Nothing = return True
   Just c1 ~~ Just c2 = c1 ~~ c2
   _ ~~ _ = return False
-
+  
 instance Conversion a => Conversion [a] where
   [] <~ [] = return True
   (t1:ts1) <~ (t2:ts2) = t1 <~ t2 `mAnd` ts1 <~ ts2
@@ -149,13 +149,7 @@ instance Conversion Type where
   (~~) (App f1 ts1) (App f2 ts2) = f1 ~~ f2 `mAnd` ts1 ~~ ts2
   (~~) (Constr c1 _ ps1 as1) (Constr c2 _ ps2 as2) =
     return (c1 == c2) `mAnd` ps1 ~~ ps2 `mAnd` as1 ~~ as2
-  (~~) (Fix k1 n1 f1 ctx1 tp1 body1) (Fix k2 n2 f2 ctx2 tp2 body2) =
-    return (k1 == k2) `mAnd`
-    return (f1 == f2) `mAnd`
-    return (n1 == n2) `mAnd`
-    eraseSize ctx1 ~~ eraseSize ctx2 `mAnd`
-    eraseSize tp1 ~~ eraseSize tp2 `mAnd`
-    pushBind (mkBind f1 (mkPi ctx1 tp1)) (body1 ~~ body2)
+  (~~) (Fix f1) (Fix f2) = f1 ~~ f2
   (~~) (Case c1) (Case c2) = c1 ~~ c2
   (~~) _ _ = return False
 
@@ -181,25 +175,50 @@ instance Conversion Type where
   (<~) t1 t2 = t1 ~~ t2
 
 
-instance Conversion Bind where
-  (<~) b1 b2 = bindType b1 <~ bindType b2 `mAnd` bindDef b1 ~~ bindDef b2
+instance Conversion FixTerm where
+  (~~) (FixTerm k1 n1 f1 ctx1 tp1 body1) (FixTerm k2 n2 f2 ctx2 tp2 body2) =
+    return (k1 == k2) `mAnd`
+    return (f1 == f2) `mAnd`
+    return (n1 == n2) `mAnd`
+    eraseSize ctx1 ~~ eraseSize ctx2 `mAnd`
+    eraseSize tp1 ~~ eraseSize tp2 `mAnd`
+    pushBind (mkBind f1 (mkPi ctx1 tp1)) (body1 ~~ body2)
 
-  (~~) b1 b2 = bindType b1 ~~ bindType b2 `mAnd` bindDef b1 ~~ bindDef b2
+  (<~) = (~~)
+
+instance Conversion Bind where
+  (<~) b1 b2 = bindType b1 <~ bindType b2 -- `mAnd` bindDef b1 ~~ bindDef b2
+
+  (~~) b1 b2 = bindType b1 ~~ bindType b2 -- `mAnd` bindDef b1 ~~ bindDef b2
+
+-- conversionCtx :: (MonadTCM tcm) => Context -> Context -> tcm Bool
+-- conversionCtx [] [] = return True
+-- conversionCtx (b1:c1) (b2:c2) = b1 ~~ b2 `mAnd` pushBind b1 (conversionCtx c1 c2)
+
+-- subCtx :: (MonadTCM tcm) => Context -> Context -> tcm Bool
+-- subCtx [] [] = return True
+-- subCtx (b1:c1) (b2:c2) = b1 <~ b2 `mAnd` pushBind b1 (subCtx c1 c2)
 
 instance Conversion Context where
-  (<~) EmptyCtx EmptyCtx = return True
-  (<~) (ExtendCtx b1 c1) (ExtendCtx b2 c2) =
-    b1 <~ b2 `mAnd` pushBind b1 (c1 <~ c2)
+  (<~) ctx1 ctx2 = subBinds (bindings ctx1) (bindings ctx2)
+    where
+      subBinds [] [] = return True
+      subBinds (b1:c1) (b2:c2) = b1 <~ b2 `mAnd` pushBind b1 (subBinds c1 c2)
 
-  (~~) EmptyCtx EmptyCtx = return True
-  (~~) (ExtendCtx b1 c1) (ExtendCtx b2 c2) =
-    b1 ~~ b2 `mAnd` pushBind b1 (c1 ~~ c2)
+  (~~) ctx1 ctx2 = convBinds (bindings ctx1) (bindings ctx2)
+    where
+      convBinds [] [] = return True
+      convBinds (b1:c1) (b2:c2) = b1 ~~ b2 `mAnd` pushBind b1 (convBinds c1 c2)
 
 
 instance Conversion CaseTerm where
   (CaseTerm arg1 nmInd1 nmAs1 cin1 tp1 branches1) ~~ (CaseTerm arg2 nmInd2 nmAs2 cin2 tp2 branches2) =
     arg1 ~~ arg2 `mAnd` return (nmInd1 == nmInd2) `mAnd`
-    cin1 ~~ cin2 `mAnd` tp1 ~~ tp2 `mAnd` branches1 ~~ branches2
+    inRet cin1 cin2 `mAnd` tp1 ~~ tp2 `mAnd` branches1 ~~ branches2
+    where
+      inRet (Just c1) (Just c2) = c1 ~~ c2
+      inRet Nothing Nothing = return True
+      inRet _ _ = return False
 
   (<~) = (~~)
 
@@ -277,8 +296,8 @@ vsubt _ _ _ = __IMPOSSIBLE__
 --   (<~) _ _ = return False
 
 -- instance Conversion Context  where
---   (<~) EmptyCtx EmptyCtx = return True
---   (<~) (ExtendCtx b1 c1) (ExtendCtx b2 c2) =
+--   (<~) Empctx Empctx = return True
+--   (<~) (Consctx b1 c1) (Consctx b2 c2) =
 --     b1 <~ b2 `mAnd` pushBind b1 (c1 <~ c2)
 --   (<~) _ _ = return False
 

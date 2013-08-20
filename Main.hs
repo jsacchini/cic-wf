@@ -33,6 +33,7 @@ import Data.List
 import qualified Text.PrettyPrint as PP
 
 import qualified Syntax.Abstract as A
+import Syntax.Common
 import Syntax.ParseMonad
 import Syntax.Parser
 import Syntax.Scope
@@ -51,8 +52,8 @@ import TopLevel.TopLevel
 
 
 main :: IO ()
-main = runTop mainLoop
--- main = evalFile
+-- main = runTop mainLoop
+main = evalFile
 
 evalFile =
   do hSetBuffering stdout NoBuffering
@@ -63,7 +64,10 @@ evalFile =
                ss <- hGetContents h
                case parse fileParser ss of
                  ParseOk ts ->
-                   do putStrLn $ PP.render $ MP.prettyPrint ts
+                   do -- putStrLn "OK"
+                      -- putStrLn $ show ts
+                      -- putStrLn "===================\n=================\n\n"
+                      putStrLn $ PP.render $ MP.prettyPrint ts
                       r <- runTCM $ typeCheckFile ts
                       case r of
                         Left err -> putStrLn $ "Error!!!! " ++ show err
@@ -71,9 +75,17 @@ evalFile =
                  ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
                hClose h
           typeCheckDecl :: A.Declaration -> TCM ()
-          typeCheckDecl d = do d' <- scope d
-                               gs <- inferDecl d'
-                               forM_ gs (uncurry addGlobal)
+          typeCheckDecl d =
+            do
+              d' <- scope d
+              traceTCM 30 $ hsep [ text "  INFER GLOBAL DECL: "
+                                 , prettyPrintTCM d' ]
+              gs <- inferDecl d'
+              forM_ gs addGlobal
+              traceTCM 30 $ (text "  INFERRED GLOBAL DECL: (SHOW)"
+                             $$ vcat(map (text . show) gs))
+              traceTCM 30 $ (text "  INFERRED GLOBAL DECL: "
+                             $$ vcat(map prettyPrintTCM (filter (not . isConstr . namedValue) gs)))
           typeCheckFile :: [A.Declaration] -> TCM ()
           typeCheckFile ds =
             do forM_ ds typeCheckDecl

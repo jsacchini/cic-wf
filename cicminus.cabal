@@ -41,9 +41,12 @@ Executable cicminus
                      Utils.Pretty
                      Utils.Impossible
                      Utils.Sized
+                     Utils.Value
                      Kernel.Permutation
                      Kernel.Constraints
                      Kernel.TCM
+                     Kernel.PrettyTCM
+                     Kernel.TCMErrors
                      Kernel.TypeChecking
                      Kernel.Whnf
                      Kernel.Conversion

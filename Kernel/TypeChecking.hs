@@ -28,6 +28,9 @@ import Utils.Impossible
 
 import Control.Monad.Reader
 
+import Data.Functor
+import Data.Maybe
+
 import qualified Text.PrettyPrint as PP
 
 import Syntax.Internal hiding (lift)
@@ -39,6 +42,7 @@ import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
+import Kernel.TCMErrors
 import Kernel.Whnf
 import Kernel.Inductive (inferInd)
 import Kernel.Fix (inferFix)
@@ -46,6 +50,7 @@ import Kernel.Case (inferCase)
 import Kernel.PrettyTCM
 import Utils.Fresh
 import qualified Utils.Pretty as MP
+
 
 checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term, Type)
 checkSort A.Prop     = do f <- fresh
@@ -84,22 +89,27 @@ isSort t = do t' <- whnF t
 
 -- We assume that in the global environment, types are normalized
 
-inferBinds :: (MonadTCM tcm) => [A.Bind] -> tcm (Context, Sort)
-inferBinds bs = inferList bs
-    where inferList [] = return (empCtx, Prop)
+-- inferBinds :: (MonadTCM tcm) => [Ranged (Implicit (Bind a (Maybe Expr)))] => tcm (Context, sort)
+-- inferBinds :: (MonadTCM tcm, HasImplicit a, HasNames a) => Bindings a b -> 
+inferBinds :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
+inferBinds ctx = inferList (bindings ctx)
+    where inferList [] = return (ctxEmpty, Prop)
           inferList (b:bs) = do (ctx1, s1) <- inferBind b
                                 (ctx2, s2) <- pushCtx ctx1 $ inferList bs
                                 s' <- maxSort s1 s2
                                 return (ctx1 +: ctx2, s')
-          inferBind (A.Bind _ _ [] _) = return (empCtx, Prop)
-          inferBind (A.Bind rg impl (x:xs) e) = do
-            (t1, r1) <- infer e
+          inferBind (A.Bind _ [] _) = __IMPOSSIBLE__ -- return (ctxEmpty, Prop)
+          inferBind (A.Bind _ (x:xs) e) = do
+            (t1, r1) <- infer (fromJust (implicitValue e))
             s1 <- isSort r1
-            (ctx, s2) <- pushBind (mkImplBind x impl t1) $ inferBind (A.Bind rg impl xs e)
-            s' <- maxSort s1 s2
-            return (mkBind x t1 <| ctx, s')
-              where mkCtx [] _ _ = empCtx
-                    mkCtx (y:ys) t k = mkImplBind y impl (I.lift k 0 t) <| mkCtx ys t (k + 1)
+            -- (ctx, s2) <- pushBind (mkImplBind x impl t1) $ inferBind (A.Bind rg xs e)
+            -- s' <- maxSort s1 s2
+            -- return (mkBind x t1 <| ctx, s')
+            return (ctxFromList (mkCtx (x:xs) t1 0), s1)
+              where
+                impl = isImplicit e
+                mkCtx [] _ _ = []
+                mkCtx (y:ys) t k = mkImplBind y impl (I.lift k 0 t) : mkCtx ys t (k + 1)
 
 
 infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
@@ -117,17 +127,19 @@ infer exp@(A.Pi _ ctx t) =
      s2 <- pushCtx ctx' $ isSort r2
      s' <- checkProd s1 s2
      return (mkPi ctx' t', Sort s')
-infer exp@(A.Arrow _ e1 e2) =
+infer exp@(A.Arrow _ e1 e2) = -- TODO: check arrows with implicit arguments
   do traceTCM 30 $ hsep [text "Inferring arrow",
                          prettyPrintTCM exp]
-     (t1, r1) <- infer e1
+     (t1, r1) <- infer (implicitValue e1)
      s1 <- isSort r1
      (t2, r2) <- pushType t1 $ infer e2
      s2 <- pushType t1 $ isSort r2
      s' <- checkProd s1 s2
-     return (mkPi (bindNoName t1 <| empCtx) t2, Sort s')
+     return (mkPi (ctxSingle (bindNoName t1)) t2, Sort s')
 infer (A.Bound _ _ n) =
   do len <- localLength
+     traceTCM 30 $ vcat [ text "infer Bound" <+> prettyPrintTCM n
+                        , text "in ctx   " <+> (ask >>= prettyPrintTCM) ]
      when (n >= len) $
        traceTCM levelBug $ hsep [text "Context shorter than expected ",
                                  int len, text " <= ", int n]
@@ -144,15 +156,23 @@ infer xx@(A.Lam _ bs t) =   do (ctx, _) <- inferBinds bs
                                return (mkLam (eraseSize ctx) t', mkPi ctx u)
 infer (A.App _ e1 e2) = -- inferApp e1 e2
     do (t1, r1) <- infer e1
+       traceTCM 30 $ vcat [ text "Checking function part"
+                          , text "from" <+> prettyPrintTCM e1
+                          , text "to" <+> prettyPrintTCM t1
+                          , text "of type" <+> prettyPrintTCM r1]
        case r1 of
          Pi ctx u2 ->
              do let (ch, ct) = ctxSplit ctx
                 t2 <- check e2 (bindType ch)
                 w  <- whnF $ mkPi (subst t2 ct) (substN (ctxLen ct) t2 u2)
+                traceTCM 30 $ hsep [ text "Checked APP:"
+                                   , prettyPrintTCM (mkApp t1 [t2]) ]
+                traceTCM 30 $ hsep [ text "APP result type:"
+                                   , prettyPrintTCM w ]
                 return (mkApp t1 [t2], w)
          _            -> throwNotFunction r1
 infer (A.Meta r _) = typeError $ CannotInferMeta r
-infer (A.Ind _ an x) =
+infer (A.Ind _ an x _) =
     do t <- getGlobal x
        i <- fresh
        -- when (an == Star) $ addStarStage i
@@ -169,10 +189,11 @@ infer (A.Constr _ x _ pars args) = do
   case t of
     Constructor indName idConstr tpars targs _ indices -> do
       pars' <- checkList pars (replFunc tpars)
-      traceTCM 20 $ (hsep [text "checking ",
+      traceTCM 20 $ (hsep [text "checking constructor args",
                            prettyPrintTCM args,
                            text " againsts ",
-                           prettyPrintTCM (foldr subst (replFunc targs) pars')]
+                           prettyPrintTCM $ mkPi (foldr subst (replFunc targs) pars') (Sort Prop)
+                           ]
                      $$ hsep [text "env:", ask >>= prettyPrintTCM])
       args' <- checkList args (foldr subst (replFunc targs) pars')
       let numPars = ctxLen tpars
@@ -192,21 +213,21 @@ infer (A.Case c) = inferCase c
 infer (A.Number _ _) = __IMPOSSIBLE__ -- Number n is transformed into S (S... O)) during scope checking
 
 -- | Only inductive definitions return more than one global
-inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm [(Name, Global)]
+inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm [(Named Global)]
 inferDecl (A.Definition _ x (Just e1) e2) =
     do (tp, s) <- infer e1
        _ <- isSort s
        def <- check e2 tp
-       return [(x, Definition { defType = tp
-                              , defTerm = def })]
+       return [mkNamed x (Definition { defType = tp
+                                     , defTerm = def })]
 inferDecl (A.Definition _ x Nothing e) =
     do (def, tp) <- infer e
-       return [(x, Definition { defType = tp
-                              , defTerm = def })] -- (flatten u) (flatten t))]
+       return [mkNamed x (Definition { defType = tp
+                                     , defTerm = def })] -- (flatten u) (flatten t))]
 inferDecl (A.Assumption _ x e) =
     do (t, r) <- infer e
        _ <- isSort r
-       return [(x, Assumption t)] -- (flatten t))]
+       return [mkNamed x (Assumption t)] -- (flatten t))]
 inferDecl (A.Inductive _ indDef) = inferInd indDef
 inferDecl (A.Eval e) =
     do (e1, t1) <- infer e
@@ -238,7 +259,7 @@ check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 check (A.Meta r Nothing) u = do
   m <- fresh
   e <- ask
-  addGoal m (mkGoal (fromList (unEnv e)) u)
+  addGoal m (mkGoal e u)
   return (Meta m)
 check t u =   do traceTCM 30 $ (hsep [text "Checking type of", prettyPrintTCM t]
                                 <+> hsep [text "against", prettyPrintTCM u])
@@ -255,13 +276,17 @@ check t u =   do traceTCM 30 $ (hsep [text "Checking type of", prettyPrintTCM t]
                  --                       "\n==\n",
                  --                       --show u, " -> ",
                  --                       show $ prettyPrint u__, "\n\nin context : ", show e, "\n********\non ", show $ prettyPrint $ getRange t]
-                 unless b $ throwNotConvertible r u
+                 unless b $ throwNotConvertible (Just (range t)) r u
                  return t'
 
 
 checkList :: (MonadTCM tcm) => [A.Expr] -> Context -> tcm [Term]
-checkList [] EmptyCtx = return []
-checkList (e:es) (ExtendCtx b c) = do t <- check e (bindType b)
-                                      ts <- checkList es (subst t c)
-                                      return (t:ts)
-checkList _ _ = __IMPOSSIBLE__
+checkList es ctx = checkWithBinds es (bindings ctx)
+  where
+    checkWithBinds [] [] = return []
+    checkWithBinds (e:es) (b:c) =
+      do
+        t <- check e (bindType b)
+        ts <- checkList es (subst t (ctxFromList c))
+        return (t:ts)
+    checkWithBinds _ _ = __IMPOSSIBLE__

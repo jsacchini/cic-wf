@@ -19,10 +19,16 @@
 
 -- | Positions and ranges are used to print information about where errors occur
 
+{-# LANGUAGE MultiParamTypeClasses, FlexibleInstances
+  #-}
+
 module Syntax.Position where
 
-import Utils.Pretty
 import Text.PrettyPrint as PP
+
+import Utils.Pretty
+import Utils.Value
+
 
 data Position = Pn { posFile :: FilePath,
                      posLine :: Int,
@@ -31,18 +37,26 @@ data Position = Pn { posFile :: FilePath,
 
 data Range = Range { rStart, rEnd :: !Position }
            | NoRange
+           deriving(Eq)
 
+data Ranged a = Ranged { rangeTag :: Range,
+                         rangedValue :: a }
+                deriving(Show, Eq)
 
-data Ranged a = Ranged { range :: Range,
-                         rangeValue :: a }
-                deriving(Show)
+instance HasValue (Ranged a) a where
+  value = rangedValue
 
+instance Functor Ranged where
+  fmap f x = x { rangedValue = f (rangedValue x) }
+
+mkRanged :: Range -> a -> Ranged a
+mkRanged = Ranged
 
 class HasRange a where
-  getRange :: a -> Range
+  range :: a -> Range
 
 instance HasRange a => HasRange (Ranged a) where
-  getRange = getRange . range
+  range = range . rangeTag
 
 instance Show Position where
    show (Pn path line col) = concat [path, ":", show line, ":", show col]
@@ -55,7 +69,7 @@ instance Show Range where
                                      show (posCol start), "-",
                                      show (posLine end), ":",
                                      show (posCol end)]
-    -- show _ = ""
+    show NoRange = "-:-"
 
 instance Pretty Range where
     prettyPrint (Range start end) = text $ concat [posFile start,
@@ -66,18 +80,18 @@ instance Pretty Range where
                                      show (posCol end)]
 
 instance HasRange Position where
-  getRange p = Range p p
+  range p = Range p p
 
 instance HasRange Range where
-  getRange r = r
+  range r = r
 
 instance HasRange a => HasRange [a] where
-  getRange [] = noRange
-  getRange [x] = getRange x
-  getRange (x:y:ys) = fuseRange (getRange x) (getRange (y:ys))
+  range [] = noRange
+  range [x] = range x
+  range (x:y:ys) = fuseRange (range x) (range (y:ys))
 
 instance HasRange a => HasRange (Maybe a) where
-  getRange = maybe NoRange getRange
+  range = maybe NoRange range
 
 class HasRange t => SetRange t where
   setRange :: Range -> t -> t
@@ -118,7 +132,7 @@ mkRangeLen pos n = Range pos (advancePos pos n)
 -- Combines two ranges
 -- Assumes that the first range is to the left of the second
 fuseRange :: (HasRange a, HasRange b) => a -> b -> Range
-fuseRange x y = case (getRange x, getRange y) of
+fuseRange x y = case (range x, range y) of
                   (Range posl _ , Range _ posr ) -> Range posl posr
                   (NoRange      , r@(Range _ _)) -> r
                   (r@(Range _ _), NoRange      ) -> r
@@ -126,4 +140,4 @@ fuseRange x y = case (getRange x, getRange y) of
 
 -- fuseRanges only works in non-empty lists
 fuseRanges :: HasRange a => [a] -> Range
-fuseRanges = foldr1 fuseRange . map getRange
+fuseRanges = foldr1 fuseRange . map range

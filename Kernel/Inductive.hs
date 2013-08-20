@@ -25,6 +25,7 @@ module Kernel.Inductive where
 import Control.Monad.Reader
 
 import qualified Data.Foldable as Fold
+import Data.Maybe
 
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
@@ -34,25 +35,25 @@ import Syntax.Size
 import qualified Syntax.Abstract as A
 import Kernel.Conversion
 import Kernel.TCM
+import Kernel.PrettyTCM
 import Kernel.Whnf
 import {-# SOURCE #-} Kernel.TypeChecking
-import Utils.Misc
 import Utils.Sized
 
 
 -- | Type-checks an inductive definition returning a list of global definitions
 --   for the inductive type and the constructors
-inferInd :: (MonadTCM tcm) => A.InductiveDef -> tcm [(Name, Global)]
-inferInd ind@(A.InductiveDef name k pars tp constrs) =
+inferInd :: (MonadTCM tcm) => A.InductiveDef -> tcm [Named Global]
+inferInd (A.InductiveDef nmInd k pars pols tp constrs) =
     do -- traceTCM $ "Checking inductive definition\n" ++ show ind
-       ((pars',pols'), _) <- inferParamList pars
+       (pars', _) <- inferParamList pars
        let bindPars' =  pars'
        (tp', s2)  <- pushCtx pars' $ infer tp
        -- traceTCM $ "Type\n" ++ show tp'
        _          <- isSort s2
-       (args, s3) <- isArity (getRange tp) tp'
-       cs         <- mapM (pushCtx pars' . flip checkConstr (name, bindPars', args, s3)) constrs
-       -- traceTCM $ "Constructors\n" ++ show cs
+       (args, s3) <- isArity (range tp) tp'
+       cs         <- mapM (pushCtx pars' . flip checkConstr (nmInd, bindPars', args, s3)) constrs
+       traceTCM 30 $ text ("Constructors\n" ++ show cs)
 
        -- Preparing the constructors
        -- We replace all occurrences of other inductive types with infty
@@ -61,13 +62,15 @@ inferInd ind@(A.InductiveDef name k pars tp constrs) =
        -- variable
        let replInfty :: (HasAnnot a) => a -> a
            replInfty = modifySize (const (Size Infty))
-           annots = listAnnot tp' ++ listAnnot (map snd cs)
-           replInd c = c { constrArgs = subst (Ind Star name) (constrArgs c) }
-           cs' = map (appSnd (replInd . replInfty)) cs
+           annots = listAnnot tp' ++ listAnnot (map namedValue cs)
+           replInd c = c { constrArgs = subst (Ind Star nmInd) (constrArgs c) }
+           cs' = map (fmap (replInd . replInfty)) cs
+
+       traceTCM 30 $ text ("Constructors!!!\n" ++ show cs)
 
        removeStages annots
-       return $ (name, Inductive k (replInfty pars') pols' (replInfty args) s3 constrNames) : fillIds cs'
-         where fillIds cs = map (\(idConstr, (x, c)) -> (x, c { constrId = idConstr })) (zip [0..] cs)
+       return $ mkNamed nmInd (Inductive k (replInfty pars') pols (replInfty args) s3 constrNames) : fillIds cs'
+         where fillIds cs = map (\(idConstr, c) -> fmap (\c' -> c' { constrId = idConstr }) c) (zip [0..] cs)
                constrNames = map A.constrName constrs
 
 -- | Checks that a type is an arity.
@@ -79,39 +82,47 @@ isArity _ t =
        _      -> error "Not arity. replace by error in TCErr"
 
 
-inferParam :: (MonadTCM tcm) => A.Parameter -> tcm ((Context, [Polarity]), Sort)
-inferParam (A.Parameter _ names tp) =
-    do (tp', s) <- infer tp
+inferParam :: (MonadTCM tcm) => A.Bind -> tcm (Context, Sort)
+inferParam (A.Bind _ names tp) | isJust (implicitValue tp) =
+    do (tp', s) <- infer (fromJust (implicitValue tp))
        s' <- isSort s
-       return (mkBindsSameType names tp', s')
+       return (ctxFromList $ mkBindsSameType names tp', s')
       where
-        mkBindsSameType_ :: [(Name, Polarity)] -> Type -> Int -> (Context,[Polarity])
-        mkBindsSameType_ [] _ _ = (empCtx,[])
-        mkBindsSameType_ ((x,pol):xs) t k = ((mkBind x (I.lift k 0 t)) <| ctx,
-                                             pol : pols)
-          where (ctx, pols) = mkBindsSameType_ xs t (k + 1)
+        mkBindsSameType_ :: [Name] -> Type -> Int -> [I.Bind]
+        mkBindsSameType_ [] _ _ = []
+        mkBindsSameType_ (x:xs) t k = mkBind x (I.lift k 0 t) : ctx
+          where ctx = mkBindsSameType_ xs t (k + 1)
 
         mkBindsSameType xs t = mkBindsSameType_ xs t 0
 
-inferParamList :: (MonadTCM tcm) => [A.Parameter] -> tcm ((Context, [Polarity]), Sort)
-inferParamList [] = return ((empCtx, []), Prop)
-inferParamList (p:ps) = do ((ctx1, pol1), s1) <- inferParam p
-                           ((ctx2, pol2), s2) <- pushCtx ctx1 $ inferParamList ps
+
+inferParamList :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
+inferParamList ctx = paramBinds (bindings ctx)
+  where
+    paramBinds [] = return (ctxEmpty, Prop)
+    paramBinds (p:ps) = do (ctx1, s1) <- inferParam p
+                           (ctx2, s2) <- pushCtx ctx1 $ paramBinds ps
                            s' <- maxSort s1 s2
-                           return ((ctx1 +: ctx2, pol1 ++ pol2), s')
+                           return (ctx1 +: ctx2, s')
 
 
-checkConstr :: (MonadTCM tcm) =>  A.Constructor -> (Name, Context, Context, Sort) -> tcm (Name, Global)
+checkConstr :: (MonadTCM tcm) =>  A.Constructor -> (Name, Context, Context, Sort) -> tcm (Named Global)
 checkConstr (A.Constructor _ name tp)
             (nmInd, parsInd, indicesInd, sortInd) =
-    do (tp', s) <- pushBind indBind $  infer tp
+    do
+       traceTCM 30 $ hsep [ text "CHECKCONSTR"
+                          , text "from:" <+> (pushBind indBind $ prettyPrintTCM tp) ]
+       (tp', s) <- pushBind indBind $  infer tp
+       traceTCM 30 $ hsep [ text "CHECKCONSTR"
+                          , text "to:" <+> (pushBind indBind $ prettyPrintTCM tp')
+                          , text "of type:" <+> (pushBind indBind $ prettyPrintTCM s) ]
        s' <- isSort s
        unless (sortInd == s') $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd
        let indBind = mkBind nmInd (mkPi (parsInd +: indicesInd) (Sort sortInd))
        (args, indices, recArgs) <- pushBind indBind $
                                    isConstrType name nmInd numPars tp'
 
-       return (name, Constructor nmInd 0 parsInd args recArgs indices)
+       return $ mkNamed name (Constructor nmInd 0 parsInd args recArgs indices)
                      -- id is filled elsewhere
       where numPars = ctxLen parsInd
             indType
@@ -126,7 +137,10 @@ isConstrType :: (MonadTCM tcm) =>
                 Name -> Name -> Int -> Type -> tcm (Context, [Term], [Int])
 isConstrType nmConstr nmInd numPars tp =
   do (ctx, tpRet) <- unfoldPi tp
-     -- traceTCM_ ["checking positivity ", show nmConstr, ": ", show ctx, ", ", show tpRet]
+     traceTCM 30 $ hsep [ text "checking positivity "
+                        , prettyPrintTCM nmConstr
+                        , text ": "
+                        , prettyPrintTCM tp ]
      recArgs <- checkStrictPos nmConstr ctx
      -- traceTCM_ ["recArgs ", show recArgs]
      let numInd = size ctx -- bound index of the inductive type in the
@@ -135,6 +149,11 @@ isConstrType nmConstr nmInd numPars tp =
        App (Bound i) args -> do
          when (isFree numInd args) $ error "inductive var appears in the arguments in the return type"
          when (i /= numInd) $ error $ "Not constructor " ++ show nmConstr
+         traceTCM 30 $ (text "isCONSTRTYPE" $$
+                        nest 3 (vcat [ text "TYPE:" <+> prettyPrintTCM (mkPi ctx (Sort Prop))
+                                     , text "ARGS: " <+> hsep (map (pushCtx ctx . prettyPrintTCM) (drop numPars args))
+                                     , text "REC ARGS: "<+> hsep (map prettyPrintTCM recArgs)
+                                     ]))
          return (ctx, drop numPars args, recArgs)
 
        Bound i -> do
@@ -147,10 +166,10 @@ isConstrType nmConstr nmInd numPars tp =
 -- | Checks that the inductive type var (Bound var 0) appears strictly positive
 --   in the arguments of a constructor. Returns the list of recursive arguments.
 checkStrictPos :: (MonadTCM tcm) => Name -> Context -> tcm [Int]
-checkStrictPos nmConstr = cSP 0
+checkStrictPos nmConstr ctx = cSP 0 (bindings ctx)
   where
-    cSP _ EmptyCtx = return []
-    cSP k (ExtendCtx b@(Bind x _ t Nothing) ctx)
+    cSP _ [] = return []
+    cSP k ((b@(Bind x _ t Nothing)):ctx)
       | not (isFree k t) = pushBind b $ cSP (k + 1) ctx
       | otherwise = do
         -- traceTCM_ ["considering arg ", show k, "  -->  ", show (Bind x t)]

@@ -23,6 +23,7 @@ import Syntax.Alex
 import qualified Syntax.Abstract as A
 
 import Utils.Misc
+import Utils.Sized
 
 }
 
@@ -98,24 +99,24 @@ Decl
   | 'assume' Name ':' Exp
          { A.Assumption (fuseRange $1 $4) (snd $2) $4 }
   | 'data' Name Parameters ':' Exp ':=' Constructors
-         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) I (reverse $3) $5 $7) }
+         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) I (ctxFromList (reverse (fst $3))) (reverse (snd $3)) $5 $7) }
   | 'codata' Name Parameters ':' Exp ':=' Constructors
-         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) CoI (reverse $3) $5 $7) }
+         { A.Inductive (fuseRange $1 $7) (A.InductiveDef (snd $2) CoI (ctxFromList (reverse (fst $3))) (reverse (snd $3)) $5 $7) }
   | 'eval' Exp
          { A.Eval $2 }
   | 'check' Exp MaybeExp
          { A.Check $2 $3 }
 
-Parameters :: { [A.Parameter] }
-Parameters : Parameters Par            { $2 : $1 }
-           | {- empty -}               { [] }
+Parameters :: { ([A.Bind], [Polarity]) }
+Parameters : Parameters Par            { (fst $2 : fst $1, snd $2 ++ snd $1) }
+           | {- empty -}               { ([], []) }
 
-Par :: { A.Parameter }
-Par : '(' NamesPol ':' Exp ')' { A.Parameter (fuseRange $1 $5) (reverse $2) $4 }
+Par :: { (A.Bind, [Polarity]) }
+Par : '(' NamesPol ':' Exp ')' { (A.Bind (fuseRange $1 $5) (reverse (fst $2)) $ mkImplicit False (Just $4), reverse (snd $2)) }
 
-NamesPol :: { [(Name, Polarity)] }
-NamesPol : NamesPol BindName Polarity    { (snd $2,$3) : $1 }
-         | BindName Polarity             { [(snd $1,$2)] }
+NamesPol :: { ([Name], [Polarity]) }
+NamesPol : NamesPol BindName Polarity    { (snd $2 : fst $1, $3 : snd $1) }
+         | BindName Polarity             { ([snd $1], [$2]) }
 
 Polarity :: { Polarity }
 Polarity : '+'            { Pos }
@@ -143,13 +144,13 @@ BasicConstr : Name ':' Exp      { let (p,x) = $1
                                    in A.Constructor (fuseRange p $3) x $3 }
 
 Exp :: { A.Expr }
-Exp : 'forall' Binding ',' Exp   { A.Pi (fuseRange $1 $4) $2 $4 }
-    | 'fun' Binding '=>' Exp     { A.Lam (fuseRange $1 $4) $2 $4 }
+Exp : 'forall' Binding ',' Exp   { A.Pi (fuseRange $1 $4) (ctxFromList $2) $4 }
+    | 'fun' Binding '=>' Exp     { A.Lam (fuseRange $1 $4) (ctxFromList $2) $4 }
     | Exps1 Rest                 { let r = mkApp $1
                                    in case $2 of
-                                        Just e -> A.Arrow (fuseRange r e) r e
+                                        Just e -> A.Arrow (fuseRange r e) (mkImplicit False r) e -- TODO: add arrows with implicit arguments
                                         Nothing -> r }
-    -- | Exp '->' Exp               { A.Arrow (fuseRange $1 $3) $1 $3 }
+    -- | Exp '->' Exp               { mkArrow (fuseRange $1 $3) $1 $3 }
     -- | Exps1                      { mkApp $1 }
     | Case                       { A.Case $1 }
     | Fix                        { A.Fix $1 }
@@ -165,9 +166,9 @@ Exps1 : Exp1           { [$1] }
 Exp1 :: { A.Expr }
 Exp1 : '(' Exp ')'   { $2 }
      | Sort          { $1 }
-     | Name          { A.Ident (mkRangeLen (fst $1) (length (unName (snd $1)))) (snd $1) }
-     | '_'           { A.Meta (mkRangeLen $1 1) Nothing }
-     | identStar     {% unlessM starAllowed (fail $ "position type not allowed" ++ show (fst $1)) >> return (A.Ind (mkRangeLen (fst $1) (length (snd $1))) Star (Id (snd $1))) }
+     | Name          { A.Ident (mkRangeLen (fst $1) (size (snd $1))) (snd $1) }
+--     | '_'           { A.Meta (mkRangeLen $1 1) Nothing }
+     | identStar     {% unlessM starAllowed (fail $ "position type not allowed" ++ show (fst $1)) >> return (A.Ind (mkRangeLen (fst $1) (length (snd $1))) Star (mkName (snd $1)) []) } -- TODO: Parameter list
      | number        { let (pos, num) = $1
                        in  A.Number (mkRangeLen pos (length (show num))) num }
 
@@ -201,7 +202,7 @@ CaseRet : '<' Exp '>'     { Just $2 }
 In :: { Maybe A.CaseIn }
 In : 'in' InContext Name InArgs
                  { let r4 = reverse $4
-                   in Just $ A.CaseIn (fuseRange $1 r4) $2 (snd $3) r4 }
+                   in Just $ A.CaseIn (fuseRange $1 r4) (ctxFromList $2) (snd $3) r4 }
    | {- empty -}
                  { Nothing }
 
@@ -261,27 +262,32 @@ endPosType : {- empty -}         {% forbidStar }
 --          | {- empty -}                       { [] }
 
 Binding :: { [A.Bind] }
-Binding : BasicBind       { [$1] }
-        | Bindings1       { reverse $1 }
+Binding : SimpleBind      { [$1] }
+        | Bindings1       { (reverse $1) }
 
 Bindings1 :: { [A.Bind] }
-Bindings1 : '(' BasicBind ')'                 { [$2] }
-          | '{' BasicImplBind '}'             { [$2] }
-          | Bindings1 '(' BasicBind ')'       { $3 : $1 }
-          | Bindings1 '{' BasicImplBind '}'   { $3 : $1 }
+ Bindings1 : '(' SimpleBind ')'                { [setRange (fuseRange $1 $3) (setImplicit False $2)] }
+          | '{' SimpleBind '}'             { [setRange (fuseRange $1 $3) (setImplicit True $2)] }
+          | Bindings1 '(' SimpleBind ')'       { setRange (fuseRange $2 $4) (setImplicit False $3) : $1 }
+          | Bindings1 '{' SimpleBind '}'   { setRange (fuseRange $2 $4) (setImplicit True $3) : $1 }
 
-BasicBind :: { A.Bind }
-BasicBind : Names ':' Exp   { A.Bind (fuseRange (snd $1) $3) False (fst $1) $3 }
+SimpleBind :: { A.Bind }
+SimpleBind : Names ':' Exp   { A.Bind (fuseRange (snd $1) $3) (fst $1) (mkImplicit False (Just $3)) }
 
-BasicImplBind :: { A.Bind }
-BasicImplBind : Names ':' Exp   { A.Bind (fuseRange (snd $1) $3) True (fst $1) $3 }
+-- BasicBind :: { A.Bind }
+-- -- BasicBind : Names ':' Exp   { A.mkBind (fuseRange (snd $1) $3) False (head (fst $1)) $3 } -- TODO: read sequences of names; remove head
+-- BasicBind : Names ':' Exp   { A.Bind [(head (fst $1))] (Just $3) } -- TODO: read sequences of names; remove head
 
+
+-- BasicImplBind :: { A.Bind }
+-- -- BasicImplBind : Names ':' Exp   { A.mkBind (fuseRange (snd $1) $3) True (head (fst $1)) $3 }
+-- BasicImplBind : Names ':' Exp   { A.Bind (head (fst $1)) $3 }
 
 Name :: { (Position, Name) }
-Name : ident                { (fst $1, Id (snd $1)) }
+Name : ident                { (fst $1, mkName (snd $1)) }
 
 Pattern :: { [Name] }
-Pattern : Pattern Name       { snd $2 : $1 }
+Pattern : Pattern BindName       { snd $2 : $1 }
         | {- empty -}        { [] }
 
 Names :: { ([Name], Range) }
@@ -294,7 +300,8 @@ Names1 : BindName           { [$1] }
 
 BindName :: { (Position, Name) }
 BindName : ident            { let (p, x) = $1
-                              in if x == "_" then (p, Id "") else (p, Id x) }
+                              in (p, mkName x) -- if x == "_" then (p, noName) else (p, mkName x) }
+         | '_'              { ($1, noName) }
 
 {
 
@@ -308,6 +315,9 @@ mkApp :: [A.Expr] -> A.Expr
 mkApp [x] = x
 mkApp (x:y:ys) = A.App (fuseRange r x) r x
                  where r = mkApp (y:ys)
+
+-- mkArrow : Range -> Expr -> Expr -> Expr
+mkArrow r e1 e2 = A.Pi r (ctxSingle (A.Bind (range e1) [noName] (mkImplicit False (Just e1)))) e2
 
 
 }
