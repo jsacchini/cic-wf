@@ -21,14 +21,16 @@ module Main where
 
 import Prelude hiding (catch)
 
-import System.IO
-
+import System.Console.GetOpt
 import System.Environment
+
+import System.IO
 
 import Control.Monad.Trans
 import Control.Monad.State
 import Data.Functor
 import Data.List
+import Data.Maybe
 
 import qualified Text.PrettyPrint as PP
 
@@ -51,6 +53,21 @@ import TopLevel.Monad
 import TopLevel.TopLevel
 
 
+data Options =
+  Options { optVerbose :: Verbosity
+          } deriving Show
+
+defaultOptions :: Options
+defaultOptions =
+  Options { optVerbose = 1 }
+
+options :: [OptDescr (Options -> Options)]
+options =
+  [ Option ['v'] ["verbose"]
+    (ReqArg (\n opts -> opts { optVerbose = read n }) "integer")
+    "set verbosity level"
+  ]
+
 main :: IO ()
 -- main = runTop mainLoop
 main = evalFile
@@ -58,8 +75,12 @@ main = evalFile
 evalFile =
   do hSetBuffering stdout NoBuffering
      args <- getArgs
-     mapM_ runFile args
-    where runFile f =
+     case getOpt RequireOrder options args of
+       (o,n,[])   -> mapM_ (runFile opts) n
+                     where opts = foldl (flip id) defaultOptions o
+       (_,_,errs) -> putStrLn $ "Command line error: " ++ concat errs
+     -- mapM_ runFile args
+    where runFile opts f =
             do h <- openFile f ReadMode
                ss <- hGetContents h
                case parse fileParser ss of
@@ -68,7 +89,7 @@ evalFile =
                       -- putStrLn $ show ts
                       -- putStrLn "===================\n=================\n\n"
                       putStrLn $ PP.render $ MP.prettyPrint ts
-                      r <- runTCM $ typeCheckFile ts
+                      r <- runTCM $ typeCheckFile (optVerbose opts) ts
                       case r of
                         Left err -> putStrLn $ "Error!!!! " ++ show err
                         Right _ -> return ()
@@ -86,9 +107,10 @@ evalFile =
                              $$ vcat(map (text . show) gs))
               traceTCM 30 $ (text "  INFERRED GLOBAL DECL: "
                              $$ vcat(map prettyPrintTCM (filter (not . isConstr . namedValue) gs)))
-          typeCheckFile :: [A.Declaration] -> TCM ()
-          typeCheckFile ds =
-            do forM_ ds typeCheckDecl
+          typeCheckFile :: Verbosity -> [A.Declaration] -> TCM ()
+          typeCheckFile verb ds =
+            do setVerbosity verb
+               forM_ ds typeCheckDecl
                csStage <- stConstraints <$> get
                csType <- stTypeConstraints <$> get
                traceTCM 40 $ vcat (text "Universe constraints:"

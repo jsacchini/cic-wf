@@ -151,7 +151,7 @@ localLength :: (MonadTCM tcm) => tcm Int
 localLength = liftM envLen ask
 
 localGet :: (MonadTCM tcm) => Int -> tcm I.Bind
-localGet k = liftM (flip envGet k) ask
+localGet k = liftM (`envGet` k) ask
 
 data TCErr = TCErr TypeError
              deriving(Show, Typeable)
@@ -388,6 +388,10 @@ levelDetail = 80
 
 getVerbosity :: (MonadTCM tcm) => tcm Verbosity
 getVerbosity = stVerbosityLevel <$> get
+
+setVerbosity :: (MonadTCM tcm) => Verbosity -> tcm ()
+setVerbosity n = do st <- get
+                    put $ st { stVerbosityLevel = n }
 
 traceTCM :: (MonadTCM tcm) => Verbosity -> tcm Doc -> tcm ()
 traceTCM n t = do k <- getVerbosity
