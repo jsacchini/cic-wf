@@ -149,7 +149,7 @@ isConstrType nmConstr nmInd numPars tp =
          when (isFree numInd args) $ error "inductive var appears in the arguments in the return type"
          when (i /= numInd) $ error $ "Not constructor " ++ show nmConstr
          traceTCM 30 $ (text "isCONSTRTYPE" $$
-                        nest 3 (vcat [ text "TYPE:" <+> prettyPrintTCM (mkPi ctx (Sort Prop))
+                        nest 3 (vcat [ text "TYPE:" <+> prettyPrintTCM ctx
                                      , text "ARGS: " <+> hsep (map (pushCtx ctx . prettyPrintTCM) (drop numPars args))
                                      , text "REC ARGS: "<+> hsep (map prettyPrintTCM recArgs)
                                      ]))

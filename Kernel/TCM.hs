@@ -94,26 +94,25 @@ instance Exception TypeError
 
 type Verbosity = Int
 -- Global state containing definition, assumption, datatypes, etc..
-data TCState = TCState
-               {
-                 stSignature       :: Signature
-               , stDefined         :: [Name] -- defined names in reverse order
-               , stFresh           :: Fresh
-               , stGoals           :: Map I.MetaVar I.Goal
-               , stActiveGoal      :: Maybe I.MetaVar
-               , stConstraints     :: CSet StageVar
-               , stTypeConstraints :: CSet I.SortVar
-               , stVerbosityLevel  :: Verbosity
-               } deriving(Show)
+data TCState =
+  TCState { stSignature       :: Signature
+          , stDefined         :: [Name] -- defined names in reverse order
+          , stFresh           :: Fresh
+          , stGoals           :: Map I.MetaVar I.Goal
+          , stActiveGoal      :: Maybe I.MetaVar
+          , stConstraints     :: CSet StageVar
+          , stTypeConstraints :: CSet I.SortVar
+          , stVerbosityLevel  :: Verbosity
+          } deriving(Show)
 
 type Signature = Map Name I.Global
 
 -- Fresh
-data Fresh = Fresh
-             { freshStage :: StageVar
-             , freshSort  :: I.SortVar
-             , freshMeta  :: I.MetaVar }
-             deriving(Show)
+data Fresh =
+  Fresh { freshStage :: StageVar
+        , freshSort  :: I.SortVar
+        , freshMeta  :: I.MetaVar
+        } deriving(Show)
 
 instance HasFresh StageVar Fresh where
   nextFresh f = (i, f { freshStage = succ i })
@@ -147,10 +146,6 @@ instance HasFresh I.MetaVar TCState where
 
 -- Local environment
 type TCEnv = Env I.Bind
-
--- -- What combinator is this?
--- withEnv :: (Env I.Bind -> Env I.Bind)-> TCEnv -> TCEnv
--- withEnv f (TCEnv x) = TCEnv (f x)
 
 localLength :: (MonadTCM tcm) => tcm Int
 localLength = liftM envLen ask
@@ -248,10 +243,6 @@ addGlobal g = do st <- get
     x = nameTag g
     d = namedValue g
 
-pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
-pushCtx ctx m = do ctx' <- freshenCtx ctx
-                   local (+:+ ctx') m
-
 withCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
 withCtx ctx = local (const (ctxToEnv ctx))
 
@@ -285,6 +276,13 @@ pushBind b m = do x <- freshenName (I.bindName b)
                   let b' = b { I.bindName = x }
                   local (flip EnvExtend b') m
 
+-- TODO: it should not be necessary to freshen a context everytime
+-- only freshening during scope checking should be enough
+pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
+pushCtx ctx m = do ctx' <- freshenCtx ctx
+                   local (+:+ ctx') m
+
+
 -- | Returns the number of parameters of an inductive type.
 --   Assumes that the global declaration exists and that is an inductive type
 numParam :: (MonadTCM tcm) => Name -> tcm Int
@@ -294,13 +292,13 @@ numParam x = (size . I.indPars) <$> getGlobal x
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
 getLocalNames = ask >>= return . name
 
--- We don't need the real type of the binds for scope checking, just the names
--- Maybe should be moved to another place
-fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
-fakeBinds b = pushCtx (mkFakeCtx b)
-  where
-    mkFakeCtx = ctxFromList . map mkFakeBind . name
-    mkFakeBind x = I.mkBind x (I.Sort I.Prop)
+-- -- We don't need the real type of the binds for scope checking, just the names
+-- -- Maybe should be moved to another place
+-- fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
+-- fakeBinds b = pushCtx (mkFakeCtx b)
+--   where
+--     mkFakeCtx = ctxFromList . map mkFakeBind . name
+--     mkFakeBind x = I.mkBind x (I.Sort I.Prop)
 
 fakeNames :: (MonadTCM tcm) => Name -> tcm a -> tcm a
 fakeNames x = pushCtx $ ctxSingle (I.mkBind x (I.Sort I.Prop))

@@ -181,8 +181,9 @@ checkBranch sta asNm nmInd pars caseIn' ret'
   traceTCM 30 $ vcat [ text "Checking branch" <+>  prettyPrintTCM nmConstr
                      , text "ctx" <+> prettyPrintTCM pars
                      , text "ctx2" <+>  prettyPrintTCM tpArgs
-                     , text "after" <+> prettyPrintTCM (betaRedType (cPars+:tpArgs) pars)]
-
+                     , text "after" <+> prettyPrintTCM (betaRedType (cPars+:tpArgs) pars)
+                     , text "nmArgs" <+> prettyPrintTCM nmArgs
+                     ]
   -- TODO: replace star for the appropiate stage
   let replStage x = if x == Star then sta else x
 

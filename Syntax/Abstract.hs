@@ -366,7 +366,7 @@ instance Pretty Expr where
               | otherwise     = pp 0 (implicitValue e1)
       pp _ (Ident _ x) = prettyPrint x
       pp _ (Bound _ x k) = prettyPrint x
-                           -- <> (text $ "[" ++ show k ++ "]")
+                           <> (text $ "[" ++ show k ++ "]")
       pp _ (Meta _ Nothing) = text "_"
       pp _ (Meta _ (Just k)) = text "?" <> int k
       pp n (Lam _ bs e) = parensIf (n > 0) $ nestedLam bs e

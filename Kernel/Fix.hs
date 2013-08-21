@@ -150,7 +150,7 @@ inferFix (A.FixExpr r CoI num f tp body) =
 
     -- checknig constraints
     -- Calling recCheck
-    let vNeq = (allOld ++ listAnnot tp' ++ listAnnot body') \\ (is ++ [0])
+    let vNeq = (allOld ++ listAnnot tp' ++ listAnnot body') \\ (is ++ [inftyStageVar])
     alls <- allStages
     cOld <- allConstraints
     traceTCM 30 $ (hsep [text "calling recCheck alpha = ", prettyPrintTCM alpha]

@@ -57,6 +57,7 @@ import Utils.Value
 
 
 -- Scope errors
+-- TODO: Move to TCMErrors
 
 wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
 wrongArg r x m n = typeError $ WrongNumberOfArguments r x m n
@@ -66,6 +67,18 @@ undefinedName r x = typeError $ UndefinedName r x
 
 constrNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
 constrNotApplied r x = typeError $ ConstructorNotApplied r x
+
+
+
+
+-- We don't need the real type of the binds for scope checking, just the names
+-- Maybe should be moved to another place
+fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
+fakeBinds b = local (+:+ (mkFakeCtx b))
+  where
+    mkFakeCtx = ctxFromList . map mkFakeBind . name
+    mkFakeBind x = I.mkBind x (I.Sort I.Prop)
+
 
 
 -- | We reuse the type-checking monad for scope checking
@@ -105,6 +118,7 @@ instance Scope A.Expr where
        return $ A.Arrow r e1' e2'
   scope (A.Lam r bs e) =
     do bs' <- scope bs
+       -- liftIO $ print ("scope lam " ++ show bs)
        e' <- fakeBinds bs $ scope e
        return $ A.Lam r bs' e'
   scope t@(A.App _ _ _) =

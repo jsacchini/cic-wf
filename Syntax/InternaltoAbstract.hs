@@ -54,6 +54,14 @@ import Syntax.Size
 import Utils.Misc
 
 
+-- -- We don't need the real type of the binds for scope checking, just the names
+-- -- Maybe should be moved to another place
+fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
+fakeBinds b = pushCtx (mkFakeCtx b)
+  where
+    mkFakeCtx = ctxFromList . map mkFakeBind . name
+    mkFakeBind x = I.mkBind x (I.Sort I.Prop)
+
 freshNameList :: (MonadTCM tcm) => [Name] -> tcm [Name]
 freshNameList []     = return []
 freshNameList (x:xs) = do x' <- freshenName x
@@ -125,7 +133,7 @@ reifyCtx ctx = do xs <- reifyBinds (bindings ctx)
      reifyBinds [] = return []
      reifyBinds (b:bs) =
        do t' <- reify (bindType b)
-          bs' <- fakeBinds (bindName b) $ reifyBinds bs
+          bs' <- pushBind b $ reifyBinds bs
           return $ A.Bind noRange [bindName b] (mkImplicit (isImplicit b) (Just t')) : bs'
 
 instance Reify a b => Reify (Implicit a) (Implicit b) where
@@ -229,7 +237,7 @@ instance Reify FixTerm A.FixExpr where
 instance Reify CaseIn A.CaseIn where
   reify (CaseIn ctx nmInd args) =
     do ctx' <- reifyCtx ctx
-       args' <- fakeBinds ctx $ mapM reify args
+       args' <- pushCtx (renameCtx ctx (name ctx')) $ mapM reify args
        return $ A.CaseIn noRange ctx' nmInd args'
       -- where reifyCtx Empctx args = do args' <- mapM reify args
       --                                 return ([], args')

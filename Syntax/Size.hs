@@ -79,7 +79,7 @@ instance Pretty Size where
   prettyPrint s =
     case normalize s of
       Just (v, n) -> text $ "a" ++ show v ++ if n > 0 then "^" ++ show n else ""
-      Nothing     -> text "oo"
+      Nothing     -> text "∞"
 
 instance Show Size where
   show = show . prettyPrint
