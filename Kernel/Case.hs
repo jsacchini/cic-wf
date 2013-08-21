@@ -164,19 +164,29 @@ inferCase (A.CaseExpr _ _ _ _ _ Nothing _) =
   error "Case with no return type not handled yet. Add a return type"
 
 
+-- | betaRedType 'Δ' 'ts' substitutes the first 'length ts' variables in 'Δ'
+--   with 'ts'
+betaRedType :: Context -> [Term] -> Context
+betaRedType ctx [] = ctx
+betaRedType (CtxExtend b bs) (t:ts) = betaRedType (subst t bs) ts
+
+
 
 checkBranch :: (MonadTCM tcm) =>
                Annot -> Maybe Name -> Name -> [Term] -> Maybe CaseIn -> Type -> A.Branch -> tcm Branch
 checkBranch sta asNm nmInd pars caseIn' ret'
   (A.Branch _ nmConstr idConstr nmArgs body whSubst) = do
 
-  traceTCM 30 $ hsep [ text "Checking branch", prettyPrintTCM nmConstr ]
-  (Constructor _ _ _ tpArgs _ inds) <- getGlobal nmConstr
+  (Constructor _ _ cPars tpArgs _ inds) <- getGlobal nmConstr
+  traceTCM 30 $ vcat [ text "Checking branch" <+>  prettyPrintTCM nmConstr
+                     , text "ctx" <+> prettyPrintTCM pars
+                     , text "ctx2" <+>  prettyPrintTCM tpArgs
+                     , text "after" <+> prettyPrintTCM (betaRedType (cPars+:tpArgs) pars)]
 
   -- TODO: replace star for the appropiate stage
   let replStage x = if x == Star then sta else x
 
-  let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (foldr subst (modifySize replStage tpArgs) pars) nmArgs
+  let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (betaRedType (modifySize replStage (cPars+:tpArgs)) pars) nmArgs
       numPars = length pars
       numArgs = size tpArgs'
       inds' = substList (numArgs + numPars - 1) pars inds
