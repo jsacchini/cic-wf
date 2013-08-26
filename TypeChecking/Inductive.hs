@@ -20,7 +20,7 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses
   #-}
 
-module Kernel.Inductive where
+module TypeChecking.Inductive where
 
 import Control.Monad.Reader
 
@@ -33,11 +33,11 @@ import Syntax.Common
 import Syntax.Position
 import Syntax.Size
 import qualified Syntax.Abstract as A
-import Kernel.Conversion
-import Kernel.TCM
-import Kernel.PrettyTCM
-import Kernel.Whnf
-import {-# SOURCE #-} Kernel.TypeChecking
+import TypeChecking.Conversion
+import TypeChecking.TCM
+import TypeChecking.PrettyTCM
+import TypeChecking.Whnf
+import {-# SOURCE #-} TypeChecking.TypeChecking
 import Utils.Sized
 
 

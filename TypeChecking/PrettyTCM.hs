@@ -20,7 +20,7 @@
 {-# LANGUAGE FlexibleInstances, TypeSynonymInstances
   #-}
 
-module Kernel.PrettyTCM where
+module TypeChecking.PrettyTCM where
 
 import Control.Applicative hiding (empty)
 import Control.Monad.Reader
@@ -37,7 +37,7 @@ import Syntax.Common
 import Syntax.Position
 import Syntax.Size
 import qualified Syntax.Abstract as A
-import Kernel.TCM
+import TypeChecking.TCM
 
 ---------------------------------------------------------------------------
 -- * Wrappers for pretty printing combinators

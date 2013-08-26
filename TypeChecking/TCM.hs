@@ -21,7 +21,7 @@
     MultiParamTypeClasses, FlexibleInstances, UndecidableInstances
   #-}
 
-module Kernel.TCM where
+module TypeChecking.TCM where
 
 import Prelude hiding (catch)
 import Control.Applicative
@@ -51,8 +51,8 @@ import Utils.Fresh
 import Utils.Pretty
 import Utils.Sized
 
-import Kernel.Constraints (CSet)
-import qualified Kernel.Constraints as CS
+import TypeChecking.Constraints (CSet)
+import qualified TypeChecking.Constraints as CS
 
 -- Type checking errors
 -- We include scope errors, so we have to catch only one type

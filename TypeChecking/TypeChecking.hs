@@ -21,7 +21,7 @@
     FlexibleInstances, TypeSynonymInstances
   #-}
 
-module Kernel.TypeChecking where
+module TypeChecking.TypeChecking where
 
 #include "../undefined.h"
 import Utils.Impossible
@@ -40,14 +40,14 @@ import Syntax.Common
 import Syntax.Position
 import Syntax.Size
 import qualified Syntax.Abstract as A
-import Kernel.Conversion
-import Kernel.TCM
-import Kernel.TCMErrors
-import Kernel.Whnf
-import Kernel.Inductive (inferInd)
-import Kernel.Fix (inferFix)
-import Kernel.Case (inferCase)
-import Kernel.PrettyTCM
+import TypeChecking.Conversion
+import TypeChecking.TCM
+import TypeChecking.TCMErrors
+import TypeChecking.Whnf
+import TypeChecking.Inductive (inferInd)
+import TypeChecking.Fix (inferFix)
+import TypeChecking.Case (inferCase)
+import TypeChecking.PrettyTCM
 import Utils.Fresh
 import qualified Utils.Pretty as MP
 
@@ -177,7 +177,7 @@ infer (A.Ind _ an x _) =
 infer (A.Constr _ x _ pars args) = do
   t <- getGlobal x
   stage <- fresh
-  let -- Star signals recursive occurrences of the inductive type. See Kernel.Inductive
+  let -- Star signals recursive occurrences of the inductive type. See TypeChecking.Inductive
       replStage x = if x == Star then (Size (Svar stage)) else x
       replFunc = modifySize replStage
   case t of

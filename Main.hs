@@ -43,10 +43,10 @@ import Syntax.Internal
 
 import qualified Utils.Pretty as MP
 
-import qualified Kernel.Constraints as CS
-import Kernel.TCM
-import Kernel.PrettyTCM
-import Kernel.TypeChecking
+import qualified TypeChecking.Constraints as CS
+import TypeChecking.TCM
+import TypeChecking.PrettyTCM
+import TypeChecking.TypeChecking
 import Syntax.InternaltoAbstract
 
 import TopLevel.Monad

@@ -19,7 +19,7 @@
 
 {-# LANGUAGE FlexibleInstances, CPP #-}
 
-module Kernel.Permutation where
+module TypeChecking.Permutation where
 
 import qualified Data.Foldable as Fold
 

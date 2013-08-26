@@ -38,8 +38,8 @@ import Syntax.Scope
 import qualified System.Console.Haskeline as H
 import System.Console.Haskeline.MonadException
 
-import Kernel.TCM
-import Kernel.TypeChecking
+import TypeChecking.TCM
+import TypeChecking.TypeChecking
 
 import qualified Utils.MonadUndo as U
 

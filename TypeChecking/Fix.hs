@@ -20,7 +20,7 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, CPP
   #-}
 
-module Kernel.Fix where
+module TypeChecking.Fix where
 
 #include "../undefined.h"
 import Utils.Impossible
@@ -37,13 +37,13 @@ import qualified Syntax.Abstract as A
 import Syntax.InternaltoAbstract
 import Syntax.Size
 
-import Kernel.Conversion
-import Kernel.Constraints
-import Kernel.RecCheck
-import Kernel.PrettyTCM
-import Kernel.TCM
-import {-# SOURCE #-} Kernel.TypeChecking
-import Kernel.Whnf
+import TypeChecking.Conversion
+import TypeChecking.Constraints
+import TypeChecking.RecCheck
+import TypeChecking.PrettyTCM
+import TypeChecking.TCM
+import {-# SOURCE #-} TypeChecking.TypeChecking
+import TypeChecking.Whnf
 
 import Utils.Pretty
 import Utils.Sized

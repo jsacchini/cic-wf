@@ -19,7 +19,7 @@
 
 {-# LANGUAGE CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FlexibleInstances #-}
 
-module Kernel.Constraints
+module TypeChecking.Constraints
        ( EdgeLabel
        , Constraint
        , ConstraintSet

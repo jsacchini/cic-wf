@@ -47,7 +47,7 @@ import qualified Data.Foldable as Fold
 
 import Syntax.Internal as I
 import qualified Syntax.Abstract as A
-import Kernel.TCM
+import TypeChecking.TCM
 import Syntax.Position
 import Syntax.Common
 import Syntax.Size

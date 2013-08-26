@@ -20,7 +20,7 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances
   #-}
 
-module Kernel.Unification where
+module TypeChecking.Unification where
 
 import Control.Monad
 import Control.Monad.Reader hiding (lift)
@@ -31,11 +31,11 @@ import Syntax.Common
 import Syntax.Internal as I
 import Syntax.InternaltoAbstract
 
-import Kernel.TCM
-import Kernel.PrettyTCM
-import Kernel.Whnf
-import Kernel.Conversion
-import Kernel.Permutation
+import TypeChecking.TCM
+import TypeChecking.PrettyTCM
+import TypeChecking.Whnf
+import TypeChecking.Conversion
+import TypeChecking.Permutation
 
 import Utils.Maybe
 import Utils.Misc

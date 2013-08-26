@@ -20,7 +20,7 @@
 {-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances
   #-}
 
-module Kernel.Conversion where
+module TypeChecking.Conversion where
 
 #include "../undefined.h"
 import Utils.Impossible
@@ -33,9 +33,9 @@ import qualified Data.Foldable as Fold
 import Syntax.Common
 import Syntax.Size
 import Syntax.Internal
-import Kernel.Constraints
-import Kernel.Whnf
-import Kernel.TCM
+import TypeChecking.Constraints
+import TypeChecking.Whnf
+import TypeChecking.TCM
 
 import Utils.Misc
 import Utils.Sized

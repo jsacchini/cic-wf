@@ -42,17 +42,17 @@ Executable cicminus
                      Utils.Impossible
                      Utils.Sized
                      Utils.Value
-                     Kernel.Permutation
-                     Kernel.Constraints
-                     Kernel.TCM
-                     Kernel.PrettyTCM
-                     Kernel.TCMErrors
-                     Kernel.TypeChecking
-                     Kernel.Whnf
-                     Kernel.Conversion
-                     Kernel.Unification
-                     Kernel.Fix
-                     Kernel.Case
-                     Kernel.Inductive
+                     TypeChecking.Permutation
+                     TypeChecking.Constraints
+                     TypeChecking.TCM
+                     TypeChecking.PrettyTCM
+                     TypeChecking.TCMErrors
+                     TypeChecking.TypeChecking
+                     TypeChecking.Whnf
+                     TypeChecking.Conversion
+                     TypeChecking.Unification
+                     TypeChecking.Fix
+                     TypeChecking.Case
+                     TypeChecking.Inductive
                      TopLevel.Monad
                      TopLevel.TopLevel

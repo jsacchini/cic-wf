@@ -1,12 +1,12 @@
-module Kernel.TCMErrors where
+module TypeChecking.TCMErrors where
 
 import Control.Monad.Reader
 
 import Syntax.Position
 import qualified Syntax.Internal as I
 
-import Kernel.TCM
-import Kernel.PrettyTCM
+import TypeChecking.TCM
+import TypeChecking.PrettyTCM
 
 import Utils.Pretty
 

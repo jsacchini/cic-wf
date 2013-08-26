@@ -3,14 +3,14 @@
     UndecidableInstances
   #-}
 
-module Kernel.TypeChecking where
+module TypeChecking.TypeChecking where
 
 import qualified Syntax.Abstract as A
 import Syntax.Common
 import Syntax.Position
 import Syntax.Internal
 
-import Kernel.TCM
+import TypeChecking.TCM
 
 maxSort :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
 

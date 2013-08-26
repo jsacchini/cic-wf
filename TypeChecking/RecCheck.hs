@@ -17,7 +17,7 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-module Kernel.RecCheck (recCheck) where
+module TypeChecking.RecCheck (recCheck) where
 
 import Data.List
 import Data.Map (Map)
@@ -28,7 +28,7 @@ import qualified Data.Graph.Inductive as GI
 -- import Data.Graph.Inductive.PatriciaTree as GI
 import qualified Data.Graph.Inductive.Query as GQ
 
-import Kernel.Constraints
+import TypeChecking.Constraints
 import Syntax.Size
 
 type CStage = CSet StageVar

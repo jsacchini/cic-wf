@@ -20,7 +20,7 @@
 {-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances
   #-}
 
-module Kernel.Whnf(whnF, nF, unfoldPi) where
+module TypeChecking.Whnf(whnF, nF, unfoldPi) where
 
 #include "../undefined.h"
 import Utils.Impossible
@@ -33,8 +33,8 @@ import Control.Monad.Reader
 import Syntax.Common
 import Syntax.Internal as I
 import Syntax.InternaltoAbstract
-import Kernel.TCM
-import Kernel.PrettyTCM
+import TypeChecking.TCM
+import TypeChecking.PrettyTCM
 
 import Utils.Pretty
 

@@ -49,7 +49,7 @@ import Syntax.Common
 import Syntax.Position
 import Syntax.Size
 
-import Kernel.TCM
+import TypeChecking.TCM
 
 import Utils.Misc
 import Utils.Sized

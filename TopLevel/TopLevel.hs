@@ -40,9 +40,9 @@ import Syntax.ParseMonad
 import Syntax.Parser
 import Syntax.Scope
 
-import Kernel.TCM
-import Kernel.PrettyTCM
-import Kernel.TypeChecking
+import TypeChecking.TCM
+import TypeChecking.PrettyTCM
+import TypeChecking.TypeChecking
 
 import TopLevel.Monad
 

@@ -20,7 +20,7 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses
   #-}
 
-module Kernel.Case where
+module TypeChecking.Case where
 
 import Data.List
 import Data.Functor
@@ -36,13 +36,13 @@ import Syntax.Internal as I
 import Syntax.InternaltoAbstract
 import Syntax.Size
 import qualified Syntax.Abstract as A
-import Kernel.Conversion
-import Kernel.TCM
-import Kernel.PrettyTCM
-import Kernel.Unification
-import Kernel.Permutation
-import Kernel.Whnf
-import {-# SOURCE #-} Kernel.TypeChecking
+import TypeChecking.Conversion
+import TypeChecking.TCM
+import TypeChecking.PrettyTCM
+import TypeChecking.Unification
+import TypeChecking.Permutation
+import TypeChecking.Whnf
+import {-# SOURCE #-} TypeChecking.TypeChecking
 
 import Utils.Fresh
 import Utils.Misc
