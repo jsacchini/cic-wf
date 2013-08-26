@@ -98,6 +98,7 @@ evalFile =
           typeCheckDecl :: A.Declaration -> TCM ()
           typeCheckDecl d =
             do
+              resetConstraints
               d' <- scope d
               traceTCM 30 $ hsep [ text "  INFER GLOBAL DECL: "
                                  , prettyPrintTCM d' ]
@@ -107,6 +108,9 @@ evalFile =
                              $$ vcat(map (text . show) gs))
               traceTCM 30 $ (text "  INFERRED GLOBAL DECL: "
                              $$ vcat(map prettyPrintTCM (filter (not . isConstr . namedValue) gs)))
+              cs <- allConstraints
+              traceTCM 15 $ prettyPrintTCM (filter (not . isConstr . namedValue) gs)
+              traceTCM 15 $ (text $ "Constraints:" ++ show cs)
           typeCheckFile :: Verbosity -> [A.Declaration] -> TCM ()
           typeCheckFile verb ds =
             do setVerbosity verb

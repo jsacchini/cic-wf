@@ -79,18 +79,18 @@ collectStarsNonPi (A.Ind _ a1 n1 _) (Ind (Size a2) n2) | n1 == n2 = return res
   where
     res | a1 /= Star || base a2 == Nothing = []
         | a1 == Star                       = [fromJust (base a2)]
-collectStarsNonPi e               (App (Ind (Size a2) n2) args2) = do
-  traceTCM 30 $ hsep [ text "collect stars _ IND:"
-                     , prettyPrintTCM e ]
-  return []
-  -- rs <- zipWithM collectStars args1 args2
-  -- return $ res ++ concat rs
-  -- where
-  --   (A.Ind _ a1 n1 _, args1) = A.destroyApp e
-  --   res | a1 /= Star || base a2 == Nothing = []
-  --       | a1 == Star                       = [fromJust (base a2)]
-
-collectStarsNonPi _ _ = return []
+collectStarsNonPi e                 (App (Ind (Size a2) n2) args2) = do
+  rs <- zipWithM collectStars args1 args2
+  return $ res ++ concat rs
+  where
+    (A.Ind _ a1 n1 _, args1) = A.unApp e
+    res | a1 /= Star || base a2 == Nothing = []
+        | a1 == Star                       = [fromJust (base a2)]
+collectStarsNonPi a b =
+  do
+    traceTCM 20 $ hsep [text "collectStarsNonPi", prettyPrintTCM a,
+                        text "and", prettyPrintTCM b]
+    return []
 
 collectStarsBind :: (MonadTCM tcm) => A.Context -> Context -> tcm [StageVar]
 collectStarsBind CtxEmpty CtxEmpty = return []
@@ -126,7 +126,7 @@ inferFix (A.FixExpr r CoI num f tp body) =
     traceTCM 20 $ hsep [text "Typechecking cofixpoint type: ",
                         prettyPrintTCM tp]
     (tp', s) <- infer tp
-    traceTCM 20 $ hsep [text "Result: ", prettyPrintTCM tp']
+    traceTCM 20 $ hsep [text "Typechecked cofixpoint type: ", prettyPrintTCM tp']
     s' <- isSort (range tp) s
 
     is <- collectStars tp tp'
@@ -153,32 +153,33 @@ inferFix (A.FixExpr r CoI num f tp body) =
     let vNeq = (allOld ++ listAnnot tp' ++ listAnnot body') \\ (is ++ [inftyStageVar])
     alls <- allStages
     cOld <- allConstraints
-    traceTCM 30 $ (hsep [text "calling recCheck alpha = ", prettyPrintTCM alpha]
+    traceTCM 15 $ (hsep [text "COI calling recCheck alpha = ", prettyPrintTCM alpha]
                    $$ nest 2 (vcat [text "vStar = " <> prettyPrintTCM is,
                                     text "all other = " <> prettyPrintTCM (alls \\ is),
                                     text "vNeq = " <> prettyPrintTCM vNeq,
                                     text "C = " <> text (show cOld)]))
     -- add Constraints to ensure that alpha appears positively in the return type
-    traceTCM 30 $ (hsep [text "shifting "--, prettyPrintTCM sctx
-                        , text " <~ "--, prettyPrintTCM ctx])
-                        ])
+    traceTCM 15 $ (hsep [text "shifting ", prettyPrintTCM sctx
+                        , text " <~ ", prettyPrintTCM ctx])
     _ <- sctx <~ ctx
 
     let recRes = recCheck alpha is vNeq cOld
 
     case recRes of
       Left cNew -> do newConstraints cNew
-      Right xs  -> do error "COFIX"
+      Right xs  -> do error ("COFIX " ++ show xs)
+
+    traceTCM 15 $ hsep [text "result recCheck ", text $ show recRes]
 
     return (Fix (FixTerm CoI num f ctxEmpty (eraseSize tp') body'), tp')
 
 
-inferFix (A.FixExpr r I num f tp body) =
+inferFix fixexpr@(A.FixExpr r I num f tp body) =
     do allOld <- allStages -- all stages before typechecking fix
        traceTCM 20 $ hsep [text "Typechecking fixpoint type: ",
                            prettyPrintTCM tp]
        (tp', s) <- infer tp
-       traceTCM 20 $ hsep [text "Result: ", prettyPrintTCM tp']
+       traceTCM 15 $ hsep [text "Typechecked fixpoint type: ", prettyPrintTCM tp']
        is <- collectStars tp tp'
        traceTCM 30 $ hsep [text "Star stages:", prettyPrintTCM is]
 
@@ -207,44 +208,41 @@ inferFix (A.FixExpr r I num f tp body) =
        -- meta stage var that must be assigned to a real stage var
        (iName, iKind, alpha) <- extractIndType (bindType recArg)
        when (iKind /= I) $ error "recursive type is coinductive"
-       -- traceTCM_ ["alpha = ", show alpha]
 
-       -- traceTCM_ ["recursive type ", show tp', "\n body type ", show tpFix]
-
-       -- Checking the body
-       -- traceTCM_ ["checking body ", show tp', "\nbody ", show body, "\n fix type = ", show tpFix]
        body' <- pushBind (mkBind f tp') $ check body (I.lift 1 0 tpFix)
-       -- traceTCM_ ["body checked"]
-
-       -- rbody' <- pushBind (Bind f tp') $ reify body'
-       -- rtp' <- reify tp'
-       -- traceTCM_ ["FIX\n", show (prettyPrint rbody'), "\n : ", show (prettyPrint rtp')]
 
        -- Calling recCheck
        let vNeq = (allOld ++ listAnnot tp' ++ listAnnot body') \\ (is ++ [inftyStageVar])
        alls <- allStages
        cOld <- allConstraints
-       -- traceTCM_ ["calling recCheck\nalpha = ", show alpha, "\nvStar = ", show is, "\nall other = ", show (alls \\ is), "\nvNeq = ", show vNeq, "\nC = ", show cOld]
+       traceTCM 15 $ (hsep [text "I calling recCheck alpha = ", prettyPrintTCM alpha]
+                      $$ nest 2 (vcat [text "vStar = " <> prettyPrintTCM is,
+                                       text "all other = " <> prettyPrintTCM (alls \\ is),
+                                       text "vNeq = " <> prettyPrintTCM vNeq,
+                                       text "C = " <> text (show cOld)]))
 
-       -- add Constraints to ensure that alpha appears positively in the return
-       -- type
-       -- traceTCM_ ["shifting ", show rest, " <~ ", show srest, "\n", show tpRes, " <~ ", show stpRes]
+       -- add Constraints to ensure that alpha appears positively in the return type
+       traceTCM 15 $ (hsep [text "shifting ", pushBind srecArg $ prettyPrintTCM srest
+                           , text " <~ ", pushBind srecArg $ prettyPrintTCM rest])
+       traceTCM 15 $ (hsep [text "shifting ", pushCtx (srecArg <| srest) $ prettyPrintTCM tpRes
+                           , text " <~ ", pushCtx (srecArg <| srest) $ prettyPrintTCM stpRes])
        _ <- pushBind srecArg $ srest <~ rest -- was rest <~ srest
        _ <- pushCtx (srecArg <| srest) $ tpRes <~ stpRes
 
-       -- traceTCM_ ["added constraints"]
 
        let recRes = recCheck alpha is vNeq cOld
 
        case recRes of
          Left cNew -> do newConstraints cNew
-                         -- traceTCM_ ["fix passed!"]
          Right xs  -> do -- traceTCM_ ["recursion BROKEN in\n", show body', "\n : ", show tp', "\n stage vars: ", show xs]
-                         error "FIX"
+                         traceTCM 15 $ vcat [ text "FIX FAILED ON CTX"
+                                            , (ask >>= prettyPrintTCM)
+                                            , text "------------------------"
+                                            , prettyPrintTCM (A.Fix fixexpr) ]
+                         error ("FIX " ++ show xs)
 
 
-       -- traceTCM_ ["checked fix\n", show (Fix num f empCtx tp' body'), "\n", show r, "\nof type ", show tp']
-
+       traceTCM 15 $ hsep [text "result recCheck ", text $ show recRes]
        -- Final result
        return (Fix (FixTerm I num f (eraseSize ctxEmpty) (eraseSize tp') body'), tp')
 

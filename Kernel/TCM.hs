@@ -355,6 +355,9 @@ allConstraints = stConstraints <$> get
 newConstraints :: (MonadTCM tcm) => (CSet StageVar) -> tcm ()
 newConstraints c = modify $ \st -> st { stConstraints = c }
 
+resetConstraints :: (MonadTCM tcm) => tcm ()
+resetConstraints = newConstraints (CS.addNode inftyStageVar CS.empty)
+
 -- Goals
 
 listGoals :: (MonadTCM tcm) => tcm [(I.MetaVar, I.Goal)]
