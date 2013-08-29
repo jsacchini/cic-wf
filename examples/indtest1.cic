@@ -1,0 +1,22 @@
+data nat : Type := O : nat | S : nat -> nat.
+
+data list (A : Type) : Type :=
+| nil : list A
+| cons : A -> list A -> list A.
+
+data list2 (A : Type) : Type :=
+| nil2 : list2 A
+| cons2 : forall (x : A) (y : list2 A), list2 A.
+
+data vec (A : Type) : nat -> Type  :=
+| vnil : vec A O
+| vcons : forall n : nat, A -> vec A n -> vec A (S n).
+
+data leq : nat -> nat -> Type :=
+| lO : forall x:nat, leq O x
+| lS : forall (x : nat) (y : nat), leq x y -> leq (S x) (S y).
+
+data False : Type := .
+
+check fun (x : nat) (y : nat) (z: nat) (H : leq x y) => lS x y H.
+

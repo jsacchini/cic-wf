@@ -1,0 +1,34 @@
+data nat : Type := O : nat | S : nat -> nat.
+
+codata stream (A ++:Type) : Type :=
+  ccons : A -> stream A -> stream A.
+
+data SPi (X ++: Type) (A : Type) (B : Type) : Type :=
+| get : (A -> SPi X A B) -> SPi X A B
+| put : B -> X -> SPi X A B.
+
+data SPc (A : Type) (B : Type) : Type :=
+| out : SPi (SPc A B) A B -> SPc A B.
+
+-- check fun (A B C : Type) (f : A -> SPi C A B) => get C A B f.
+
+
+define runc : forall A B : Type, SPc A B -> stream A -> stream B :=
+  fun A B : Type =>
+  cofix runc : SPc* A B -> stream A -> stream* B :=
+    fun (sp : SPc A B) =>
+      < stream A -> stream B > case sp of
+      | out spi =>
+      ( fix 1 run : SPi* (SPc A B) A B -> stream A -> stream B :=
+        fun (sp : SPi (SPc A B) A B) (xs : stream A) =>
+        < stream B >
+        case sp of
+        | get f => < stream B > case xs of
+                   | ccons y ys => run (f y) ys
+                   end
+        | put w sp' => ccons B w (runc sp' xs)
+        end
+       ) spi
+       end.
+
+check runc.
