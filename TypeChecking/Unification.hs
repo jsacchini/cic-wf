@@ -163,7 +163,7 @@ unifyEq ctx (Bound k, t2) js
   | k `elem` js = do (ctx', p) <- R.lift $ applyDef ctx k t2
                      -- traceTCM_ ["applyDef left result ", show ctx', "\nperm ", show p]
                      return (ctx', p, applyPerm p (js \\ [k]))
-  | otherwise   = do (unlessM (R.lift $ Bound k ~~ t2)) $ R.lift $ typeError $ NotUnifiable 3 -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
+  | otherwise   = do (unlessM (R.lift $ conv (Bound k) t2)) $ R.lift $ typeError $ NotUnifiable 3 -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
                      return (ctxEmpty, idP (ctxLen ctx), js)
 unifyEq ctx (t1, Bound k) js = unifyEq ctx (Bound k, t1) js
 
@@ -179,7 +179,7 @@ unifyEq ctx (Constr x1 cid1 ps1 as1, Constr x2 cid2 ps2 as2) js =
 -- Otherwise, we have to check that both terms are convertible. If they are not
 -- the problem is too difficult and we raise an exception.
 unifyEq ctx (t1, t2) js =
-  do unlessM (R.lift $ t1 ~~ t2) $ R.lift $ typeError $ NotUnifiable 4
+  do unlessM (R.lift $ conv t1 t2) $ R.lift $ typeError $ NotUnifiable 4
      return (ctxEmpty, idP (ctxLen ctx), js)
 
 

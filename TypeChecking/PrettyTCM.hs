@@ -191,9 +191,6 @@ instance PrettyTCM (Named Global) where
 instance PrettyTCM StageVar where
   prettyPrintTCM = return . MP.prettyPrint
 
-instance PrettyTCM SortVar where
-  prettyPrintTCM = return . MP.prettyPrint
-
 instance PrettyTCM MetaVar where
   prettyPrintTCM = return . MP.prettyPrint
 

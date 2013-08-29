@@ -161,7 +161,7 @@ inferFix (A.FixExpr r CoI num f tp body) =
     -- add Constraints to ensure that alpha appears positively in the return type
     traceTCM 15 $ (hsep [text "shifting ", prettyPrintTCM sctx
                         , text " <~ ", prettyPrintTCM ctx])
-    _ <- sctx <~ ctx
+    _ <- subType sctx ctx
 
     let recRes = recCheck alpha is vNeq cOld
 
@@ -226,8 +226,8 @@ inferFix fixexpr@(A.FixExpr r I num f tp body) =
                            , text " <~ ", pushBind srecArg $ prettyPrintTCM rest])
        traceTCM 15 $ (hsep [text "shifting ", pushCtx (srecArg <| srest) $ prettyPrintTCM tpRes
                            , text " <~ ", pushCtx (srecArg <| srest) $ prettyPrintTCM stpRes])
-       _ <- pushBind srecArg $ srest <~ rest -- was rest <~ srest
-       _ <- pushCtx (srecArg <| srest) $ tpRes <~ stpRes
+       _ <- pushBind srecArg $ subType srest rest -- was rest <~ srest
+       _ <- pushCtx (srecArg <| srest) $ subType tpRes stpRes
 
 
        let recRes = recCheck alpha is vNeq cOld

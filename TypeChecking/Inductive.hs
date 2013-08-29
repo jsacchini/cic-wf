@@ -38,6 +38,8 @@ import TypeChecking.TCM
 import TypeChecking.PrettyTCM
 import TypeChecking.Whnf
 import {-# SOURCE #-} TypeChecking.TypeChecking
+
+import Utils.Misc
 import Utils.Sized
 
 
@@ -116,7 +118,9 @@ checkConstr (A.Constructor _ name tp)
                           , text "to:" <+> (pushBind indBind $ prettyPrintTCM tp')
                           , text "of type:" <+> (pushBind indBind $ prettyPrintTCM s) ]
        s' <- isSort (range tp) s
-       unless (sortInd == s') $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd
+       traceTCM 30 $ vcat [ text "Sort of inductive type:" <+> prettyPrintTCM (Sort sortInd)
+                          , text "Sort of constructor:" <+> prettyPrintTCM (Sort s') ]
+       unlessM (subType s' sortInd) $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd
        let indBind = mkBind nmInd (mkPi (parsInd +: indicesInd) (Sort sortInd))
        (args, indices, recArgs) <- pushBind indBind $
                                    isConstrType name nmInd numPars tp'

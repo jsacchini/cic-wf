@@ -53,12 +53,8 @@ import qualified Utils.Pretty as MP
 
 
 checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term, Type)
-checkSort A.Prop     = do f <- fresh
-                          return (Sort Prop, Sort (Type f))
-checkSort (A.Type _) = do f1 <- fresh
-                          f2 <- fresh
-                          addTypeConstraints [(f1, f2, -1)]
-                          return (Sort (Type f1), Sort (Type f2))
+checkSort A.Prop     = do return (Sort Prop, Sort (Type 0))
+checkSort (A.Type n) = do return (Sort (Type n), Sort (Type (1+n)))
 
 checkProd :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
 checkProd (Type _) Prop = return Prop
@@ -66,9 +62,7 @@ checkProd Prop (Type n) = return $ Type n
 checkProd (Type m) (Type n) = do traceTCM 30 $ hsep [text "check product",
                                                      prettyPrintTCM m,
                                                      prettyPrintTCM n]
-                                 k <- fresh
-                                 addTypeConstraints [(m, k, 0), (n, k, 0)]
-                                 return $ Type k
+                                 return $ Type (max m n)
 
 maxSort :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
 maxSort (Type m) Prop = return $ Type m
@@ -76,9 +70,7 @@ maxSort Prop (Type n) = return $ Type n
 maxSort (Type m) (Type n) = do traceTCM 30 $ hsep [text "max sort",
                                                    prettyPrintTCM m,
                                                    prettyPrintTCM n]
-                               k <- fresh
-                               addTypeConstraints [(m, k, 0), (n, k, 0)]
-                               return $ Type k
+                               return $ Type (max m n)
 
 isSort :: (MonadTCM tcm) => Range -> Term -> tcm Sort
 isSort rg t = do t' <- whnF t
@@ -260,7 +252,7 @@ check t u =   do traceTCM 30 $ (hsep [text "Checking type of", prettyPrintTCM t]
                  (t', r) <- infer t
                  traceTCM 30 $ hsep [text "Calling subtype with ", prettyPrintTCM r,
                                      text "≤", prettyPrintTCM u]
-                 b <- r `subTypeSort` u
+                 b <- r `subType` u
                  -- r__ <- nF r >>= reify
                  -- u__ <- nF u >>= reify
                  -- e <- ask

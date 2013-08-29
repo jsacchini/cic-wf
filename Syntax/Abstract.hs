@@ -111,33 +111,26 @@ data LetBind = LetBind Range Name (Maybe Expr) Expr
 -- | Universes
 
 data Sort
-    = Type (Maybe Int)
+    = Type Int
     | Prop
     deriving(Eq)
 
 
-mkProp, mkType :: Range -> Expr
+mkProp :: Range -> Expr
 mkProp r = Sort r Prop
-mkType r = Sort r (Type Nothing)
+
+mkType :: Range -> Int -> Expr
+mkType r n = Sort r (Type n)
 
 
 instance Show Sort where
   show Prop = "Prop"
-  show (Type (Just n)) = "Type<" ++ show n ++ ">"
-  show (Type Nothing)  = "Type"
+  show (Type n) | n == 0 = "Type"
+                | otherwise = "Type" ++ show n
 
 
 instance Pretty Sort where
-  prettyPrint Prop = text "Prop"
-  prettyPrint (Type (Just n)) = text "Type" <> prettyPrintIndex n
-  prettyPrint (Type Nothing)  = text "Type"
-
-
-prettyPrintIndex :: Int -> Doc
-prettyPrintIndex = text . map num2Sub . show
-  where
-    num2Sub c = fromJust (lookup c subTable) -- 'E' should never occur
-    subTable = zip ['0'..'9'] ['\x2080'..'\x2089']
+  prettyPrint = text . show
 
 
 -- | Binds and context
@@ -461,7 +454,7 @@ instance Pretty FixExpr where
     hsep [ppName k, prettyPrint x, colon,
           prettyPrint tp, defEq]
     $$ (nest 2 $ prettyPrint body)
-    where ppName I   = text "fix" <> (prettyPrintIndex n)
+    where ppName I   = text "fix" <> text (show n)
           ppName CoI = text "cofix"
 
 

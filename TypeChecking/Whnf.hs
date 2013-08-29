@@ -20,7 +20,7 @@
 {-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances
   #-}
 
-module TypeChecking.Whnf(whnF, nF, unfoldPi) where
+module TypeChecking.Whnf where
 
 #include "../undefined.h"
 import Utils.Impossible
@@ -123,14 +123,20 @@ unfoldPi t =
 class NormalForm a where
   normalForm :: (MonadTCM tcm) => a -> tcm a
 
+
 instance NormalForm a => NormalForm (Maybe a) where
   normalForm Nothing = return Nothing
   normalForm (Just x) = do y <- normalForm x
                            return $ Just y
 
+
 instance NormalForm a => NormalForm (Implicit a) where
   normalForm x = do y <- normalForm (implicitValue x)
                     return $ y <$ x
+
+
+instance NormalForm Sort where
+  normalForm = return . id
 
 instance NormalForm Bind where
   normalForm b =
@@ -237,9 +243,12 @@ instance NormalForm Term where
                       do -- traceTCM_ ["Case in normal form ", show t]
                         ret' <- nF (caseTpRet c)
                         branches' <- mapM normalForm (caseBranches c)
-                        return $ Case (c { caseArg      = arg',
-                                           caseTpRet    = ret',
-                                           caseBranches = branches' })
+                        in' <- normalForm (caseIn c)
+                        return $ Case (c { caseArg      = arg'
+                                         , caseTpRet    = ret'
+                                         , caseIn       = in'
+                                         , caseBranches = branches'
+                                         })
       nF t@(Constr x i ps as) =
         do -- traceTCM_ ["Normalizing constr ", show t]
            ps' <- mapM nF ps
@@ -253,6 +262,12 @@ instance NormalForm FixTerm where
     liftM3 (FixTerm a k nm) (normalForm c) (nF tp)
     (pushBind (mkBind nm (mkPi c tp)) $ nF body)
 
+
+instance NormalForm CaseIn where
+  normalForm (CaseIn ctx nm args) =
+    do ctx' <- normalForm ctx
+       args' <- mapM normalForm args
+       return $ CaseIn ctx' nm args'
 
 -- TODO: check if we need to normalize whSubst
 instance NormalForm Branch where

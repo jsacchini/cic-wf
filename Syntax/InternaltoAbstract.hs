@@ -143,7 +143,7 @@ instance Reify a b => Reify (Implicit a) (Implicit b) where
 -- TODO: add option to print universes. If set, reify should return (Type (Just n))
 instance Reify Sort A.Sort where
   reify Prop     = return A.Prop
-  reify (Type k) = return (A.Type (Just (fromEnum k)))
+  reify (Type k) = return (A.Type k)
 
 
 instance Reify Term A.Expr where

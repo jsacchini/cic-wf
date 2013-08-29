@@ -35,6 +35,7 @@ tokens :-
   "{-"       { \_ _ -> skipNestedComment }
 
   fix @number       { fixKeyword }
+  Type @number      { typeKeyword }
 
   \(          { symbol }
   \)          { symbol }
@@ -101,7 +102,7 @@ foolAlex inp = inp { lexInput = map fool $ lexInput inp }
     where
 	fool c
             | isSpace c && not (c `elem` "\t\n") = ' '
-            | c `elem` ['\x2080'..'\x2089'] = '1'
+            -- | c `elem` ['\x2080'..'\x2089'] {- ₀..₉ -} = '1'
             | c == '\x03a0' {- Π -} = '+'
             | c == '\x03bb' {- λ -} = '+'
 	    | isUnicodeId c         = if isAlpha c then 'z' else '+'

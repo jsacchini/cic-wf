@@ -46,6 +46,7 @@ data Symbol = SymbLeftParen | SymbRightParen | SymbLeftBrace | SymbRightBrace
 data Token = TokKeyword Keyword Position
            | TokSymbol Symbol Position
            | TokFixNumber (Position, Int)
+           | TokTypeNumber (Position, Int)
            | TokIdent (Position, String)
            | TokIdentStar (Position, String)
            | TokNumber (Position, Int)
@@ -60,10 +61,14 @@ data Token = TokKeyword Keyword Position
 fixKeyword :: Position -> String -> Parser Token
 fixKeyword p s = return $ TokFixNumber (p, read $ drop 3 (sub2Number s))
 
+typeKeyword :: Position -> String -> Parser Token
+typeKeyword p s = return $ TokTypeNumber (p, read $ drop 4 (sub2Number s))
+
 sub2Number :: String -> String
 sub2Number = map sub2Digit
   where sub2Digit c = fromMaybe c (lookup c subTable)
-        subTable = zip ['\x2080'..'\x2089'] ['0'..'9']
+        subTable = zip (['\x2080'..'\x2089']++['0'..'9'])
+                       (['0'..'9']++['0'..'9'])
 
 number :: Position -> String -> Parser Token
 number p s = return $ TokNumber (p, read (sub2Number s))

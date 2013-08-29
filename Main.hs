@@ -115,13 +115,3 @@ evalFile =
           typeCheckFile verb ds =
             do setVerbosity verb
                forM_ ds typeCheckDecl
-               csStage <- stConstraints <$> get
-               csType <- stTypeConstraints <$> get
-               traceTCM 40 $ vcat (text "Universe constraints:"
-                                   : map (\(x,y,k) -> hsep [prettyPrintTCM x,
-                                                            if k == 0 then text "<=" else text "<",
-                                                            prettyPrintTCM y
-                                                           ]) (CS.toList csType))
-               traceTCM 40 $ case find (\x -> CS.findNegCycle x csType /= []) (map (\(x,_,_)->x) (CS.toList csType)) of
-                              Just x -> hsep [text "Cycle:", prettyPrintTCM (CS.findNegCycle x csType)]
-                              Nothing -> text "No cycle"

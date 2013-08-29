@@ -55,6 +55,7 @@ import Utils.Sized
   'where'          { TokKeyword KwWhere $$ }
   'end'            { TokKeyword KwEnd $$ }
   fixN             { TokFixNumber $$ }
+  typeN            { TokTypeNumber $$ }
 
 
   '('              { TokSymbol SymbLeftParen $$}
@@ -175,7 +176,9 @@ Exp1 : '(' Exp ')'   { $2 }
 
 Sort :: { A.Expr }
 Sort : 'prop'  { A.mkProp (mkRangeLen $1 4) }
-     | 'type'  { A.mkType (mkRangeLen $1 4) }
+     | 'type'  { A.mkType (mkRangeLen $1 4) 0 }
+     | typeN   { let (pos, num) = $1
+                 in A.mkType (mkRangeLen pos (4 + length (show num))) num }
 
 MaybeExp :: { Maybe A.Expr }
 MaybeExp : ':' Exp       { Just $2 }

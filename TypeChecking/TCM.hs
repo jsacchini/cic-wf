@@ -101,7 +101,6 @@ data TCState =
           , stGoals           :: Map I.MetaVar I.Goal
           , stActiveGoal      :: Maybe I.MetaVar
           , stConstraints     :: CSet StageVar
-          , stTypeConstraints :: CSet I.SortVar
           , stVerbosityLevel  :: Verbosity
           } deriving(Show)
 
@@ -110,17 +109,12 @@ type Signature = Map Name I.Global
 -- Fresh
 data Fresh =
   Fresh { freshStage :: StageVar
-        , freshSort  :: I.SortVar
         , freshMeta  :: I.MetaVar
         } deriving(Show)
 
 instance HasFresh StageVar Fresh where
   nextFresh f = (i, f { freshStage = succ i })
     where i = freshStage f
-
-instance HasFresh I.SortVar Fresh where
-  nextFresh f = (i, f { freshSort = succ i })
-    where i = freshSort f
 
 instance HasFresh I.MetaVar Fresh where
   nextFresh f = (i, f { freshMeta = succ i })
@@ -133,11 +127,6 @@ instance HasFresh I.MetaVar Fresh where
 instance HasFresh StageVar TCState where
   nextFresh s = (i, s { stFresh = f
                       , stConstraints = CS.addNode i (stConstraints s) })
-    where (i, f) = nextFresh $ stFresh s
-
-instance HasFresh I.SortVar TCState where
-  nextFresh s = (i, s { stFresh = f
-                      , stTypeConstraints = CS.addNode i (stTypeConstraints s) })
     where (i, f) = nextFresh $ stFresh s
 
 instance HasFresh I.MetaVar TCState where
@@ -185,7 +174,6 @@ initialTCState =
           , stGoals = Map.empty
           , stActiveGoal = Nothing
           , stConstraints     = CS.addNode inftyStageVar CS.empty
-          , stTypeConstraints = CS.empty
           , stVerbosityLevel = 30
           }
 
@@ -199,7 +187,6 @@ initialSignature = foldr (uncurry Map.insert) Map.empty
 
 initialFresh :: Fresh
 initialFresh = Fresh { freshStage = succ inftyStageVar -- inftyStageVar is mapped to ∞
-                     , freshSort  = toEnum 0
                      , freshMeta  = toEnum 0 }
 
 initialTCEnv :: TCEnv
@@ -326,20 +313,6 @@ fakeNames x = pushCtx $ ctxSingle (I.mkBind x (I.Sort I.Prop))
 addStageConstraints :: (MonadTCM tcm) => [CS.Constraint StageVar] -> tcm ()
 addStageConstraints cts =
   modify $ \st -> st { stConstraints = CS.addConstraints cts (stConstraints st) }
-
-addTypeConstraints :: (MonadTCM tcm) => [CS.Constraint I.SortVar] -> tcm ()
-addTypeConstraints cts = do
-  modify $ \st -> st { stTypeConstraints = CS.addConstraints cts (stTypeConstraints st) }
-  tpConstr <- stTypeConstraints <$> get
-  case find ((/= []) . flip CS.findNegCycle tpConstr) (CS.listNodes tpConstr) of
-    Just _ -> throw UniverseInconsistency
-    Nothing -> return ()
-  traceTCM 40 $ return (hsep (text "Adding type constraints: " :
-                              map (\(x,y,k) -> hsep [prettyPrint x,
-                                                     text (if k == 0 then "<=" else "<"),
-                                                     prettyPrint y
-                                                    ]) cts))
-
 
 
 removeStages :: (MonadTCM tcm) => [StageVar] -> tcm ()

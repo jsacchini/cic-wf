@@ -37,7 +37,14 @@ mAnd x y = do bx <- x
               by <- y
               return $ bx && by
 
+mAll :: (Monad m) => [m Bool] -> m Bool
+mAll [] = return True
+mAll (x:xs) = do b <- x
+                 bs <- mAll xs
+                 return (b && bs)
+
 infixl 5 `mAnd`
+infixl 5 `mAll`
 
 (==>) :: Bool -> Bool -> Bool
 (==>) b1 b2 = not b1 || b2

@@ -110,19 +110,8 @@ instance Pretty MetaVar where
 -- | Universes
 
 data Sort = Prop
-          | Type SortVar
-          deriving(Show)
-
-newtype SortVar = SortVar Int
-                  deriving(Show, Eq, Enum, Num)
-
-
-instance Pretty SortVar where
-  prettyPrint (SortVar k) = text "u" <> int k
-
-
-instance Eq Sort where
-  s1 == s2 = True -- TODO: fix this. Check typechecking of constructors
+          | Type Int
+          deriving(Show, Eq)
 
 
 -- | Binds, contexts, and environments
