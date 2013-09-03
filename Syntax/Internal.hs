@@ -52,7 +52,7 @@ data Term
     | Constr Name (Name, Int) [Term] [Term]
     | Fix FixTerm
     | Case CaseTerm
-    | Ind Annot Name
+    | Ind Annot Name [Term]
 
 type Type = Term
 
@@ -319,7 +319,7 @@ instance HasAnnot Term where
       mSize (Constr nm cid pars args) = Constr nm cid (map mSize pars) (map mSize args)
       mSize (Fix c) = Fix (modifySize f c)
       mSize (Case c) = Case (modifySize f c)
-      mSize (Ind a x) = Ind (f a) x
+      mSize (Ind a x ps) = Ind (f a) x (map (modifySize f) ps)
 
   listAnnot t@(Sort _) = []
   listAnnot (Pi c t) = listAnnot c ++ listAnnot t
@@ -331,7 +331,7 @@ instance HasAnnot Term where
   listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
   listAnnot (Fix c) = listAnnot c
   listAnnot (Case c) = listAnnot c
-  listAnnot (Ind a x) = case a of
+  listAnnot (Ind a x _) = case a of
                           (Size (Svar i)) -> [i]
                           _ -> []
 
@@ -439,7 +439,7 @@ instance Lift Term where
   lift k n (Lam c u) = Lam (lift k n c) (lift k (n + ctxLen c) u)
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
   lift k n t@(Meta _) = t
-  lift _ _ t@(Ind _ _) = t
+  lift k n (Ind a x ps) = Ind a x (map (lift k n) ps)
   lift k n (Constr x indId ps as) = Constr x indId ps' as'
                                       where ps' = map (lift k n) ps
                                             as' = map (lift k n) as
@@ -505,7 +505,7 @@ instance SubstTerm Term where
   substN i r (Lam c t) = Lam (substN i r c) (substN (i + ctxLen c) r t)
   substN i r (App t ts) = App (substN i r t) (map (substN i r) ts)
   substN i r t@(Meta _) = t
-  substN _ _ t@(Ind _ _) = t
+  substN i r (Ind a x ps) = Ind a x (map (substN i r) ps)
   substN i r (Constr x ind ps as) = Constr x ind ps' as'
                                     where ps' = map (substN i r) ps
                                           as' = map (substN i r) as
@@ -577,7 +577,7 @@ instance IsFree Term where
   isFree k (Lam c t) = isFree k c || isFree (k + ctxLen c) t
   isFree k (App f ts) = isFree k f || any (isFree k) ts
   isFree k (Meta _) = False
-  isFree _ (Ind _ _) = False
+  isFree k (Ind _ _ ps) = any (isFree k) ps
   isFree k (Constr _ _ ps as) = any (isFree k) (ps ++ as)
   isFree k (Fix f) = isFree k f
   isFree k (Case c) = isFree k c
@@ -589,7 +589,7 @@ instance IsFree Term where
   fvN k (Lam c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
   fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
   fvN k (Meta _) = []
-  fvN _ (Ind _ _) = []
+  fvN k (Ind _ _ ps) = concatMap (fvN k) ps
   fvN k (Constr _ _ ps as) = concatMap (fvN k) (ps ++ as)
   fvN k (Fix f) = fvN k f
 

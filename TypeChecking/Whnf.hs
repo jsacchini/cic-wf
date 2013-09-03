@@ -217,9 +217,10 @@ instance NormalForm Term where
           _         -> do -- traceTCM_ ["Not handled application", show t1']
                           ts' <- mapM nF ts
                           return $ mkApp t1' ts'
-      nF t@(Ind _ _) = do
-        traceTCM 80 $ hsep [text "Normalizing Ind ", prettyPrintTCM t]
-        return t
+      nF t@(Ind a x ps) =
+        do
+          traceTCM 80 $ hsep [text "Normalizing Ind ", prettyPrintTCM t]
+          liftM (Ind a x) (mapM nF ps)
       nF t@(Case c) =
         do traceTCM 30 $ (hsep [text "Normalizing Case in ", prettyPrintTCM t]
                           $$ hsep [text "arg ", prettyPrintTCM (caseArg c)])

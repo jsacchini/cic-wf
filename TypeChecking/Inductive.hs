@@ -17,11 +17,12 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses
+{-# LANGUAGE CPP, FlexibleInstances, MultiParamTypeClasses
   #-}
 
 module TypeChecking.Inductive where
 
+#include "../undefined.h"
 import Control.Monad.Reader
 
 import qualified Data.Foldable as Fold
@@ -39,22 +40,23 @@ import TypeChecking.PrettyTCM
 import TypeChecking.Whnf
 import {-# SOURCE #-} TypeChecking.TypeChecking
 
+import Utils.Impossible
 import Utils.Misc
 import Utils.Sized
 
+-- TODO: check that inductive types are applied to parameters in order
 
 -- | Type-checks an inductive definition returning a list of global definitions
 --   for the inductive type and the constructors
 inferInd :: (MonadTCM tcm) => A.InductiveDef -> tcm [Named Global]
-inferInd (A.InductiveDef nmInd k pars pols tp constrs) =
+inferInd i@(A.InductiveDef {}) =
     do -- traceTCM $ "Checking inductive definition\n" ++ show ind
-       (pars', _) <- inferParamList pars
-       let bindPars' =  pars'
-       (tp', s2)  <- pushCtx pars' $ infer tp
+       (pars', _) <- inferParamList (A.indPars i)
+       (tp', s2)  <- pushCtx pars' $ infer (A.indType i)
        -- traceTCM $ "Type\n" ++ show tp'
-       _          <- isSort (range tp) s2
-       (args, s3) <- isArity (range tp) tp'
-       cs         <- mapM (pushCtx pars' . flip checkConstr (nmInd, bindPars', args, s3)) constrs
+       _          <- isSort (range (A.indType i)) s2
+       (args, s3) <- isArity (range (A.indType i)) tp'
+       cs         <- mapM (pushCtx pars' . flip checkConstr (A.indName i, pars', args, s3)) (A.indConstr i)
        traceTCM 30 $ text ("Constructors\n" ++ show cs)
 
        -- Preparing the constructors
@@ -65,15 +67,16 @@ inferInd (A.InductiveDef nmInd k pars pols tp constrs) =
        let replInfty :: (HasAnnot a) => a -> a
            replInfty = modifySize (const (Size Infty))
            annots = listAnnot tp' ++ listAnnot (map namedValue cs)
-           replInd c = c { constrArgs = subst (Ind Star nmInd) (constrArgs c) }
+           numPars = size pars'
+           replInd c = c { constrArgs = substIndCtx (A.indName i) numPars 0 (constrArgs c) }
            cs' = map (fmap (replInd . replInfty)) cs
 
-       traceTCM 30 $ text ("Constructors!!!\n" ++ show cs)
+       traceTCM 30 $ text ("Constructors!!!\n" ++ show cs')
 
        removeStages annots
-       return $ mkNamed nmInd (Inductive k (replInfty pars') pols (replInfty args) s3 constrNames) : fillIds cs'
+       return $ mkNamed (A.indName i) (Inductive (A.indKind i) (replInfty pars') (A.indPolarities i) (replInfty args) s3 constrNames) : fillIds cs'
          where fillIds cs = map (\(idConstr, c) -> fmap (\c' -> c' { constrId = idConstr }) c) (zip [0..] cs)
-               constrNames = map A.constrName constrs
+               constrNames = map A.constrName (A.indConstr i)
 
 -- | Checks that a type is an arity.
 isArity :: (MonadTCM tcm) => Range -> Type -> tcm (Context, Sort)
@@ -82,6 +85,45 @@ isArity _ t =
      case t1 of
        Sort s -> return (ctx, s)
        _      -> error "Not arity. replace by error in TCErr"
+
+
+-- | substInd replaces the occurence of a bound variable for an inductive type
+-- TODO: check that the inductive type is applied to the parameters in order
+substInd :: Name -> Int -> Int -> Term -> Term
+substInd nmInd numPars var tp =
+  case tp of
+    Pi ctx tp' -> mkPi (substIndCtx nmInd numPars var ctx)
+                  (substInd nmInd numPars (var + size ctx) tp')
+    Bound k -> if k == var
+               then if numPars == 0 then Ind Star nmInd []
+                    else __IMPOSSIBLE__
+               else if k > var
+                    then Bound (k - 1)
+                    else Bound k
+    App _ _ ->
+      case func of
+        Bound k -> if k == var
+                   then mkApp (Ind Star nmInd pars) inds
+                   else if k > var
+                        then mkApp (Bound (k-1)) args'
+                        else mkApp (Bound k) args'
+        _ -> mkApp func' args'
+      where
+        (func, args) = unApp tp
+        func' = substInd nmInd numPars var func
+        args' = map (substInd nmInd numPars var) args
+        (pars, inds) = splitAt numPars args'
+    Ind a x pars -> Ind a x (map (substInd nmInd numPars var) pars)
+    _ -> mkApp (Var (mkName "XXX")) [tp]
+
+substIndCtx :: Name -> Int -> Int -> Context -> Context
+substIndCtx nmInd numPars var ctx =
+  case ctx of
+    CtxEmpty -> CtxEmpty
+    CtxExtend b ctx' ->
+      CtxExtend b' (substIndCtx nmInd numPars (var + 1) ctx')
+        where
+          b' = b { bindType = substInd nmInd numPars var (bindType b) }
 
 
 inferParam :: (MonadTCM tcm) => A.Bind -> tcm (Context, Sort)
@@ -184,11 +226,9 @@ checkStrictPos nmConstr ctx = cSP 0 ctx
             when (i /= k + size ctx1) $ error $ "I don't think this is possible: expected " ++ show (k + size ctx1) ++ " but found " ++ show i
             recArgs <- pushBind b $ cSP (k + 1) ctx
             return $ k : recArgs
-          (Ind an nmInd, args) -> do
+          (Ind an nmInd parsInd, argsInd) -> do
             ind <- getGlobal nmInd
             let pols = indPol ind
-                numPars = length pols
-                (parsInd, argsInd) = splitAt numPars args
             mapM_ (checkSPTypePol nmConstr (k+size ctx1)) (zip pols parsInd)
             recArgs <- pushBind b $ cSP (k + 1) ctx
             return $ k : recArgs
@@ -202,11 +242,9 @@ checkStrictPos nmConstr ctx = cSP 0 ctx
           (Bound i,  args) -> do
             when (isFree (idx + size ctx1) args) $ error $ "inductive type appears as argument: " ++ show nmConstr
             when (i /= idx + size ctx1) $ error $ "I don't think this is possible: expected " ++ show (idx + size ctx1) ++ " but found " ++ show i
-          (Ind an nmInd, args) -> do
+          (Ind an nmInd parsInd, argsInd) -> do
             ind <- getGlobal nmInd
             let pols = indPol ind
-                numPars = length pols
-                (parsInd, argsInd) = splitAt numPars args
             mapM_ (checkSPTypePol nmConstr (idx+size ctx1)) (zip pols parsInd)
           _ -> error $ "not valid type " ++ show nmConstr
     checkSPTypePol nmConstr idx (pol, tp) =

@@ -176,7 +176,7 @@ instance Reify Term A.Expr where
   -- case O
   reify (Constr (Id (Just "O")) cid [] []) = return $ A.Number noRange 0
   reify (Var (Id (Just "O"))) = return $ A.Number noRange 0
-  reify (Ind _ (Id (Just "O"))) = return $ A.Number noRange 0
+  -- reify (Ind _ (Id (Just "O"))) = return $ A.Number noRange 0
   -- case S
   reify (Constr (Id (Just "S")) cid [t] []) =
     do t' <- reify t
@@ -193,11 +193,11 @@ instance Reify Term A.Expr where
        return $ case t' of
          A.Number noRange k -> A.Number noRange (k + 1)
          _                  -> A.App noRange (A.Ident noRange (mkName "S")) t'
-  reify (App (Ind a (Id (Just "S"))) [t]) =
-    do t' <- reify t
-       return $ case t' of
-         A.Number noRange k -> A.Number noRange (k + 1)
-         _                  -> A.App noRange (A.Ind noRange a (mkName "S") []) t'
+  -- reify (App (Ind a (Id (Just "S"))) [t]) =
+  --   do t' <- reify t
+  --      return $ case t' of
+  --        A.Number noRange k -> A.Number noRange (k + 1)
+  --        _                  -> A.App noRange (A.Ind noRange a (mkName "S") []) t'
   -- General case for Var, App, Ind, and Constr
   reify (Constr x indId ps as) =
     do ps' <- mapM reify ps
@@ -208,7 +208,7 @@ instance Reify Term A.Expr where
                         return $ mkApp e es
                           where mkApp = foldl (A.App noRange)
   reify (Var x) = return $ A.Ident noRange x
-  reify (Ind a i) = return $ A.Ind noRange a i []
+  reify (Ind a i ps) = liftM (A.Ind noRange a i) (mapM reify ps)
 
 -- TODO: print properly the names of CaseIn: do not show variables not used
 instance Reify CaseTerm A.CaseExpr where
@@ -300,7 +300,7 @@ instance Reify (Named I.Global) A.Declaration where
         let numPars = ctxLen (I.constrPars c)
             numArgs = ctxLen (I.constrArgs c)
             pars = map Bound (reverse [numArgs..numArgs+numPars-1])
-            tp = mkPi (I.constrArgs c) (mkApp (Ind Empty (I.constrInd c)) (pars ++ I.constrIndices c))
+            tp = mkPi (I.constrArgs c) (mkApp (Ind Empty (I.constrInd c) pars) (I.constrIndices c))
         return (I.constrPars c, tp)
 
       reifyConstrInd :: (MonadTCM tcm) => Name -> tcm A.Constructor

@@ -136,17 +136,17 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
       mkCaseBinds Nothing _ _ _ (Just c) = inBind c
       mkCaseBinds (Just x) _ _ tpArg Nothing = ctxSingle $ mkBind x tpArg
       mkCaseBinds (Just x) nmInd pars _ (Just c) =
-         inBind c |> (mkBind x (mkApp (Ind Empty nmInd) (map (I.lift (size c) 0) pars ++ inArgs c)))
+         inBind c |> (mkBind x (mkApp (Ind Empty nmInd (map (I.lift (size c) 0) pars)) (inArgs c)))
 
       getInductiveType t = do
         t' <- whnF t
         case t' of
-          App (Ind a i) args -> do
-            Inductive k tpPars _ _ _ _ <- getGlobal i -- matching should not fail
-            return (k, a, i, splitAt (size tpPars) args)
-          Ind a i          -> do
-            Inductive k tpPars _ _ _ _ <- getGlobal i -- matching should not fail
-            return (k, a, i, ([], []))
+          App (Ind a i pars) args -> do
+            i'@(Inductive {}) <- getGlobal i -- matching should not fail
+            return (indKind i', a, i, (pars, args))
+          Ind a i pars       -> do
+            i'@(Inductive {}) <- getGlobal i -- matching should not fail
+            return (indKind i', a, i, (pars, []))
           _                -> error $ "case 0. not inductive type " ++ show t
 
       listConstructors :: (MonadTCM tcm) => Name -> tcm [Name]

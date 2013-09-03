@@ -158,13 +158,16 @@ infer (A.App _ e1 e2) = -- inferApp e1 e2
                 return (mkApp t1 [t2], w)
          _            -> throwNotFunction r1
 infer (A.Meta r _) = typeError $ CannotInferMeta r
-infer (A.Ind _ an x _) =
+infer (A.Ind _ an x ps) =
     do t <- getGlobal x
        i <- fresh
        -- when (an == Star) $ addStarStage i
        case t of
-         Inductive k pars pols indices sort _ ->
-           return (Ind (Size (Svar i)) x, mkPi (pars +: indices) (Sort sort))
+         ind@(Inductive {}) ->
+           do
+             ps' <- checkList ps (indPars ind)
+             let indices = foldr subst (indIndices ind) ps'
+             return (Ind (Size (Svar i)) x ps', mkPi indices (Sort (indSort ind)))
          _                             -> __IMPOSSIBLE__
 infer (A.Constr _ x _ pars args) = do
   t <- getGlobal x
@@ -185,7 +188,7 @@ infer (A.Constr _ x _ pars args) = do
       let numPars = ctxLen tpars
           numArgs = ctxLen targs
           indStage = Size (Hat (Svar stage))
-          genType = mkApp (Ind indStage indName) (map Bound (reverse [numArgs..numArgs+numPars-1]) ++ indices)
+          genType = mkApp (Ind indStage indName (map Bound (reverse [numArgs..numArgs+numPars-1])))  indices
           resType = substList (numArgs + numPars - 1) (pars'++args') genType
           -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
       -- We erase the type annotations of both parameters and arguments
@@ -270,7 +273,13 @@ checkList :: (MonadTCM tcm) => [A.Expr] -> Context -> tcm [Term]
 checkList es CtxEmpty = return []
 checkList (e:es) (CtxExtend b bs) =
   do
+    traceTCM 30 $ vcat [ text "checkList" <+> prettyPrintTCM (e:es)
+                       , text "against" <+> prettyPrintTCM (CtxExtend b bs) ]
     t <- check e (bindType b)
     ts <- checkList es (subst t bs)
     return (t:ts)
-checkList _ _ = __IMPOSSIBLE__
+checkList es ctx =
+  do
+    traceTCM 30 $ vcat [ text "checkList" <+> prettyPrintTCM es
+                       , text "against" <+> prettyPrintTCM ctx ]
+    __IMPOSSIBLE__

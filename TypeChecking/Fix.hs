@@ -74,12 +74,12 @@ collectStarsNonPi :: (MonadTCM tcm) => A.Expr -> Type -> tcm [StageVar]
 --     return $  rs1 ++ rs2
 --   where
 --     (b1, ctx') = ctxSplit ctx
-collectStarsNonPi (A.Ind _ a1 n1 _) (Ind a2 n2) | n1 /= n2 = __IMPOSSIBLE__
-collectStarsNonPi (A.Ind _ a1 n1 _) (Ind (Size a2) n2) | n1 == n2 = return res
+collectStarsNonPi (A.Ind _ a1 n1 _) (Ind a2 n2 _) | n1 /= n2 = __IMPOSSIBLE__
+collectStarsNonPi (A.Ind _ a1 n1 _) (Ind (Size a2) n2 _) | n1 == n2 = return res
   where
     res | a1 /= Star || base a2 == Nothing = []
         | a1 == Star                       = [fromJust (base a2)]
-collectStarsNonPi e                 (App (Ind (Size a2) n2) args2) = do
+collectStarsNonPi e                 (App (Ind (Size a2) n2 _) args2) = do
   rs <- zipWithM collectStars args1 args2
   return $ res ++ concat rs
   where
@@ -107,8 +107,8 @@ extractIndType tp =
   do
     tp' <- whnF tp
     let (a, n) = case tp' of
-                   App (Ind a n) _ -> (a, n)
-                   Ind a n         -> (a, n)
+                   App (Ind a n _) _ -> (a, n)
+                   Ind a n _         -> (a, n)
     i <- getGlobal n -- must be (co-)inductive
     return (n, indKind i, extractSvar a)
 
@@ -251,12 +251,14 @@ checkFixType (Bind _ _ tp Nothing) =
   do
     tp' <- whnF tp
     case tp' of
-      App (Ind a _) _ -> case a of
-                           Size (Svar i) -> return i
-                           _ -> __IMPOSSIBLE__ -- sanity check
-      Ind a _         -> case a of
-                           Size (Svar i) -> return i
-                           _ -> __IMPOSSIBLE__ -- sanity check
+      App (Ind a _ _) _ ->
+        case a of
+          Size (Svar i) -> return i
+          _ -> __IMPOSSIBLE__ -- sanity check
+      Ind a _ _        ->
+        case a of
+          Size (Svar i) -> return i
+          _ -> __IMPOSSIBLE__ -- sanity check
       _ -> error "recursive argument is not of inductive type"
 checkFixType _ = error "recursive argument is a definition"
 

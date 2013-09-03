@@ -367,8 +367,8 @@ instance Pretty Expr where
       pp n (Case c) = parensIf (n > 0) $ prettyPrint c
       pp n (Fix f) = parensIf (n > 0) $ prettyPrint f
       pp _ (Ind _ a x es) = hcat ([ prettyPrint x
-                                  , langle, prettyPrint a, rangle]
-                                  ++ map prettyPrint es)
+                                  , langle, prettyPrint a, rangle
+                                  , brackets (hsep (punctuate comma (map prettyPrint es)))])
       pp n (Constr _ x _ pars args) =
         parensIf (n > 2) $ prettyPrint x <+> hsep (map (pp lvl) (pars ++ args))
           where lvl = if length pars + length args == 0 then 0 else 3

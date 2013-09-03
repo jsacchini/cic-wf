@@ -118,28 +118,35 @@ instance Conversion Type where
                        Conv -> (Conv, Conv)
                        Leq -> (Leq, Leq)
                        LeqSort -> (Leq, LeqSort)
-  convTest ct (Ind a1 x1) (Ind a2 x2)
-    | x1 == x2 = do addStageConstraints (mkConstraint a1 a2)
-                    return True
+  convTest ct (Ind a1 x1 ps1) (Ind a2 x2 ps2)
+    | x1 == x2  =
+        do
+          addStageConstraints (mkConstraint a1 a2)
+          ind <- getGlobal x1
+          case ind of
+            Inductive {} -> mAll (zipWith3 (convPars ct) (indPol ind) ps1 ps2)
+            _ -> __IMPOSSIBLE__ -- sanity check
     | otherwise = return False
     where
       mkConstraint = case ct of
                        Conv -> (<<>>)
                        _ -> (<<=)
-  convTest ct (App (Ind a1 x1) ts1) (App (Ind a2 x2) ts2)
+      convPars Conv _ = convTest Conv
+      convPars _    Pos = convTest Leq
+      convPars _    Neg = flip (convTest Leq)
+      convPars _    SPos = convTest Leq
+      convPars _    Neut = convTest Conv
+  convTest ct (App (Ind a1 x1 ps1) ts1) (App (Ind a2 x2 ps2) ts2)
     | x1 == x2  =
         do
           addStageConstraints (mkConstraint a1 a2)
           ind <- getGlobal x1
           case ind of
             Inductive {} ->
-                do
-                  let pol = indPol ind
-                      numPars = length pol
-                      (par1, arg1) = splitAt numPars ts1
-                      (par2, arg2) = splitAt numPars ts2
-                  mAll (zipWith3 (convPars ct) pol par1 par2) `mAnd`
-                   mAll (zipWith (convTest Conv) arg1 arg2)
+                if length ts1 == length ts2
+                then mAll (zipWith3 (convPars ct) (indPol ind) ps1 ps2) `mAnd`
+                     mAll (zipWith (convTest Conv) ts1 ts2)
+                else return False
             _ -> __IMPOSSIBLE__ -- sanity check
     | otherwise = return False
     where

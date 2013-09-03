@@ -73,6 +73,7 @@ data TypeError
     | UndefinedName Range Name
     | NotInductive Name
     | ConstructorNotApplied Range Name
+    | InductiveNotApplied Range Name
     | PatternNotConstructor Name
     | FixRecursiveArgumentNotPositive Range
     | AlreadyDefined Name
@@ -210,9 +211,6 @@ lookupGlobal x = do sig <- stSignature <$> get
 
 isGlobal :: (MonadTCM tcm) => Name -> tcm Bool
 isGlobal x = Map.member x . stSignature <$> get
-
-checkIfDefined :: (MonadTCM tcm) => Name -> tcm ()
-checkIfDefined x = isGlobal x >>= flip when (throw (AlreadyDefined x))
 
 
 getGlobal :: (MonadTCM tcm) => Name -> tcm I.Global
@@ -409,7 +407,7 @@ natS =
   I.Constructor { I.constrInd     = mkName "nat"
                 , I.constrId      = 1
                 , I.constrPars    = ctxEmpty
-                , I.constrArgs    = ctxSingle (I.unNamed (I.Ind Empty (mkName "nat")))
+                , I.constrArgs    = ctxSingle (I.unNamed (I.Ind Empty (mkName "nat") []))
                 , I.constrRec     = [0]
                 , I.constrIndices = []
                 }

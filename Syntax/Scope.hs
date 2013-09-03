@@ -24,7 +24,8 @@
 --
 -- It replaces
 -- * Var x           --> Bound n  for bound variables
--- * Var i           --> Ind i    for inductive types
+-- * App (Var i ...) --> Ind i ...     for inductive types, checking they are
+--                                     applied to parameters
 -- * App (Var c ...) --> Constr c j ...   for constructors, checking they are
 --                                        fully applied
 --
@@ -50,6 +51,7 @@ import Syntax.Position
 import Syntax.Size
 
 import TypeChecking.TCM
+import TypeChecking.PrettyTCM
 
 import Utils.Misc
 import Utils.Sized
@@ -68,6 +70,12 @@ undefinedName r x = typeError $ UndefinedName r x
 constrNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
 constrNotApplied r x = typeError $ ConstructorNotApplied r x
 
+inductiveNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
+inductiveNotApplied r x = typeError $ InductiveNotApplied r x
+
+
+failIfDefined :: (MonadTCM tcm) => Name -> tcm ()
+failIfDefined x = isGlobal x >>= flip when (throw (AlreadyDefined x))
 
 
 
@@ -135,10 +143,16 @@ instance Scope A.Expr where
          Nothing ->
            do g <- lookupGlobal x
               case g of
-                Just (I.Inductive {}) -> return $ A.Ind r Empty x []
+                Just i@(I.Inductive {}) ->
+                    do
+                      when (numArgs /= 0) $ inductiveNotApplied r x
+                      return $ A.Ind r Empty x []
+                    where
+                      numArgs = size (I.indPars i)
                 Just c@(I.Constructor {}) ->
-                  do when (numArgs /= 0) $ constrNotApplied r x
-                     return $ A.Constr r x indId [] []
+                    do
+                      when (numArgs /= 0) $ constrNotApplied r x
+                      return $ A.Constr r x indId [] []
                     where numArgs = size (I.constrPars c) +
                                     size (I.constrArgs c)
                           indId = (I.constrInd c, I.constrId c)
@@ -148,10 +162,13 @@ instance Scope A.Expr where
   scope (A.Fix f) = fmap A.Fix (scope f)
   -- Ind can appear after parsing for position types (only annotated with star)
   -- We just check that the identifier is actually an inductive type
-  scope e@(A.Ind r Star x _) =
+  scope e@(A.Ind r Star x []) =
     do g <- lookupGlobal x
        case g of
-         Just (I.Inductive {}) -> return e
+         Just (I.Inductive {}) ->
+           do
+             traceTCM 30 $ vcat [ text "scoping I*" <+> prettyPrintTCM e ]
+             return e
          Just _                -> typeError $ NotInductive x
          Nothing               -> typeError $ UndefinedName r x
   scope (A.Ind _ _ _ _) = __IMPOSSIBLE__
@@ -243,11 +260,24 @@ scopeApp e@(A.Ident r x) args =
        Nothing ->
          do g <- lookupGlobal x
             case g of
-              Just (I.Inductive {}) -> return $ A.mkApp (A.Ind r Empty x []) args
+              Just i@(I.Inductive {}) ->
+                  do
+                    traceTCM 5 $ vcat [ text "Inductive" <+> prettyPrintTCM x
+                                      , text "args: " <+> prettyPrintTCM args
+                                      , text "given pars:" <+> prettyPrintTCM givenLen <+> prettyPrintTCM parLen ]
+                    if givenLen < parLen
+                     then inductiveNotApplied iRange x
+                     else return (A.mkApp (A.Ind iRange Empty x ipars) iargs)
+                  where
+                    parLen = size (I.indPars i)
+                    argLen = size (I.indIndices i)
+                    givenLen = length args
+                    (ipars, iargs) = splitAt parLen args
+                    iRange = fuseRange r args
               Just (I.Constructor i idConstr parsTp argsTp _ _) ->
                   if expLen /= givenLen
-                  then wrongArg cRange x expLen givenLen
-                  else return $ A.Constr cRange x (i,idConstr) cpars cargs
+                   then wrongArg cRange x expLen givenLen
+                   else return $ A.Constr cRange x (i,idConstr) cpars cargs
                 where
                   parLen = size parsTp
                   argLen = size argsTp
@@ -257,19 +287,33 @@ scopeApp e@(A.Ident r x) args =
                   cRange = fuseRange r args
               Just _ -> return $ A.mkApp e args
               Nothing -> undefinedName r x
-scopeApp e args = do e' <- scope e
-                     return $ A.mkApp e' args
+scopeApp e@(A.Ind r Star x []) args =
+  do
+    g <- lookupGlobal x
+    case g of
+      Just i@(I.Inductive {}) ->
+        do
+          traceTCM 30 $ vcat [ text "scoping I*" <+> prettyPrintTCM e
+                             , text "with args" <+> prettyPrintTCM args ]
+          let (pars, inds) = splitAt (size (I.indPars i)) args
+          return $ A.mkApp (A.Ind r Star x pars) inds
+      Just _                -> typeError $ NotInductive x
+      Nothing               -> typeError $ UndefinedName r x
+scopeApp e args =
+  do
+    e' <- scope e
+    return $ A.mkApp e' args
 
 
 instance Scope A.Declaration where
     scope (A.Definition r x t u) =
       do t' <- scope t
          u' <- scope u
-         checkIfDefined x
+         failIfDefined x
          return $ A.Definition r x t' u'
     scope (A.Assumption r x t) =
       do t' <- scope t
-         checkIfDefined x
+         failIfDefined x
          return $ A.Assumption r x t'
     scope (A.Inductive r indDef) = fmap (A.Inductive r) (scope indDef)
     scope (A.Eval e) =
@@ -286,13 +330,12 @@ instance Scope A.InductiveDef where
       do ps' <- scope ps
          e'  <- fakeBinds ps $ scope e
          cs' <- fakeBinds ps $ fakeBinds x $ mapM scope cs
-         checkIfDefined x
+         failIfDefined x
          return $ A.InductiveDef x k ps' pols e' cs'
 
 
--- TODO: check that the inductive type is always applied to the parameters
 instance Scope A.Constructor where
   scope (A.Constructor r x e) =
     do e' <- scope e
-       checkIfDefined x
+       failIfDefined x
        return (A.Constructor r x e')

@@ -20,3 +20,6 @@ data False : Type := .
 
 check fun (x : nat) (y : nat) (z: nat) (H : leq x y) => lS x y H.
 
+check forall A:Type, list A.
+
+check fun (A:Type) (x:A) => cons A x (nil A).
