@@ -52,37 +52,15 @@ import Syntax.Size
 
 import TypeChecking.TCM
 import TypeChecking.PrettyTCM
+import TypeChecking.TCMErrors
 
-import Utils.Misc
 import Utils.Sized
-import Utils.Value
-
-
--- Scope errors
--- TODO: Move to TCMErrors
-
-wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
-wrongArg r x m n = typeError $ WrongNumberOfArguments r x m n
-
-undefinedName :: (MonadTCM tcm) => Range -> Name -> tcm a
-undefinedName r x = typeError $ UndefinedName r x
-
-constrNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
-constrNotApplied r x = typeError $ ConstructorNotApplied r x
-
-inductiveNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
-inductiveNotApplied r x = typeError $ InductiveNotApplied r x
-
-
-failIfDefined :: (MonadTCM tcm) => Name -> tcm ()
-failIfDefined x = isGlobal x >>= flip when (throw (AlreadyDefined x))
-
 
 
 -- We don't need the real type of the binds for scope checking, just the names
 -- Maybe should be moved to another place
 fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
-fakeBinds b = local (+:+ (mkFakeCtx b))
+fakeBinds b = local (<:> (mkFakeCtx b))
   where
     mkFakeCtx = ctxFromList . map mkFakeBind . name
     mkFakeBind x = I.mkBind x (I.Sort I.Prop)
@@ -152,9 +130,8 @@ instance Scope A.Expr where
                 Just c@(I.Constructor {}) ->
                     do
                       when (numArgs /= 0) $ constrNotApplied r x
-                      return $ A.Constr r x indId [] []
-                    where numArgs = size (I.constrPars c) +
-                                    size (I.constrArgs c)
+                      return $ A.Constr r x indId []
+                    where numArgs = size (I.constrPars c)
                           indId = (I.constrInd c, I.constrId c)
                 Just _ -> return t
                 Nothing -> undefinedName r x
@@ -172,7 +149,7 @@ instance Scope A.Expr where
          Just _                -> typeError $ NotInductive x
          Nothing               -> typeError $ UndefinedName r x
   scope (A.Ind _ _ _ _) = __IMPOSSIBLE__
-  scope (A.Constr _ _ _ _ _) = __IMPOSSIBLE__
+  scope (A.Constr _ _ _ _) = __IMPOSSIBLE__
   scope (A.Bound _ _ _) = __IMPOSSIBLE__
   scope (A.Number r n) = scope $ mkNat n
     where mkNat 0 = A.Ident r (mkName "O")
@@ -181,9 +158,9 @@ instance Scope A.Expr where
 
 instance (Scope a, HasNames a) => Scope (Ctx a) where
   scope CtxEmpty = return CtxEmpty
-  scope (CtxExtend x xs) = do y <- scope x
-                              ys <- fakeBinds x $ scope xs
-                              return $ CtxExtend y ys
+  scope (x :> xs) = do y <- scope x
+                       ys <- fakeBinds x $ scope xs
+                       return $ y :> ys
 
 
 instance Scope A.Bind where
@@ -275,14 +252,14 @@ scopeApp e@(A.Ident r x) args =
                     (ipars, iargs) = splitAt parLen args
                     iRange = fuseRange r args
               Just (I.Constructor i idConstr parsTp argsTp _ _) ->
-                  if expLen /= givenLen
+                  if givenLen < expLen
                    then wrongArg cRange x expLen givenLen
-                   else return $ A.Constr cRange x (i,idConstr) cpars cargs
+                   else return $ A.mkApp (A.Constr cRange x (i,idConstr) cpars) cargs
                 where
                   parLen = size parsTp
                   argLen = size argsTp
                   givenLen = length args
-                  expLen = parLen + argLen
+                  expLen = parLen
                   (cpars, cargs) = splitAt parLen args
                   cRange = fuseRange r args
               Just _ -> return $ A.mkApp e args

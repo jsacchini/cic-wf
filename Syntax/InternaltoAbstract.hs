@@ -73,59 +73,6 @@ class Reify a b | a -> b where
   reify :: (MonadTCM tcm) => a -> tcm b
 
 
--- reifyPiBinds :: (MonadTCM tcm) => [Bind] -> Term -> tcm A.Expr
--- reifyPiBinds = rP []
---   where
---     rP :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> Term -> tcm A.Expr
---     rP [] [] t                  = reify t
---     rP bs [] t                  = do e <- reify t
---                                      return $ A.Pi noRange (reverse bs) e
---     rP [] bs@(Bind x impl t1 Nothing:bs') t2
---       | notFree bs' t2 =
---         do e1 <- reify t1
---            e2 <- fakeBinds noName $ rP [] bs' t2
---            return $ A.mkArrow e1 e2
---       | otherwise     =
---           do e1 <- reify t1
---              x' <- freshenName x
---              fakeBinds x' $ rP [A.Bind noRange impl [x'] e1] bs' t2
---     -- TODO: check implicit printing
---     rP bs1@(A.Bind _ impl1 xs e1:bs1') bs2@(Bind y impl2 t1 Nothing:bs2') t2
---       | notFree bs2' t2 =
---         do e2 <- rP [] bs2 t2
---            return $ A.Pi noRange (reverse bs1) e2
---       | otherwise     =
---           do e1' <- reify t1
---              y' <- freshenName y
---              if e1 == e1' && impl1 == impl2
---                then fakeBinds y' $ rP (A.Bind noRange impl1 (xs++[y']) e1:bs1') bs2' t2
---                else fakeBinds y' $ rP (A.Bind noRange impl2 [y'] e1':bs1) bs2' t2
---     rP _ _ _ = error "complete rP"
---     notFree :: [Bind] -> Term -> Bool
---     notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
-
--- reifyLamBinds :: (MonadTCM tcm) => [Bind] -> Term -> tcm A.Expr
--- reifyLamBinds = rL []
---   where
---     rL :: (MonadTCM tcm) => [A.Bind] -> [Bind] -> Term -> tcm A.Expr
---     rL bs [] t                  = do e <- reify t
---                                      return $ A.Lam noRange (reverse bs) e
---     rL [] (Bind x impl t1 Nothing:bs') t2 =
---       do e1 <- reify t1
---          x' <- if notFree bs' t2 then return (Id "_") else freshenName x
---          fakeBinds x' $ rL [A.Bind noRange impl [x'] e1] bs' t2
---     -- TODO: check implicit printing
---     rL bs1@(A.Bind _ impl1 xs e1:bs1') (Bind y impl2 t1 Nothing:bs2') t2 =
---       do e1' <- reify t1
---          y' <- if notFree bs2' t2 then return (Id "_") else freshenName y
---          if e1 == e1' && impl1 == impl2
---            then fakeBinds y' $ rL (A.Bind noRange impl1 (xs++[y']) e1:bs1') bs2' t2
---            else fakeBinds y' $ rL (A.Bind noRange impl2 [y'] e1':bs1) bs2' t2
---     rL _ _ _ = error "Complete rL"
---     notFree :: [Bind] -> Term -> Bool
---     notFree bs t = not $ isFreeList 0 (map bind bs ++ [t])
-
-
 reifyCtx :: (MonadTCM tcm) => Context -> tcm A.Context
 reifyCtx ctx = do xs <- reifyBinds (bindings ctx)
                   return $ ctxFromList xs
@@ -174,20 +121,20 @@ instance Reify Term A.Expr where
   reify (Case c) = fmap A.Case $ reify c
   -- Special case for reification of natural numbers
   -- case O
-  reify (Constr (Id (Just "O")) cid [] []) = return $ A.Number noRange 0
+  reify (Constr (Id (Just "O")) cid []) = return $ A.Number noRange 0
   reify (Var (Id (Just "O"))) = return $ A.Number noRange 0
   -- reify (Ind _ (Id (Just "O"))) = return $ A.Number noRange 0
   -- case S
-  reify (Constr (Id (Just "S")) cid [t] []) =
+  reify (Constr (Id (Just "S")) cid [t]) =
     do t' <- reify t
        return $ case t' of
          A.Number noRange k -> A.Number noRange (k + 1)
-         _                  -> A.Constr noRange (mkName "S") cid [t'] []
-  reify (Constr (Id (Just "S")) cid [] [t]) =
+         _                  -> A.Constr noRange (mkName "S") cid [t']
+  reify (App (Constr (Id (Just "S")) cid []) [t]) =
     do t' <- reify t
        return $ case t' of
          A.Number noRange k -> A.Number noRange (k + 1)
-         _                  -> A.Constr noRange (mkName "S") cid [] [t']
+         _                  -> A.mkApp (A.Constr noRange (mkName "S") cid []) [t']
   reify (App (Var (Id (Just "S"))) [t]) =
     do t' <- reify t
        return $ case t' of
@@ -199,10 +146,9 @@ instance Reify Term A.Expr where
   --        A.Number noRange k -> A.Number noRange (k + 1)
   --        _                  -> A.App noRange (A.Ind noRange a (mkName "S") []) t'
   -- General case for Var, App, Ind, and Constr
-  reify (Constr x indId ps as) =
+  reify (Constr x indId ps) =
     do ps' <- mapM reify ps
-       as' <- mapM reify as
-       return $ A.Constr noRange x indId ps' as'
+       return $ A.Constr noRange x indId ps'
   reify (App t ts) = do e <- reify t
                         es <- mapM reify ts
                         return $ mkApp e es
@@ -239,13 +185,6 @@ instance Reify CaseIn A.CaseIn where
     do ctx' <- reifyCtx ctx
        args' <- pushCtx (renameCtx ctx (name ctx')) $ mapM reify args
        return $ A.CaseIn noRange ctx' nmInd args'
-      -- where reifyCtx Empctx args = do args' <- mapM reify args
-      --                                 return ([], args')
-      --       reifyCtx (Consctx (Bind x impl t _) ctx') args =
-      --         do t' <- reify t
-      --            x' <- freshenName x
-      --            (bs, args') <- fakeBinds x' $ reifyCtx ctx' args
-      --            return (A.Bind noRange impl [x'] t' : bs, args')
 
 instance Reify Branch A.Branch where
   reify (Branch nmConstr idConstr nmArgs body whSubst) =
@@ -287,13 +226,6 @@ instance Reify (Named I.Global) A.Declaration where
       reifyGlobal t@(Constructor {}) = __IMPOSSIBLE__
         -- return $ A.Assumption noRange x (A.mkProp noRange)
 
-      -- reifyParCtx :: (MonadTCM tcm) => Context -> tcm [A.Context]
-      -- reifyParCtx []     []     = return []
-      -- reifyParCtx (b:bs) (p:ps) = do
-      --   e <- reify (I.bindType b)
-      --   pars <- fakeBinds b $ reifyParCtx bs
-      --   return $ A.Bind noRange [(I.bindName b, p)] e : pars
-
       constrType :: (MonadTCM tcm) => Name -> tcm (Context, Type)
       constrType x = do
         c@(Constructor {}) <- getGlobal x
@@ -308,15 +240,3 @@ instance Reify (Named I.Global) A.Declaration where
         (ctx, tp) <- constrType x
         e <- pushCtx ctx $ reify tp
         return $ A.Constructor noRange x e
-
--- instance Reify Context [A.Bind] where
---   reify Empctx = return []
---   reify (Consctx b c) =
---     do b' <- rb b
---        -- x <- freshenName (bindName b)
---        c' <- fakeBinds [bindName b] $ reify c
---        return (b':c')
---          where rb (Bind x impl t Nothing) =
---                  do t' <- reify t
---                     return $ A.Bind noRange impl [x] t'
---                rb (Bind x impl t (Just _)) = __IMPOSSIBLE__

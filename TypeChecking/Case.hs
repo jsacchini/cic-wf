@@ -22,23 +22,22 @@
 
 module TypeChecking.Case where
 
-import Data.List
-import Data.Functor
 import Control.Monad.Reader
 
-import qualified Control.Exception as E
+import Data.Functor
+import Data.List
+import Data.Monoid
 
 import Text.PrettyPrint.HughesPJ (render)
 
 import Syntax.Common
 import Syntax.Position
 import Syntax.Internal as I
-import Syntax.InternaltoAbstract
 import Syntax.Size
 import qualified Syntax.Abstract as A
 import TypeChecking.Conversion
 import TypeChecking.TCM
-import TypeChecking.PrettyTCM
+import TypeChecking.PrettyTCM hiding ((<>))
 import TypeChecking.Unification
 import TypeChecking.Permutation
 import TypeChecking.Whnf
@@ -102,7 +101,7 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
 
   -- Building return type
   let -- Substitute the argument in the type, if it exists
-      ret1 = ifMaybe_ asNm (subst arg') ret'
+      ret1 = ifMaybe asNm (subst arg') ret'
       -- Substitute all the defined variables in the context ctx returned by
       -- unifying the CaseIn family specification
       ret2 = unfoldCtx ctx ret1
@@ -122,7 +121,7 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
         | A.inInd c /= nmInd = error "wrong inductive type in case"
         | otherwise = do
           i <- getGlobal nmInd
-          traceTCM 30 $ vcat [ text "check IN context" <+> text (show (A.inBind c)) ]
+          -- traceTCM 30 $ vcat [ text "check IN context" <+> prettyPrintTCM (A.inBind c) ]
           (inBind', _) <- inferBinds $ A.inBind c
           traceTCM 30 $ vcat [ text "check SUBFAMILY indices" <+> prettyPrintTCM (A.inArgs c) ]
           inArgs' <- pushCtx inBind' $ checkList (A.inArgs c) (foldr subst (indIndices i) pars)
@@ -136,7 +135,7 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
       mkCaseBinds Nothing _ _ _ (Just c) = inBind c
       mkCaseBinds (Just x) _ _ tpArg Nothing = ctxSingle $ mkBind x tpArg
       mkCaseBinds (Just x) nmInd pars _ (Just c) =
-         inBind c |> (mkBind x (mkApp (Ind Empty nmInd (map (I.lift (size c) 0) pars)) (inArgs c)))
+         inBind c `ctxPush` (mkBind x (mkApp (Ind Empty nmInd (map (I.lift (size c) 0) pars)) (inArgs c)))
 
       getInductiveType t = do
         t' <- whnF t
@@ -147,16 +146,16 @@ inferCase (A.CaseExpr rg arg asNm caseIn whSubst (Just ret) branches) = do
           Ind a i pars       -> do
             i'@(Inductive {}) <- getGlobal i -- matching should not fail
             return (indKind i', a, i, (pars, []))
-          _                -> error $ "case 0. not inductive type " ++ show t
+          _                -> error $ "case 0. not inductive type " -- ++ show t
 
       listConstructors :: (MonadTCM tcm) => Name -> tcm [Name]
       listConstructors i = indConstr <$> getGlobal i
 
       unfoldCtx ctx t = unfoldCtx_ 0 ctx t
       unfoldCtx_ k CtxEmpty t = t
-      unfoldCtx_ k (CtxExtend (Bind _ _ _ Nothing) ctx) t =
+      unfoldCtx_ k (Bind _ _ _ Nothing :> ctx) t =
         unfoldCtx_ (k+1) ctx t
-      unfoldCtx_ k (CtxExtend (Bind _ _ _ (Just u)) ctx) t =
+      unfoldCtx_ k (Bind _ _ _ (Just u) :> ctx) t =
         unfoldCtx_ k ctx (subst (I.lift k 0 u) t)
 
 
@@ -164,11 +163,11 @@ inferCase (A.CaseExpr _ _ _ _ _ Nothing _) =
   error "Case with no return type not handled yet. Add a return type"
 
 
--- | betaRedType 'Δ' 'ts' substitutes the first 'length ts' variables in 'Δ'
+-- | betaRedType 'G' 'ts' substitutes the first 'length ts' variables in 'G'
 --   with 'ts'
 betaRedType :: Context -> [Term] -> Context
 betaRedType ctx [] = ctx
-betaRedType (CtxExtend b bs) (t:ts) = betaRedType (subst t bs) ts
+betaRedType (b :> bs) (t:ts) = betaRedType (subst t bs) ts
 
 
 
@@ -181,13 +180,13 @@ checkBranch sta asNm nmInd pars caseIn' ret'
   traceTCM 30 $ vcat [ text "Checking branch" <+>  prettyPrintTCM nmConstr
                      , text "ctx" <+> prettyPrintTCM pars
                      , text "ctx2" <+>  prettyPrintTCM tpArgs
-                     , text "after" <+> prettyPrintTCM (betaRedType (cPars+:tpArgs) pars)
+                     , text "after" <+> prettyPrintTCM (betaRedType (cPars <> tpArgs) pars)
                      , text "nmArgs" <+> prettyPrintTCM nmArgs
                      ]
   -- TODO: replace star for the appropiate stage
   let replStage x = if x == Star then sta else x
 
-  let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (betaRedType (modifySize replStage (cPars+:tpArgs)) pars) nmArgs
+  let tpArgs' = I.lift (size inCtx) 0 $ renameCtx (betaRedType (modifySize replStage (cPars <> tpArgs)) pars) nmArgs
       numPars = length pars
       numArgs = size tpArgs'
       inds' = substList (numArgs + numPars - 1) pars inds
@@ -197,12 +196,12 @@ checkBranch sta asNm nmInd pars caseIn' ret'
                 Just ws -> map A.assgnBound (A.unSubst ws)
                 Nothing -> []
 
-  (permCtx, perm, ks) <- unifyPos (inCtx +: tpArgs') (zip (map (I.lift numArgs 0) inFam) inds') ([numArgs..numArgs+size inCtx-1] ++ whDom)
+  (permCtx, perm, ks) <- unifyPos (inCtx <> tpArgs') (zip (map (I.lift numArgs 0) inFam) inds') ([numArgs..numArgs+size inCtx-1] ++ whDom)
 
   when (length ks > 0) $ error $ "variables not unified in branch " ++ show idConstr
 
-  let constrArg = applyPerm perm $ Constr nmConstr (nmInd, idConstr) pars (localDom numArgs)
-      ret2 = ifMaybe_ asNm (subst constrArg) ret'
+  let constrArg = applyPerm perm $ mkApp (Constr nmConstr (nmInd, idConstr) pars) (localDom numArgs)
+      ret2 = ifMaybe asNm (subst constrArg) ret'
       ret3 = applyPerm perm $ I.lift numArgs 0 ret2
 
   pushCtx permCtx
@@ -240,7 +239,7 @@ checkImpossBranch pars caseIn' nmConstr = do
   let tpArgs' = foldr subst (modifySize replStage tpArgs) pars
       inds'   = foldr subst inds pars
       numArgs = size tpArgs'
-      ctx = maybe ctxEmpty inBind caseIn' +: tpArgs'
+      ctx = maybe ctxEmpty inBind caseIn' <> tpArgs'
       eqs = zip (map (I.lift numArgs 0) (maybe [] inArgs caseIn')) inds'
       freeVars = [0..size (maybe ctxEmpty inBind caseIn') + numArgs - 1]
   unifyNeg ctx eqs freeVars

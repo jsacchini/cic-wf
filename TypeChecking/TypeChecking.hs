@@ -28,10 +28,8 @@ import Utils.Impossible
 
 import Control.Monad.Reader
 
-import Data.Functor
 import Data.Maybe
-
-import qualified Text.PrettyPrint as PP
+import Data.Monoid
 
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
@@ -47,9 +45,9 @@ import TypeChecking.Whnf
 import TypeChecking.Inductive (inferInd)
 import TypeChecking.Fix (inferFix)
 import TypeChecking.Case (inferCase)
-import TypeChecking.PrettyTCM
+import qualified TypeChecking.PrettyTCM as PP ((<>))
+import TypeChecking.PrettyTCM hiding ((<>))
 import Utils.Fresh
-import qualified Utils.Pretty as MP
 
 
 checkSort :: (MonadTCM tcm) => A.Sort -> tcm (Term, Type)
@@ -82,10 +80,10 @@ isSort rg t = do t' <- whnF t
 
 inferBinds :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
 inferBinds CtxEmpty = return (CtxEmpty, Prop)
-inferBinds (CtxExtend b bs) = do (ctx1, s1) <- inferBind b
-                                 (ctx2, s2) <- pushCtx ctx1 $ inferBinds bs
-                                 s' <- maxSort s1 s2
-                                 return (ctx1 +: ctx2, s')
+inferBinds (b :> bs) = do (ctx1, s1) <- inferBind b
+                          (ctx2, s2) <- pushCtx ctx1 $ inferBinds bs
+                          s' <- maxSort s1 s2
+                          return (ctx1 <> ctx2, s')
   where
     inferBind (A.Bind _ [] _) = __IMPOSSIBLE__
     inferBind (A.Bind _ (x:xs) e) = do
@@ -169,7 +167,7 @@ infer (A.Ind _ an x ps) =
              let indices = foldr subst (indIndices ind) ps'
              return (Ind (Size (Svar i)) x ps', mkPi indices (Sort (indSort ind)))
          _                             -> __IMPOSSIBLE__
-infer (A.Constr _ x _ pars args) = do
+infer (A.Constr _ x _ pars) = do
   t <- getGlobal x
   stage <- fresh
   let -- Star signals recursive occurrences of the inductive type. See TypeChecking.Inductive
@@ -178,21 +176,14 @@ infer (A.Constr _ x _ pars args) = do
   case t of
     Constructor indName idConstr tpars targs _ indices -> do
       pars' <- checkList pars (replFunc tpars)
-      traceTCM 20 $ (hsep [text "checking constructor args",
-                           prettyPrintTCM args,
-                           text " againsts ",
-                           prettyPrintTCM $ mkPi (foldr subst (replFunc targs) pars') (Sort Prop)
-                           ]
-                     $$ hsep [text "env:", ask >>= prettyPrintTCM])
-      args' <- checkList args (foldr subst (replFunc targs) pars')
       let numPars = ctxLen tpars
           numArgs = ctxLen targs
           indStage = Size (Hat (Svar stage))
-          genType = mkApp (Ind indStage indName (map Bound (reverse [numArgs..numArgs+numPars-1])))  indices
-          resType = substList (numArgs + numPars - 1) (pars'++args') genType
-          -- foldl (flip (uncurry substN)) genType (zip (reverse [0..numArgs + numPars - 1]) (pars' ++ args'))
+          coDom = mkApp (Ind indStage indName (map Bound (reverse [numArgs..numArgs+numPars-1])))  indices
+          resType = foldr subst (mkPi (replFunc targs) coDom) pars'
+      traceTCM 20 $ vcat [ text "constructor TYPE:" <+> prettyPrintTCM resType ]
       -- We erase the type annotations of both parameters and arguments
-      return (Constr x (indName, idConstr) (eraseSize pars') (eraseSize args'),
+      return (Constr x (indName, idConstr) (eraseSize pars'),
               resType)
 
     _  -> __IMPOSSIBLE__
@@ -221,9 +212,8 @@ inferDecl (A.Inductive _ indDef) = inferInd indDef
 inferDecl (A.Eval e) =
     do (e1, t1) <- infer e
        r <- reify e1
-       traceTCM 70 $ hsep [text "eval ", prettyPrintTCM e1 <> dot]
+       traceTCM 70 $ hsep [text "eval ", prettyPrintTCM e1 PP.<> dot]
        e1' <- nF e1
-       traceTCM 70 $ vcat [text "Normal form obtained ", text (show e1')]
        traceTCM 70 $ vcat [text "Normal form obtained ", prettyPrintTCM e1']
        printTCMLn $ prettyPrintTCM e1'
        return []
@@ -256,25 +246,16 @@ check t u =   do traceTCM 30 $ (hsep [text "Checking type of", prettyPrintTCM t]
                  traceTCM 30 $ hsep [text "Calling subtype with ", prettyPrintTCM r,
                                      text "≤", prettyPrintTCM u]
                  b <- r `subType` u
-                 -- r__ <- nF r >>= reify
-                 -- u__ <- nF u >>= reify
-                 -- e <- ask
-                 -- unless b $ traceTCM_ ["\nCHECK TYPE CONVERSION\n",
-                 --                       -- show r, " -> ",
-                 --                       show $ prettyPrint r__,
-                 --                       "\n==\n",
-                 --                       --show u, " -> ",
-                 --                       show $ prettyPrint u__, "\n\nin context : ", show e, "\n********\non ", show $ prettyPrint $ getRange t]
                  unless b $ throwNotConvertible (Just (range t)) r u
                  return t'
 
 
 checkList :: (MonadTCM tcm) => [A.Expr] -> Context -> tcm [Term]
 checkList es CtxEmpty = return []
-checkList (e:es) (CtxExtend b bs) =
+checkList (e:es) (b :> bs) =
   do
     traceTCM 30 $ vcat [ text "checkList" <+> prettyPrintTCM (e:es)
-                       , text "against" <+> prettyPrintTCM (CtxExtend b bs) ]
+                       , text "against" <+> prettyPrintTCM (b :> bs) ]
     t <- check e (bindType b)
     ts <- checkList es (subst t bs)
     return (t:ts)

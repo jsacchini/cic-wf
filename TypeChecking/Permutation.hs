@@ -21,8 +21,6 @@
 
 module TypeChecking.Permutation where
 
-import qualified Data.Foldable as Fold
-
 #include "../undefined.h"
 import Utils.Impossible
 
@@ -84,9 +82,9 @@ instance ApplyPerm a => ApplyPerm [a] where
   applyPerm = map . applyPerm
 
 instance (ApplyPerm a, HasNames a) => ApplyPerm (Ctx a) where
-  applyPerm p CtxEmpty = CtxEmpty
-  applyPerm p (CtxExtend x xs) =
-    CtxExtend (applyPerm p x) (applyPerm (length (name x) <++ p) xs)
+  applyPerm _ CtxEmpty = CtxEmpty
+  applyPerm p (x :> xs) =
+    applyPerm p x :> applyPerm (length (name x) <++ p) xs
 
 
 ------------------------------------------------------------
@@ -103,13 +101,13 @@ instance ApplyPerm Term where
   applyPerm p (Pi c t) = Pi (applyPerm p c) (applyPerm (ctxLen c <++ p) t)
   applyPerm p t@(Bound k) | k < length (unPerm p) = Bound $ (unPerm p) !! k
                           | otherwise = t
-  applyPerm p t@(Var _) = t
+  applyPerm _ t@(Var _) = t
   applyPerm p (Lam c t) = Lam (applyPerm p c) (applyPerm (ctxLen c <++ p) t)
   applyPerm p (App t1 t2) = App (applyPerm p t1) $ map (applyPerm p) t2
   applyPerm p (Ind a x ps) = Ind a x (map (applyPerm p) ps)
-  applyPerm p (Constr x indId ps as) = Constr x indId ps' as'
-    where ps' = map (applyPerm p) ps
-          as' = map (applyPerm p) as
+  applyPerm p (Constr x indId ps) = Constr x indId ps'
+    where
+      ps' = map (applyPerm p) ps
   applyPerm p (Fix f) = Fix (applyPerm p f)
   applyPerm p (Case c) = Case (applyPerm p c)
 
@@ -156,9 +154,9 @@ instance ApplyPerm A.Expr where
     A.Lam r (applyPerm p bs) (applyPerm (length (name bs) <++ p) e)
   applyPerm p (A.App r e1 e2) = A.App r (applyPerm p e1) (applyPerm p e2)
   applyPerm p t@(A.Ind _ _ _ _) = t
-  applyPerm p (A.Constr r x indId ps as) = A.Constr r x indId ps' as'
-    where ps' = map (applyPerm p) ps
-          as' = map (applyPerm p) as
+  applyPerm p (A.Constr r x indId ps) = A.Constr r x indId ps'
+    where
+      ps' = map (applyPerm p) ps
   applyPerm p (A.Fix f) = A.Fix $ applyPerm p f
   applyPerm p (A.Case c) = A.Case $ applyPerm p c
   applyPerm p (A.Number _ _) = __IMPOSSIBLE__

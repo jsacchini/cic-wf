@@ -19,6 +19,8 @@
 
 {-# LANGUAGE CPP, GeneralizedNewtypeDeriving, MultiParamTypeClasses, FlexibleInstances #-}
 
+-- | Constraint sets.
+
 module TypeChecking.Constraints
        ( EdgeLabel
        , Constraint
@@ -175,7 +177,3 @@ bellmanFord src_ (CSet g) = map toEnum $ foldr (\x r -> edgeCheck x updateMap ++
           | snd (m Map.! n1) `dP` (DistVal lab) < snd (m Map.! n2) =
             [n1]
           | otherwise = []
-
-
-
-

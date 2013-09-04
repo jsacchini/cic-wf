@@ -19,7 +19,8 @@
 
 {-# LANGUAGE GeneralizedNewtypeDeriving
   #-}
--- | Sizes
+
+-- | Sizes and annotations.
 
 module Syntax.Size where
 
@@ -30,6 +31,10 @@ import Data.Functor
 
 import Utils.Pretty
 import Utils.Misc
+
+------------------------------------------------------------
+-- * Size (or stage) variables
+------------------------------------------------------------
 
 newtype StageVar = StageVar Integer
                    deriving(Eq, Enum, Num)
@@ -45,32 +50,15 @@ instance Pretty StageVar where
 inftyStageVar :: StageVar
 inftyStageVar = StageVar 0
 
+------------------------------------------------------------
+-- * Sizes
+------------------------------------------------------------
+
 data Size =
-  Svar StageVar
-  | Hat Size
-  | Infty
+  Svar StageVar      -- ^ Size variables
+  | Hat Size         -- ^ Successor size
+  | Infty            -- ^ Infinity
 
-base :: Size -> Maybe StageVar
-base (Svar n) = Just n
-base (Hat s) = base s
-base Infty    = Nothing
-
-numHat :: Size -> Int
-numHat (Svar _) = 0
-numHat (Hat s) = numHat s + 1
-numHat Infty    = 0
-
-normalize :: Size -> Maybe (StageVar, Int)
-normalize (Svar n) = Just (n, 0)
-normalize (Hat s) = appSnd (+1) <$> normalize s
-normalize Infty    = Nothing
-
--- | The relation between 'normalize', 'base' and 'numHat' is the following:
---
---   base s = Just n    ==>  normalize s = Just (n, numHat s)
---     s is a variable with many hats on top
---   base s = Nothing   ==>  normalize s = Nothing
---     s is Infty with many hats on top
 
 instance Eq Size where
   (==) = (==) `on` normalize
@@ -79,17 +67,47 @@ instance Pretty Size where
   prettyPrint s =
     case normalize s of
       Just (v, n) -> text $ "a" ++ show v ++ if n > 0 then "^" ++ show n else ""
-      Nothing     -> text "∞"
+      Nothing     -> text "oo"
 
 instance Show Size where
   show = show . prettyPrint
 
--- | Annotations
+
+-- | 'base' is only defined for sizes that have a variable at the bottom.
+base :: Size -> Maybe StageVar
+base (Svar n) = Just n
+base (Hat s) = base s
+base Infty    = Nothing
+
+
+-- | Returns the number of 'Hat' applied to a variable or 'Infty'.
+numHat :: Size -> Int
+numHat (Svar _) = 0
+numHat (Hat s) = numHat s + 1
+numHat Infty    = 0
+
+-- | Size normalization
+--   The relation between 'normalize', 'base' and 'numHat' is the following:
+--
+--   base s = Just n    ==>  normalize s = Just (n, numHat s)
+--
+--   base s = Nothing   ==>  normalize s = Nothing
+
+normalize :: Size -> Maybe (StageVar, Int)
+normalize (Svar n) = Just (n, 0)
+normalize (Hat s) = appSnd (+1) <$> normalize s
+normalize Infty    = Nothing
+
+
+------------------------------------------------------------
+-- * Size annotations for (co-)inductive types
+------------------------------------------------------------
 
 data Annot =
-  Empty
-  | Star
-  | Size Size
+  Empty               -- ^ No annotation (for bare terms);
+  | Star              -- ^ For position types (in definition of (co-)fixpoints;
+  | Size Size         -- ^ An actual size annotation.
+
 
 instance Eq Annot where
   Empty    == Empty    = True
@@ -104,10 +122,3 @@ instance Pretty Annot where
 
 instance Show Annot where
   show = show . prettyPrint
-
--- | Kind of term : bare, position or sized
-data Kind =
-  BareTerm
-  | PositionTerm
-  | SizedTerm
-

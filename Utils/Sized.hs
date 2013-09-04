@@ -17,9 +17,15 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
+-- | Defines the Sized class, for things that have a notion of size
+
 module Utils.Sized where
 
 import Data.List
+
+------------------------------------------------------------
+-- * Sized class
+------------------------------------------------------------
 
 class Sized a where
   size :: (Num t) => a -> t

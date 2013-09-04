@@ -29,6 +29,7 @@ import Control.Monad.Reader
 
 import Data.List
 import Data.Maybe
+import Data.Monoid
 
 import Syntax.Common
 import Syntax.Position
@@ -40,7 +41,8 @@ import Syntax.Size
 import TypeChecking.Conversion
 import TypeChecking.Constraints
 import TypeChecking.RecCheck
-import TypeChecking.PrettyTCM
+import qualified TypeChecking.PrettyTCM as PP ((<>))
+import TypeChecking.PrettyTCM hiding ((<>))
 import TypeChecking.TCM
 import {-# SOURCE #-} TypeChecking.TypeChecking
 import TypeChecking.Whnf
@@ -94,10 +96,10 @@ collectStarsNonPi a b =
 
 collectStarsBind :: (MonadTCM tcm) => A.Context -> Context -> tcm [StageVar]
 collectStarsBind CtxEmpty CtxEmpty = return []
-collectStarsBind (CtxExtend (A.Bind r [] e) bs) ctx = collectStarsBind bs ctx
-collectStarsBind (CtxExtend (A.Bind r (x:xs) e) bs) (CtxExtend t ctx)  = do
+collectStarsBind (A.Bind r [] e :> bs) ctx = collectStarsBind bs ctx
+collectStarsBind (A.Bind r (x:xs) e :>  bs) (t :> ctx)  = do
   rs1 <- collectStars (fromJust (implicitValue e)) (bindType t)
-  rs2 <- collectStarsBind (CtxExtend (A.Bind r xs e) bs) ctx
+  rs2 <- collectStarsBind (A.Bind r xs e :> bs) ctx
   return $ rs1 ++ rs2
 collectStarsBind _ _ = __IMPOSSIBLE__
 
@@ -154,10 +156,10 @@ inferFix (A.FixExpr r CoI num f tp body) =
     alls <- allStages
     cOld <- allConstraints
     traceTCM 15 $ (hsep [text "COI calling recCheck alpha = ", prettyPrintTCM alpha]
-                   $$ nest 2 (vcat [text "vStar = " <> prettyPrintTCM is,
-                                    text "all other = " <> prettyPrintTCM (alls \\ is),
-                                    text "vNeq = " <> prettyPrintTCM vNeq,
-                                    text "C = " <> text (show cOld)]))
+                   $$ nest 2 (vcat [text "vStar =" <+> prettyPrintTCM is,
+                                    text "all other =" <+> prettyPrintTCM (alls \\ is),
+                                    text "vNeq =" <+> prettyPrintTCM vNeq,
+                                    text "C =" <+> text (show cOld)]))
     -- add Constraints to ensure that alpha appears positively in the return type
     traceTCM 15 $ (hsep [text "shifting ", prettyPrintTCM sctx
                         , text " <~ ", prettyPrintTCM ctx])
@@ -203,7 +205,7 @@ inferFix fixexpr@(A.FixExpr r I num f tp body) =
            srest = modifySize shiftStar rest
            stpRes = modifySize shiftStar tpRes
 
-           tpFix = mkPi (args +: (srecArg <| srest)) stpRes
+           tpFix = mkPi (args <> (srecArg :> srest)) stpRes
 
        -- meta stage var that must be assigned to a real stage var
        (iName, iKind, alpha) <- extractIndType (bindType recArg)
@@ -216,18 +218,18 @@ inferFix fixexpr@(A.FixExpr r I num f tp body) =
        alls <- allStages
        cOld <- allConstraints
        traceTCM 15 $ (hsep [text "I calling recCheck alpha = ", prettyPrintTCM alpha]
-                      $$ nest 2 (vcat [text "vStar = " <> prettyPrintTCM is,
-                                       text "all other = " <> prettyPrintTCM (alls \\ is),
-                                       text "vNeq = " <> prettyPrintTCM vNeq,
-                                       text "C = " <> text (show cOld)]))
+                      $$ nest 2 (vcat [text "vStar =" <+> prettyPrintTCM is,
+                                       text "all other =" <+> prettyPrintTCM (alls \\ is),
+                                       text "vNeq =" <+> prettyPrintTCM vNeq,
+                                       text "C =" <+> text (show cOld)]))
 
        -- add Constraints to ensure that alpha appears positively in the return type
        traceTCM 15 $ (hsep [text "shifting ", pushBind srecArg $ prettyPrintTCM srest
                            , text " <~ ", pushBind srecArg $ prettyPrintTCM rest])
-       traceTCM 15 $ (hsep [text "shifting ", pushCtx (srecArg <| srest) $ prettyPrintTCM tpRes
-                           , text " <~ ", pushCtx (srecArg <| srest) $ prettyPrintTCM stpRes])
+       traceTCM 15 $ (hsep [text "shifting ", pushCtx (srecArg :> srest) $ prettyPrintTCM tpRes
+                           , text " <~ ", pushCtx (srecArg :> srest) $ prettyPrintTCM stpRes])
        _ <- pushBind srecArg $ subType srest rest -- was rest <~ srest
-       _ <- pushCtx (srecArg <| srest) $ subType tpRes stpRes
+       _ <- pushCtx (srecArg :> srest) $ subType tpRes stpRes
 
 
        let recRes = recCheck alpha is vNeq cOld
@@ -261,5 +263,3 @@ checkFixType (Bind _ _ tp Nothing) =
           _ -> __IMPOSSIBLE__ -- sanity check
       _ -> error "recursive argument is not of inductive type"
 checkFixType _ = error "recursive argument is a definition"
-
-

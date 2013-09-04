@@ -26,13 +26,14 @@ import Control.Monad
 import Control.Monad.Reader hiding (lift)
 import qualified Control.Monad.Reader as R (lift)
 import Data.List
+import Data.Monoid
 
 import Syntax.Common
 import Syntax.Internal as I
-import Syntax.InternaltoAbstract
+import Syntax.Position
 
 import TypeChecking.TCM
-import TypeChecking.PrettyTCM
+import TypeChecking.PrettyTCM hiding ((<>))
 import TypeChecking.Whnf
 import TypeChecking.Conversion
 import TypeChecking.Permutation
@@ -86,19 +87,19 @@ unifyNeg ctx eqs ks =
                        , text "FOR" <+> prettyPrintTCM ks ]
     r <- runMT $ unify ctx eqs ks
     case r of
-      Just x -> typeError NotImpossibleBranch
+      Just x -> typeError (NotImpossibleBranch noRange)
       Nothing -> return ()
 
 
--- | unify Δ (u = v) ζ computes the first-order unification of 'u' and 'v' under
---   context Δ, with ζ indicating the subset of variables of Δ open to
+-- | unify G (u = v) s computes the first-order unification of 'u' and 'v' under
+--   context G, with s indicating the subset of variables of G open to
 --   unification.
 --
---   If unification succeeds positively, it returns a new context Δ' which is a
---   reorder of Δ where unified variables are turned to local definitions, a
---   permutation p and the set of variables ζ' that were not unified.
+--   If unification succeeds positively, it returns a new context G' which is a
+--   reorder of G where unified variables are turned to local definitions, a
+--   permutation p and the set of variables s' that were not unified.
 --   Permutation p has the following meaning: if a term 't' is well-scoped in
---   context Δ, then 'applyPerm p t' is well-scoped in Δ'.
+--   context G, then 'applyPerm p t' is well-scoped in G'.
 --
 --   If unification suceeds negatively, it returns Nothing. If unification fails
 --   (problem too complicated) it throws an exception.
@@ -171,7 +172,7 @@ unifyEq ctx (t1, Bound k) js = unifyEq ctx (Bound k, t1) js
 -- constructor is the same, or return negative success (Nothing) if they are
 -- different.
 -- TODO: check that Constr are not in sort Prop
-unifyEq ctx (Constr x1 cid1 ps1 as1, Constr x2 cid2 ps2 as2) js =
+unifyEq ctx (App (Constr x1 cid1 ps1) as1, App (Constr x2 cid2 ps2) as2) js =
   if x1 == x2
   then do -- traceTCM_ ["unifying constructor ", show x1, "\nnew equations: ", show (zip as1 as2)]
           unify ctx (zip as1 as2) js
@@ -185,10 +186,10 @@ unifyEq ctx (t1, t2) js =
 
 
 
--- | 'applyDef Δ k t = (Θ, p)' where
+-- | 'applyDef G k t = (T, p)' where
 --
---   * 'Θ' is a well-formed reorder of 'Δ' given by 'p', and
---   * the 'k'-th variable of Δ is assigned to 't'
+--   * 'T' is a well-formed reorder of 'G' given by 'p', and
+--   * the 'k'-th variable of G is assigned to 't'
 applyDef :: (MonadTCM tcm) =>
             Context -> Int -> Term -> tcm (Context, Permutation)
 applyDef ctx k t =
@@ -202,19 +203,19 @@ applyDef ctx k t =
          t'   = lift (-(ctxLen cxb + 1)) 0 (applyPerm p' t)
          u'   = lift (ctxLen cxa) 0 u
      -- traceTCM_ ["applyinf def\nbefore: ", show cxa', {-"\nafter: ", show cxb',-} "\ndef: ", show (applyPerm p' t), " -> ", show (LocalDef x t' u'), "\nperm: ", show p']
-     return (ctx1 +: cxa' +: (Bind x False u' (Just t') <| cxb'), p')
+     return (ctx1 <> cxa' <> (Bind x False u' (Just t') :> cxb'), p')
   where (ctx1, ctx0') = ctxSplitAt (ctxLen ctx - k - 1) ctx
         (Bind x _ u Nothing, ctx0) = ctxSplit ctx0'
 
--- | strengthen Δ t = (Δ₀, Δ₁, p)
+-- | strengthen G t = (G0, G1, p)
 --
---   * assumes that 't' is well-typed in Δ
---   * returns a reorder of 'Δ' given by 'p' where 'Δ₀' is the part of 'Δ'
---     needed to type-check 't' and 'Δ₁' is the rest
+--   * assumes that 't' is well-typed in G
+--   * returns a reorder of 'G' given by 'p' where 'G0' is the part of 'G'
+--     needed to type-check 't' and 'G1' is the rest
 strengthen :: MonadTCM tcm =>
               Context -> Term -> tcm (Context,Context,Permutation)
 strengthen CtxEmpty _ = return (CtxEmpty, CtxEmpty, Perm [])
-strengthen (CtxExtend bnd ctx) t = do
+strengthen (bnd :> ctx) t = do
   (ctx0, ctx1, p) <- strengthen ctx t
   -- traceTCM_ ["in strengthen\nbefore: ", show ctx0, "\nctx1er: ", show ctx1, "\nperm: ", show p, "\nputting in the middle: ", show bnd]
 
@@ -223,12 +224,12 @@ strengthen (CtxExtend bnd ctx) t = do
   -- otherwise, we add bnd to ctx1. In both cases, the permutation is adjusted
   -- as needed
   if isFree 0 ctx0 || isFree (ctxLen ctx0 + ctxLen ctx1) t
-    then return (CtxExtend bnd ctx0, ctx1, p ++> 1)
+    then return (bnd :> ctx0, ctx1, p ++> 1)
     else do
       -- We need to shift the vars in bnd by ctx0;
       -- adjust the position of bnd in ctx1 (using permutation ctx1P); and
       -- adjust the returned permutation by inserting bnd in the correct place
       let ctx1P = insertP 0 (idP (ctxLen ctx0))
       -- traceTCM_ ["applying ctx1P :", show ctx1P, "\non ", show ctx1]
-      return (ctx0, CtxExtend (lift (ctxLen ctx0) 0 bnd) (applyPerm ctx1P ctx1),
+      return (ctx0, lift (ctxLen ctx0) 0 bnd :> applyPerm ctx1P ctx1,
               insertP (ctxLen ctx1) p)

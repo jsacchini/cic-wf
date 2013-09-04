@@ -104,8 +104,8 @@ evalFile =
                                  , prettyPrintTCM d' ]
               gs <- inferDecl d'
               forM_ gs addGlobal
-              traceTCM 30 $ (text "  INFERRED GLOBAL DECL: (SHOW)"
-                             $$ vcat(map (text . show) gs))
+              -- traceTCM 30 $ (text "  INFERRED GLOBAL DECL: (SHOW)"
+              --                $$ vcat(map (text . show) gs))
               traceTCM 30 $ (text "  INFERRED GLOBAL DECL: "
                              $$ vcat(map prettyPrintTCM (filter (not . isConstr . namedValue) gs)))
               cs <- allConstraints

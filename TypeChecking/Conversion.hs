@@ -25,11 +25,6 @@ module TypeChecking.Conversion where
 #include "../undefined.h"
 import Utils.Impossible
 
-import Control.Monad
-import Control.Monad.Reader
-
-import qualified Data.Foldable as Fold
-
 import Syntax.Common
 import Syntax.Size
 import Syntax.Internal
@@ -38,7 +33,6 @@ import TypeChecking.Whnf
 import TypeChecking.TCM
 
 import Utils.Misc
-import Utils.Sized
 
 
 (<<=) :: Annot -> Annot -> [Constraint StageVar]
@@ -62,8 +56,7 @@ subSort _        _        = return False
 
 data ConversionTest = Conv -- ^ Test for conversion
                     | Leq  -- ^ Test for subtyping
-                    | LeqSort -- ^ Test for subtyping and universe inclusion
-                              --   Type(i) ⊆ Type(j)   if i ≤ j
+                    | LeqSort -- ^ Test for subtyping and universe inclusion Type(i) &#x3BB; Type(j)   if i ≤ j
 
 class NormalForm a => Conversion a where
   -- We assume that both arguments are in normal form
@@ -168,10 +161,9 @@ instance Conversion Type where
         (uctx, u') = unLam u
   convTest _ (App f1 ts1) (App f2 ts2) = convTest Conv f1 f2 `mAnd`
                                          mAll (zipWith (convTest Conv) ts1 ts2)
-  convTest _ (Constr c1 _ ps1 as1) (Constr c2 _ ps2 as2) =
+  convTest _ (Constr c1 _ ps1) (Constr c2 _ ps2) =
     return (c1 == c2) `mAnd`
-    mAll (zipWith (convTest Conv) ps1 ps2) `mAnd`
-    mAll (zipWith (convTest Conv) as1 as2)
+    mAll (zipWith (convTest Conv) ps1 ps2)
   convTest _ (Fix f1) (Fix f2) = convTest Conv f1 f2
   convTest _ (Case c1) (Case c2) =
     convTest Conv (caseArg c1) (caseArg c2) `mAnd`
@@ -197,18 +189,9 @@ instance Conversion Bind where
 
 
 instance Conversion Context where
-  convTest ct CtxEmpty CtxEmpty = return True
-  convTest ct (CtxExtend b1 c1) (CtxExtend b2 c2) =
+  convTest _ CtxEmpty CtxEmpty = return True
+  convTest ct (b1 :> c1) (b2 :> c2) =
     convTest ct b1 b2 `mAnd` pushBind b1 (convTest ct c1 c2)
-
-
--- instance Conversion CaseTerm where
---   convTest _ (CaseTerm arg1 nmInd1 nmAs1 cin1 tp1 branches1) (CaseTerm arg2 nmInd2 nmAs2 cin2 tp2 branches2) =
---     convTest Conv arg1 arg2 `mAnd`
---     return (nmInd1 == nmInd2) `mAnd`
---     convTest Conv cin1 cin2 `mAnd`
---     convTest Conv tp1 tp2 `mAnd`
---     convTest Conv branches1 branches2
 
 
 instance Conversion CaseIn where
@@ -223,13 +206,3 @@ instance Conversion Branch where
   convTest Conv (Branch nm1 _ _ body1 wh1) (Branch nm2 _ _ body2 wh2) =
     return (nm1 == nm2) `mAnd`
     convTest Conv body1 body2
-
--- instance Conversion Subst where
---   convTest Conv (Subst sg1) (Subst sg2) = conv sg1 sg2
---     where
---       conv :: (MonadTCM tcm) => [(Int,Term)] -> [(Int,Term)] -> tcm Bool
---       conv [] [] = return True
---       conv ((n1,t1):sg1) ((n2,t2):sg2) =
---         return (n1 == n2) `mAnd` convTest Conv t1 t2 `mAnd` conv sg1 sg2
---       conv _ _ = return False
-

@@ -28,12 +28,14 @@
 
 module Syntax.Abstract where
 
-import Data.Function
-import Data.Maybe
-import Data.List (intercalate, sortBy)
 import qualified Data.Foldable as Fold
+import Data.Function
+import Data.List (intercalate, sortBy)
+import Data.Maybe
+import Data.Monoid
 
-import Text.PrettyPrint.HughesPJ hiding (comma)
+import qualified Text.PrettyPrint as PP ((<>))
+import Text.PrettyPrint hiding (comma, (<>))
 
 import Syntax.Common
 import Syntax.Position
@@ -42,27 +44,28 @@ import Syntax.Size
 import Utils.Pretty
 
 
--- | The main data type of expressions
+-- | The main data type of expressions returned by the parser.
 data Expr =
-  Ann Range Expr Expr       -- ^ Annotated term with type, e.g. @ M :: T @
+  Ann Range Expr Expr        -- ^ Annotated term with type, e.g. @ M :: T @
   | Sort Range Sort
   | Pi Range Context Expr    -- ^ Dependent product type.
-                            --   e.g. @ forall (x1 ... xn : A), B @
+                             --   e.g. @ forall (x1 ... xn : A), B @
   | Arrow Range (Implicit Expr) Expr
-  | Ident Range Name        -- ^ Identifiers
---  | EVar Range (Maybe Int)  -- ^ existential variable
+                             -- ^ Non-dependent function.
+  | Ident Range Name         -- ^ Identifiers
+--  | EVar Range (Maybe Int) -- ^ existential variable
   | Lam Range Context Expr   -- ^ Abstractions, e.g. @ fun (x1 ... xn : A) => B @
-  | App Range Expr Expr     -- ^ Applications
+  | App Range Expr Expr      -- ^ Applications
 --  | Let Range LetBind Expr
-  | Case CaseExpr           -- ^ Case expressions
-  | Fix FixExpr             -- ^ Fixpoints
-  | Meta Range (Maybe Int)  -- ^ Unspecified terms
+  | Case CaseExpr            -- ^ Case expressions
+  | Fix FixExpr              -- ^ Fixpoints
+  | Meta Range (Maybe Int)   -- ^ Unspecified terms
 
   -- The following constructors are filled by the scope checker, but do not
   -- appear in a correctly parsed expression
   | Bound Range Name Int     -- ^ Bound variables. The name argument is used by
                              -- the pretty printer.
-  | Constr Range Name (Name, Int) [Expr] [Expr]
+  | Constr Range Name (Name, Int) [Expr]
                              -- ^ Constructors are fully applied. Arguments are
                              --
                              -- * Name of the constructor
@@ -73,9 +76,10 @@ data Expr =
                              -- * Parameters (of the inductive type)
                              --
                              -- * Actual arguments of the constructor
-  | Ind Range Annot Name [Expr] -- Inductive types are applied to parameters
-  -- Natural numbers are predefined
-  | Number Range Int
+  | Ind Range Annot Name [Expr]
+                             -- ^ Inductive types are applied to parameters
+  | Number Range Int         -- ^ Natural numbers are predefined
+
 
 
 mkApp :: Expr -> [Expr] -> Expr
@@ -94,18 +98,17 @@ mkArrow e1 e2 = Pi noRange (ctxSingle (Bind noRange [noName]
 
 
 unPi :: Expr -> (Context, Expr)
-unPi (Pi _ ctx e) = (ctx +: ctx', e')
+unPi (Pi _ ctx e) = (ctx <> ctx', e')
   where
     (ctx', e') = unPi e
 unPi (Arrow _ e1 e2) = (ctx', e2')
   where
     (ctx, e2') = unPi e2
-    ctx' = mkBind (range e1) noName (isImplicit e1) (implicitValue e1) <| ctx
+    ctx' = mkBind (range e1) noName (isImplicit e1) (implicitValue e1) :> ctx
 unPi e = (ctxEmpty, e)
 
 
 data LetBind = LetBind Range Name (Maybe Expr) Expr
-               deriving(Show)
 
 
 -- | Universes
@@ -141,11 +144,6 @@ data Bind = Bind Range [Name] (Implicit (Maybe Expr))
 
 type Context = Ctx Bind
 
-instance Show Bind where
-  show b@(Bind _ xs t) =
-    showImplicit b (concat [ show xs, " : "
-                           , show (implicitValue t)])
-
 instance HasNames Bind where
   name (Bind _ x _) = name x
 
@@ -179,7 +177,7 @@ data CaseExpr =
            , caseReturn   :: Maybe Expr
              -- ^ Return type
            , caseBranches :: [Branch]
-           } deriving(Show)
+           }
 
 
 data CaseIn =
@@ -190,7 +188,7 @@ data CaseIn =
            -- ^ The inductive type of the case
          , inArgs  :: [Expr]
            -- ^ The specification of the subfamily
-         } deriving(Show)
+         }
 
 
 data Branch =
@@ -200,11 +198,12 @@ data Branch =
          , brArgsNames :: [Name]
          , brBody      :: Expr
          , brSubst     :: Maybe Subst
-         } deriving(Show)
+         }
 
 
+
+-- | Substitutions
 newtype Subst = Subst { unSubst :: [Assign] }
-                deriving(Show)
 
 
 data Assign =
@@ -212,7 +211,7 @@ data Assign =
          , assgnName :: Name
          , assgnBound :: Int
          , assgnExpr :: Expr
-         } deriving(Show)
+         }
 
 
 sortSubst :: Subst -> Subst
@@ -232,7 +231,7 @@ data FixExpr =
           , fixName  :: Name
           , fixType  :: Expr
           , fixBody  :: Expr
-          } deriving(Show)
+          }
 
 
 -- | Global declarations
@@ -243,7 +242,6 @@ data Declaration =
   | Inductive Range InductiveDef
   | Eval Expr
   | Check Expr (Maybe Expr)
-  deriving(Show)
 
 
 -- | (Co-)inductive definitions
@@ -266,7 +264,7 @@ data Constructor =
 
 
 
--- | HasRange and SetRange instances
+-- HasRange and SetRange instances
 
 instance HasRange Expr where
   range (Ann r _ _) = r
@@ -282,7 +280,7 @@ instance HasRange Expr where
 --  range (Let r _ _) = r
   range (Case c) = range c
   range (Fix f) = range f
-  range (Constr r _ _ _ _) = r
+  range (Constr r _ _ _) = r
   range (Ind r _ _ _) = r
   range (Number r _) = r
 
@@ -309,7 +307,7 @@ instance SetRange Expr where
 --  setRange (Let r _ _) = r
   setRange r (Case c) = Case $ setRange r c
   setRange r (Fix f) = Fix $ setRange r f
-  setRange r (Constr _ x y z w) = Constr r x y z w
+  setRange r (Constr _ x y z) = Constr r x y z
   setRange r (Ind _ x y z) = Ind r x y z
   setRange r (Number _ x) = Number r x
 
@@ -331,11 +329,12 @@ instance HasRange Subst where
 instance HasRange Assign where
   range = assgnRange
 
+
 -- | Instances of Show and Pretty. For bound variables, the pretty printer uses
 --   the name directly.
 --
---   Printing a parsed expression should give the same result modulo comments,
---   whitespaces, precedence and parenthesis.
+--   Printing a parsed expression should give back the same result modulo
+--   comments, whitespaces, precedence and parenthesis.
 --
 --   However, there is no effort in removing unused variable names (e.g.,
 --   changing @ forall x:A, B @ for @ A -> B @ if @ x @ is not free in @ B @.
@@ -359,25 +358,27 @@ instance Pretty Expr where
               | otherwise     = pp 0 (implicitValue e1)
       pp _ (Ident _ x) = prettyPrint x
       pp _ (Bound _ x k) = prettyPrint x
-                           <> (text $ "[" ++ show k ++ "]")
+                           PP.<> (text $ "[" ++ show k ++ "]")
       pp _ (Meta _ Nothing) = text "_"
-      pp _ (Meta _ (Just k)) = text "?" <> int k
+      pp _ (Meta _ (Just k)) = text "?" PP.<> int k
       pp n (Lam _ bs e) = parensIf (n > 0) $ nestedLam bs e
       pp n (App _ e1 e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       pp n (Case c) = parensIf (n > 0) $ prettyPrint c
       pp n (Fix f) = parensIf (n > 0) $ prettyPrint f
       pp _ (Ind _ a x es) = hcat ([ prettyPrint x
                                   , langle, prettyPrint a, rangle
-                                  , brackets (hsep (punctuate comma (map prettyPrint es)))])
-      pp n (Constr _ x _ pars args) =
-        parensIf (n > 2) $ prettyPrint x <+> hsep (map (pp lvl) (pars ++ args))
-          where lvl = if length pars + length args == 0 then 0 else 3
+                                  , -- brackets
+                                    (hsep (punctuate comma (map prettyPrint es)))])
+      pp n (Constr _ x _ pars) =
+        parensIf (n > 2) (prettyPrint x <+>
+                          brackets (hsep (punctuate comma (map (pp lvl) pars))))
+        where lvl = if length pars == 0 then 0 else 3
       pp _ (Number _ n) = text $ show n
 
 
       nestedPi :: Context -> Expr -> Doc
       nestedPi ctx e = text "Π" <+> fsep (map (prettyBind paren) bs)
-                       <> comma <+> prettyPrint e
+                       PP.<> comma <+> prettyPrint e
         where
           bs = bindings ctx
           paren = ctxLen ctx > 1
@@ -454,7 +455,7 @@ instance Pretty FixExpr where
     hsep [ppName k, prettyPrint x, colon,
           prettyPrint tp, defEq]
     $$ (nest 2 $ prettyPrint body)
-    where ppName I   = text "fix" <> text (show n)
+    where ppName I   = text "fix" PP.<> text (show n)
           ppName CoI = text "cofix"
 
 
@@ -495,37 +496,4 @@ instance Pretty Constructor where
 
 
 instance Pretty [Declaration] where
-  prettyPrint = vcat . map ((<> dot) . prettyPrint)
-
-
-
-
-------------------------
---- The instances below are used only for debugging
-
-instance Show Expr where
-  show (Ann _ e1 e2) = concat [show e1, " :: ", show e2]
-  show (Sort _ s) = show s
-  show (Pi _ ctx e) = concat $ "Pi " : map show (Fold.toList ctx) ++ [", ", show e]
-  show (Arrow _ e1 e2) = concat $ [show e1, " -> ", show e2]
-  show (Ident _ x) = show x
-  show (Lam _ ctx e) = concat $ "fun " : map show (Fold.toList ctx) ++ [" => ", show e]
-  show (App _ e1 e2) = concat [show e1, " (", show e2, ")"]
-  show (Case c) = show c
-  show (Fix f) = show f
-  show (Bound _ x n) = concat [show x, "[", show n, "]"]
-  show (Meta _ Nothing) = show "_"
-  show (Meta _ (Just k)) = '?' : show k
-  show (Constr _ x i ps as) = concat $ [show x, show i, "(", intercalate ", " (map show (ps ++ as)), ")"]
-  show (Ind _ a x args) = concat $ [show x, "<", show a, ">"] ++ map show args
-  show (Number _ n) = show n
-
-
-instance Show InductiveDef where
-  show (InductiveDef name k pars pols tp constr) =
-    concat $ ["Inductive ", show name, " ", show pars, " : ", show tp,
-              " := "] ++ map show constr
-
-instance Show Constructor where
-  show (Constructor _ name tp) =
-    concat [" | ", show name, " : ", show tp]
+  prettyPrint = vcat . map ((PP.<> dot) . prettyPrint)

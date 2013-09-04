@@ -25,18 +25,19 @@ module TypeChecking.Whnf where
 #include "../undefined.h"
 import Utils.Impossible
 
-import Data.List
-import qualified Data.Foldable as Fold
-import Data.Functor
 import Control.Monad.Reader
+
+import Data.Functor
+import Data.List
+import Data.Monoid
 
 import Syntax.Common
 import Syntax.Internal as I
-import Syntax.InternaltoAbstract
 import TypeChecking.TCM
-import TypeChecking.PrettyTCM
 
-import Utils.Pretty
+import qualified TypeChecking.PrettyTCM as PP ((<>))
+import TypeChecking.PrettyTCM hiding ((<>))
+
 
 whnF :: (MonadTCM tcm) => Term -> tcm Term
 whnF = whnf
@@ -91,7 +92,7 @@ instance Whnf Term where
       wH t@(Case c) =
         do arg' <- wH $ caseArg c
            case arg' of
-             Constr _ (_,cid) _ cArgs -> wH $ iotaRed cid cArgs (caseBranches c)
+             App (Constr _ (_,cid) _) cArgs -> wH $ iotaRed cid cArgs (caseBranches c)
              _ -> case isCofix arg' of
                     Just (_, body, cofix, args) -> wH $ Case (c { caseArg = App (subst cofix body) args })
                     Nothing -> return $ Case (c { caseArg = arg' })
@@ -115,8 +116,8 @@ unfoldPi t =
   do t' <- whnf t
      case t' of
        Pi ctx1 t1 -> do (ctx2, t2) <- pushCtx ctx1 $ unfoldPi t1
-                        t2' <- pushCtx (ctx1 +: ctx1) $ whnf t2
-                        return (ctx1 +: ctx2, t2')
+                        t2' <- pushCtx (ctx1 <> ctx1) $ whnf t2
+                        return (ctx1 <> ctx2, t2')
        _          -> return (ctxEmpty, t')
 
 
@@ -147,9 +148,9 @@ instance NormalForm Bind where
 
 instance NormalForm Context where
   normalForm CtxEmpty = return CtxEmpty
-  normalForm (CtxExtend x xs) = do x' <- normalForm x
-                                   xs' <- pushBind x' $ normalForm xs
-                                   return $ CtxExtend x' xs'
+  normalForm (x :> xs) = do x' <- normalForm x
+                            xs' <- pushBind x' $ normalForm xs
+                            return $ x' :> xs'
 
 
 instance NormalForm Term where
@@ -160,7 +161,7 @@ instance NormalForm Term where
       nF (Pi c t) = liftM2 Pi (normalForm c) (pushCtx c $ nF t)
       nF t@(Bound k) = do
         e <- ask
-        when (k >= envLen e) $ error $ "normalform out of bound: " ++ show k ++ "  " ++ show e
+        when (k >= envLen e) $ error $ "normalform out of bound: " ++ show k -- ++ "  " ++ show e
         case bindDef (envGet e k) of
           Nothing -> return t
           Just t' -> nF (I.lift (k+1) 0 t')
@@ -226,7 +227,7 @@ instance NormalForm Term where
                           $$ hsep [text "arg ", prettyPrintTCM (caseArg c)])
            arg' <- nF $ caseArg c
            case arg' of
-             Constr _ (_,cid) _ cArgs ->
+             App (Constr _ (_,cid) _) cArgs ->
                          do -- traceTCM_ ["Iota Reduction ",
                             --            show cid, " ", show cArgs,
                             --            "\nwith branches\n",
@@ -235,10 +236,10 @@ instance NormalForm Term where
              _ -> case isCofix arg' of
                     Just (bind, body, cofix, args) ->
                       do
-                        traceTCM 30 $ vcat [text "normal form case " <> prettyPrintTCM t,
-                                            text "body " <> pushBind bind (prettyPrintTCM body),
-                                            text "cofix " <> prettyPrintTCM cofix,
-                                            text "args " <> prettyPrintTCM args]
+                        traceTCM 30 $ vcat [text "normal form case " PP.<> prettyPrintTCM t,
+                                            text "body " PP.<> pushBind bind (prettyPrintTCM body),
+                                            text "cofix " PP.<> prettyPrintTCM cofix,
+                                            text "args " PP.<> prettyPrintTCM args]
                         nF $ Case (c { caseArg = App (subst cofix body) args })
                     Nothing ->
                       do -- traceTCM_ ["Case in normal form ", show t]
@@ -250,11 +251,10 @@ instance NormalForm Term where
                                          , caseIn       = in'
                                          , caseBranches = branches'
                                          })
-      nF t@(Constr x i ps as) =
+      nF t@(Constr x i ps) =
         do -- traceTCM_ ["Normalizing constr ", show t]
            ps' <- mapM nF ps
-           as' <- mapM nF as
-           return $ Constr x i ps' as'
+           return $ Constr x i ps'
       nF t@(Fix f) = liftM Fix (normalForm f)
 
 
@@ -284,7 +284,7 @@ instance NormalForm Branch where
 betaRed :: Context -> Term -> [Term] -> Term
 betaRed CtxEmpty body args = mkApp body args
 betaRed ctx body [] = mkLam ctx body
-betaRed (CtxExtend b bs) body (a:as) =
+betaRed (b :> bs) body (a:as) =
   betaRed (subst a bs) (substN (ctxLen bs) a body) as
 -- betaRed (Consctx (Bind _ _ _ (Just _)) _) _ _ = __IMPOSSIBLE__
 
@@ -331,8 +331,8 @@ instance MetaExp Term where
                           case goalTerm g of
                             Nothing -> return t
                             Just x -> metaexp x
-  metaexp (Constr nmC nmI pars args) =
-    liftM2 (Constr nmC nmI) (mapM metaexp pars) (mapM metaexp args)
+  metaexp (Constr nmC nmI pars) =
+    liftM (Constr nmC nmI) (mapM metaexp pars)
   metaexp (Fix f) = liftM Fix (metaexp f)
   metaexp t@(Case c) = liftM Case (metaexp c)
   metaexp t = return t -- Sort, Bound, Var, Ind
@@ -349,10 +349,10 @@ instance MetaExp FixTerm where
 
 instance MetaExp Context where
   metaexp CtxEmpty = return CtxEmpty
-  metaexp (CtxExtend b bs) = do t <- metaexp (bindType b)
-                                let b' = b { bindType = t }
-                                bs' <- metaexp bs
-                                return $ CtxExtend b' bs'
+  metaexp (b :> bs) = do t <- metaexp (bindType b)
+                         let b' = b { bindType = t }
+                         bs' <- metaexp bs
+                         return $ b' :> bs'
 
 
 instance MetaExp CaseTerm where
@@ -389,21 +389,3 @@ instance MetaExp Subst where
     where
       metaSubst (x, t) = do t' <- metaexp t
                             return (x, t')
-
--- Neutral term
--- We assume that all global definitions have been unfolded (see Var case)
--- neutral :: Term -> Bool
--- neutral (Sort _) = False
--- neutral (Pi _ _) = False
--- neutral (Bound _) = True
--- neutral (Var _) = True -- we assume that this Var corresponds to an assumption
--- neutral (Lam _ _) = False
--- neutral (App (Fix CoI n _ _ _ _) ts) = error "Implement neutral CoI"
--- neutral (App (Fix I n _ _ _ _) ts) | length ts < n = False
---                                    | otherwise = neutral $ ts !! (n - 1)
--- neutral (App t _) = neutral t
--- neutral (Constr {}) = False
--- neutral (Fix {}) = False
--- neutral (Case c) = neutral $ caseArg c
--- neutral (Ind {}) = False
-

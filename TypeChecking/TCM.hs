@@ -58,14 +58,13 @@ import qualified TypeChecking.Constraints as CS
 -- We include scope errors, so we have to catch only one type
 data TypeError
     = NotConvertible (Maybe Range) TCEnv I.Term I.Term
-    | NotFunction TCEnv I.Term
+    | NotFunction (Maybe Range) TCEnv I.Term
     | NotSort Range TCEnv I.Term
     | NotArity Range I.Term
     | NotConstructor TCEnv I.Term
-    | InvalidProductRule I.Sort I.Sort
-    | IdentifierNotFound Name
+    | InvalidProductRule (Maybe Range) I.Sort I.Sort
+    | IdentifierNotFound (Maybe Range) Name
     | ConstantError String
-    | UniverseInconsistency
     | CannotInferMeta Range
     -- Scope checking
     | WrongNumberOfArguments Range Name Int Int
@@ -79,17 +78,30 @@ data TypeError
     | AlreadyDefined Name
     -- Unification
     | NotUnifiable Int
-    | NotImpossibleBranch
-    deriving(Show, Typeable)
+    | NotImpossibleBranch Range
+    deriving(Typeable)
 
--- instance Show TypeError where
---     show (NotConvertible e t1 t2) = "NotConvertible " ++ ppTerm (map bind e) t1 ++ " =!= " ++ ppTerm (map bind e) t2
-    -- show (NotFunction e t1) = "NotFunction " ++ ppI.Term (map bind e) t1
-    -- show (NotSort e t1) = "NotSort " ++ ppI.Term (map bind e) t1
-    -- show (NotArity e t1) = "NotArity " ++ ppI.Term (map bind e) t1
-    -- show (InvalidProductRule s1 s2) = "InvalidProductRule " ++ show s1 ++ " " ++ show s2
-    -- show (IdentifierNotFound x) = "IdentifierNotFound " ++ x
-    -- show (ConstantError s) = "ConstantError " ++ s
+instance Show TypeError where
+    show (NotConvertible r e t1 t2) = "NotConvertible " ++ show r
+    show (NotFunction r e t1) = "NotFunction " ++ show r
+    show (NotSort r e t1) = "NotSort " ++ show r
+    show (NotArity r t) = "NotArity " ++ show r
+    show (InvalidProductRule r s1 s2) = "InvalidProductRule " ++ show r
+    show (IdentifierNotFound r x) = "IdentifierNotFound " ++ show x ++ " " ++ show r
+    show (ConstantError s) = "ConstantError " ++ s
+    show (CannotInferMeta r) = "CannotInferMeta " ++ show r
+    show (WrongNumberOfArguments r _ _ _) = "WrongNumberOfArguments " ++ show r
+    show (WrongFixNumber r _ _) = "WrongFixNumber " ++ show r
+    show (UndefinedName r _) = "UndefinedName " ++ show r
+    show (NotInductive n) = "NotInductive " ++ show n
+    show (ConstructorNotApplied r n) = "ConstructorNotApplied " ++ show r ++ " " ++ show n
+    show (InductiveNotApplied r n) = "InductiveNotApplied " ++ show r ++ " " ++ show n
+    show (PatternNotConstructor n) = "PatternNotConstructor " ++ show n
+    show (FixRecursiveArgumentNotPositive r) = "FixRecursiveArgumentNotPositive " ++ show r
+    show (AlreadyDefined n) = "AlreadyDefined " ++ show n
+    show (NotUnifiable n) = "NotUnifiable " ++ show n
+    show (NotImpossibleBranch r) = "NotImpossibleBranch " ++ show r
+
 
 instance Exception TypeError
 
@@ -103,7 +115,7 @@ data TCState =
           , stActiveGoal      :: Maybe I.MetaVar
           , stConstraints     :: CSet StageVar
           , stVerbosityLevel  :: Verbosity
-          } deriving(Show)
+          }
 
 type Signature = Map Name I.Global
 
@@ -144,7 +156,7 @@ localGet :: (MonadTCM tcm) => Int -> tcm I.Bind
 localGet k = liftM (`envGet` k) ask
 
 data TCErr = TCErr TypeError
-             deriving(Show, Typeable)
+             deriving(Show,Typeable)
 
 instance Exception TCErr
 
@@ -198,7 +210,7 @@ typeError = throw
 
 throwNotFunction :: (MonadTCM tcm) => I.Term -> tcm a
 throwNotFunction t = do e <- ask
-                        typeError $ NotFunction e t
+                        typeError $ NotFunction Nothing e t
 
 getSignature :: (MonadTCM tcm) => tcm [Named I.Global]
 getSignature = (reverse . stDefined <$> get) >>= mapM mkGlobal
@@ -235,7 +247,7 @@ withEnv :: (MonadTCM tcm) => TCEnv -> tcm a -> tcm a
 withEnv = local . const
 
 freshenName :: (MonadTCM tcm) => Name -> tcm Name
-freshenName x | isNull x  = return $ noName
+freshenName x | isNull x  = return noName
               | otherwise = do xs <- getLocalNames
                                return $ doFreshName xs x
               where
@@ -243,14 +255,16 @@ freshenName x | isNull x  = return $ noName
                                  | otherwise = trySuffix xs y (0 :: Int)
                 trySuffix xs y n | addSuffix y n `notElem` xs = addSuffix y n
                                  | otherwise = trySuffix xs y (n+1)
-                addSuffix x n = modifyName (++ show n) x
+                addSuffix y n = modifyName (++ show n) y
 
 freshenCtx :: (MonadTCM tcm) => I.Context -> tcm I.Context
 freshenCtx CtxEmpty = return CtxEmpty
-freshenCtx (CtxExtend b bs) = do y <- freshenName (I.bindName b)
-                                 let b' = b { I.bindName = y }
-                                 bs' <- pushBind b' (freshenCtx bs)
-                                 return $ CtxExtend b' bs'
+freshenCtx (b :> bs) =
+  do
+    y <- freshenName (I.bindName b)
+    let b' = b { I.bindName = y }
+    bs' <- pushBind b' (freshenCtx bs)
+    return $ b' :> bs'
 
 pushType :: (MonadTCM tcm) => I.Type -> tcm a -> tcm a
 pushType tp m = do x <- freshenName (mkName "x")
@@ -259,13 +273,13 @@ pushType tp m = do x <- freshenName (mkName "x")
 pushBind :: (MonadTCM tcm) => I.Bind -> tcm a -> tcm a
 pushBind b m = do x <- freshenName (I.bindName b)
                   let b' = b { I.bindName = x }
-                  local (flip EnvExtend b') m
+                  local (:< b') m
 
 -- TODO: it should not be necessary to freshen a context everytime
 -- only freshening during scope checking should be enough
 pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
 pushCtx ctx m = do ctx' <- freshenCtx ctx
-                   local (+:+ ctx') m
+                   local (<:> ctx') m
 
 
 -- | Returns the number of parameters of an inductive type.
@@ -323,7 +337,7 @@ allStages = (CS.listNodes . stConstraints) <$> get
 allConstraints :: (MonadTCM tcm) => tcm (CSet StageVar)
 allConstraints = stConstraints <$> get
 
-newConstraints :: (MonadTCM tcm) => (CSet StageVar) -> tcm ()
+newConstraints :: (MonadTCM tcm) => CSet StageVar -> tcm ()
 newConstraints c = modify $ \st -> st { stConstraints = c }
 
 resetConstraints :: (MonadTCM tcm) => tcm ()
@@ -411,4 +425,3 @@ natS =
                 , I.constrRec     = [0]
                 , I.constrIndices = []
                 }
-

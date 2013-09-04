@@ -25,13 +25,11 @@
 module Syntax.Internal where
 
 #include "../undefined.h"
-import Utils.Impossible
 
 import qualified Data.Foldable as Fold
-import Data.Function
-import Data.List
+import Data.Monoid
 
-import Text.PrettyPrint
+import qualified Text.PrettyPrint as PP
 
 import Syntax.Common
 import Syntax.Size
@@ -49,10 +47,10 @@ data Term
     | Lam Context Term
     | App Term [Term]
     | Meta MetaVar
-    | Constr Name (Name, Int) [Term] [Term]
+    | Constr Name (Name, Int) [Term] -- Constructors are applied to parameters
     | Fix FixTerm
     | Case CaseTerm
-    | Ind Annot Name [Term]
+    | Ind Annot Name [Term]  -- Inductive types are applied to parameters
 
 type Type = Term
 
@@ -60,12 +58,12 @@ type Type = Term
 mkPi :: Context -> Term -> Term
 mkPi ctx t | ctxIsNull ctx = t
            | otherwise = case t of
-                           Pi ctx2 t' -> Pi (ctx +: ctx2) t'
+                           Pi ctx2 t' -> Pi (ctx <> ctx2) t'
                            _          -> Pi ctx t
 
 
 unPi :: Term -> (Context, Term)
-unPi (Pi c t) = (c +: c', t')
+unPi (Pi c t) = (c <> c', t')
   where (c', t') = unPi t
 unPi t = (ctxEmpty, t)
 
@@ -85,12 +83,12 @@ unApp t = (t, [])
 mkLam :: Context -> Term -> Term
 mkLam ctx t | ctxIsNull ctx = t
             | otherwise = case t of
-                            Lam ctx2 t' -> Lam (ctx +: ctx2) t'
+                            Lam ctx2 t' -> Lam (ctx <> ctx2) t'
                             _           -> Lam ctx t
 
 
 unLam :: Term -> (Context, Term)
-unLam (Lam c t) = (c +: c', t')
+unLam (Lam c t) = (c <> c', t')
   where (c', t') = unLam t
 unLam t = (ctxEmpty, t)
 
@@ -104,7 +102,7 @@ instance Show MetaVar where
   show (MetaVar k) = show k
 
 instance Pretty MetaVar where
-  prettyPrint (MetaVar k) = text "?" <> int k
+  prettyPrint (MetaVar k) = PP.text "?" PP.<> PP.int k
 
 
 -- | Universes
@@ -150,8 +148,7 @@ unNamed t = Bind noName False t Nothing
 
 renameCtx :: Context -> [Name] -> Context
 renameCtx CtxEmpty [] = CtxEmpty
-renameCtx (CtxExtend b bs) (x:xs) =
-  CtxExtend (b { bindName = x}) (renameCtx bs xs)
+renameCtx (b :> bs) (x:xs) = b { bindName = x} :> renameCtx bs xs
 
 
 -- | Case expressions
@@ -183,8 +180,6 @@ data Branch =
 
 
 newtype Subst = Subst { unSubst :: [(Int, Term)] }
-                deriving(Show)--,Eq)
-
 
 instance HasNames CaseIn where
   name = name . inBind
@@ -209,7 +204,7 @@ data FixTerm =
 data Goal = Goal { goalEnv  :: Environment
                  , goalType :: Type
                  , goalTerm :: Maybe Term
-                 } deriving(Show)
+                 }
 
 mkGoal :: Environment -> Type -> Goal
 mkGoal env tp = Goal env tp Nothing
@@ -241,32 +236,10 @@ data Global
                 , constrIndices :: [Term]
                   -- ^ Indices in the return type
                 }
-  deriving(Show)
 
 isConstr :: Global -> Bool
 isConstr (Constructor {}) = True
 isConstr _                = False
-
-
--- | Equality on terms is only used in the reification to terms, to group
--- contiguous bindings with the same type
--- instance Eq Term where
---   (Sort s1) == (Sort s2) = s1 == s2
---   (Pi c1 t1) == (Pi c2 t2) = c1 == c2 && t1 == t2
---   (Bound n1) == (Bound n2) = n1 == n2
---   (Var x1) == (Var x2) = x1 == x2
---   (Lam c1 t1) == (Lam c2 t2) = c1 == c2 && t1 == t2
---   (App f1 ts1) == (App f2 ts2) = length ts1 == length ts2 &&
---                                  all (uncurry (==)) (zip ts1 ts2) &&
---                                  f1 == f2
---   (Constr _ x1 cid1 ps1 as1) == (Constr _ x2 cid2 ps2 as2) =
---     x1 == x2 && cid1 == cid2 && ps1 == ps2 && as1 == as2
---   (Fix n1 x1 c1 tp1 body1) == (Fix n2 x2 c2 tp2 body2) =
---     n1 == n2 && x1 == x2 && c1 == c2 && tp1 == tp2 && body1 == body2
---   (Case c1) == (Case c2) = c1 == c2
---   (Ind a1 i1) == (Ind a2 i2) = i1 == i2
---   _ == _ = False
-
 
 
 ------------------------------------------------------------
@@ -316,7 +289,7 @@ instance HasAnnot Term where
       mSize (Lam c t) = Lam (modifySize f c) (mSize t)
       mSize (App t ts) = App (mSize t) (map mSize ts)
       mSize t@(Meta _) = t
-      mSize (Constr nm cid pars args) = Constr nm cid (map mSize pars) (map mSize args)
+      mSize (Constr nm cid pars) = Constr nm cid (map mSize pars)
       mSize (Fix c) = Fix (modifySize f c)
       mSize (Case c) = Case (modifySize f c)
       mSize (Ind a x ps) = Ind (f a) x (map (modifySize f) ps)
@@ -328,7 +301,7 @@ instance HasAnnot Term where
   listAnnot (Lam c t) = listAnnot c ++ listAnnot t
   listAnnot (App t ts) = listAnnot t ++ listAnnot ts
   listAnnot t@(Meta _) = []
-  listAnnot (Constr _ _ pars args) = listAnnot pars ++ listAnnot args
+  listAnnot (Constr _ _ pars) = listAnnot pars
   listAnnot (Fix c) = listAnnot c
   listAnnot (Case c) = listAnnot c
   listAnnot (Ind a x _) = case a of
@@ -429,7 +402,7 @@ instance Lift Bind where
 
 instance Lift a => Lift (Ctx a) where
   lift k n CtxEmpty = CtxEmpty
-  lift k n (CtxExtend x xs) = CtxExtend (lift k n x) (lift k (n+1) xs)
+  lift k n (x :> xs) = lift k n x :> lift k (n+1) xs
 
 instance Lift Term where
   lift _ _ t@(Sort _) = t
@@ -440,9 +413,8 @@ instance Lift Term where
   lift k n (App t1 t2) = App (lift k n t1) $ map (lift k n) t2
   lift k n t@(Meta _) = t
   lift k n (Ind a x ps) = Ind a x (map (lift k n) ps)
-  lift k n (Constr x indId ps as) = Constr x indId ps' as'
-                                      where ps' = map (lift k n) ps
-                                            as' = map (lift k n) as
+  lift k n (Constr x indId ps) = Constr x indId ps'
+    where ps' = map (lift k n) ps
   lift k n (Fix f) = Fix (lift k n f)
   lift k n (Case c) = Case (lift k n c)
 
@@ -493,7 +465,7 @@ instance SubstTerm Bind where
 
 instance SubstTerm a => SubstTerm (Ctx a) where
   substN n r CtxEmpty = CtxEmpty
-  substN n r (CtxExtend x xs) = CtxExtend (substN n r x) (substN (n+1) r xs)
+  substN n r (x :> xs) = substN n r x :> substN (n+1) r xs
 
 instance SubstTerm Term where
   substN _ _ t@(Sort _) = t
@@ -506,9 +478,8 @@ instance SubstTerm Term where
   substN i r (App t ts) = App (substN i r t) (map (substN i r) ts)
   substN i r t@(Meta _) = t
   substN i r (Ind a x ps) = Ind a x (map (substN i r) ps)
-  substN i r (Constr x ind ps as) = Constr x ind ps' as'
-                                    where ps' = map (substN i r) ps
-                                          as' = map (substN i r) as
+  substN i r (Constr x ind ps) = Constr x ind ps'
+    where ps' = map (substN i r) ps
   substN i r (Case c) = Case (substN i r c)
   substN i r (Fix f) = Fix (substN i r f)
 
@@ -578,7 +549,7 @@ instance IsFree Term where
   isFree k (App f ts) = isFree k f || any (isFree k) ts
   isFree k (Meta _) = False
   isFree k (Ind _ _ ps) = any (isFree k) ps
-  isFree k (Constr _ _ ps as) = any (isFree k) (ps ++ as)
+  isFree k (Constr _ _ ps) = any (isFree k) ps
   isFree k (Fix f) = isFree k f
   isFree k (Case c) = isFree k c
 
@@ -590,7 +561,7 @@ instance IsFree Term where
   fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
   fvN k (Meta _) = []
   fvN k (Ind _ _ ps) = concatMap (fvN k) ps
-  fvN k (Constr _ _ ps as) = concatMap (fvN k) (ps ++ as)
+  fvN k (Constr _ _ ps) = concatMap (fvN k) ps
   fvN k (Fix f) = fvN k f
 
 instance IsFree FixTerm where
@@ -631,74 +602,7 @@ instance IsFree Bind where
 
 instance IsFree a => IsFree (Ctx a) where
   isFree k CtxEmpty = False
-  isFree k (CtxExtend x xs) = isFree k x || isFree (k+1) xs
+  isFree k (x :> xs) = isFree k x || isFree (k+1) xs
 
   fvN k CtxEmpty = []
-  fvN k (CtxExtend x xs) = fvN k x ++ fvN (k+1) xs
-
-
-
-
-------------------------------------------------------------
--- The Show instances below are used only for debugging.
---
--- Pretty printing of 'Term' is done through the module
--- Syntax.InternaltoAbstract
-------------------------------------------------------------
-
-deriving instance Show Term
-deriving instance Show CaseTerm
-deriving instance Show FixTerm
-deriving instance Show CaseIn
-deriving instance Show Branch
-
--- instance Show a => Show (Ctx a) where
---   show Empctx = ""
---   show (Consctx b c) = show b ++ show c
-
-instance Show Bind where
-  show b = showImplicit b $ concat [ show (bindName b)
-                                   , showDef (bindDef b)
-                                   , show (bindType b)]
-    where
-      showDef Nothing = ""
-      showDef (Just x) = " := " ++ show x
-
--- instance Show Term where
---   show (Sort s) = show s
---   show (Pi bs e) = concat $ "Pi " : map show bs ++ [", ", show e]
---   show (Bound n) = concat ["[", show n, "]"]
---   show (Var x) = show x
---   show (Lam bs e) = concat $ "fun " : map show bs ++ [" => ", show e]
---   show (App e1 es) = "App " ++ show e1 ++ showArgs es
---     where showArgs [] = ""
---           showArgs (e : es) = concat ["(", show e, ") ", showArgs es]
---   show (Case c) = show c
---   show (Fix n x bs tp body) = concat ["fix ", show n, " ", show x, "..."]
---                               -- show bs,
---                               --        " : ", show tp, " := ", show body]
---   show (Constr x i ps as) = concat $ [show x, " ", -- show i,
---                                       --"(",
---                                       intercalate ", " (map show (ps ++ as))] --, ")"]
---   show (Ind a x) = concat [show x] --, "<", show a, ">"]
-
--- instance Show CaseTerm where
---   show (CaseTerm arg nm tp branches) =
---     concat $ [--"<", show tp, ">",
---               "case ", -- on (", show nm, ")  ",
---               show arg] ++
---               map (("| "++) . show) branches
-
--- instance Show Branch where
---   show (Branch nm cid args body) =
---     concat [show nm, " : ", show args, " => ", show body]
-
--- instance Show Global where
---   show (Assumption tp) = "assume " ++ show tp
---   show (Inductive pars indices sort constr) =
---     concat $ [show pars, " : ", show indices, " -> ", show sort,
---               " := "] ++ map show constr
---   show (Constructor name cid pars args indices) =
---     concat [" | ", show name, " : ", show pars, " ", show args, " --> ",
---             show indices]
---   show (Definition t1 t2) = "define : " ++ show t1 ++ " := " ++ show t2
+  fvN k (x :> xs) = fvN k x ++ fvN (k+1) xs

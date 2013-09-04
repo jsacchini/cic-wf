@@ -18,7 +18,8 @@
  -}
 
 {-# LANGUAGE GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
--- Parser Monad. Based on Agda
+
+-- | Parser Monad. Based on code from Agda
 
 module Syntax.ParseMonad where
 

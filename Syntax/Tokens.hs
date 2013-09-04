@@ -77,7 +77,7 @@ symbol :: Position -> String -> Parser Token
 symbol p s =
   case lookup s symbolList of
     Just c  -> return $ TokSymbol c p
-    Nothing -> error "Lexer error: symbol not found"
+    Nothing -> error ("Lexer error" ++ show p ++ ": symbol not found")
   where symbolList =
           [ ("(" , SymbLeftParen)
           , (")" , SymbRightParen)

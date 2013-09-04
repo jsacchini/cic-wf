@@ -1,3 +1,4 @@
+{- Simple Maybe monad transformer -}
 
 module Utils.Maybe where
 

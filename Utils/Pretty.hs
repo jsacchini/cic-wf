@@ -17,6 +17,8 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
+-- | Defines the class 'Pretty' for stuff that can be pretty-printed.
+
 module Utils.Pretty where
 
 import Text.PrettyPrint as PP
@@ -41,11 +43,11 @@ parensIf False = id
 dot, defEq, doubleColon, implies, bar, arrow, langle, rangle, comma :: Doc
 
 dot         = PP.char '.'
-defEq       = PP.text "≔"
-doubleColon = PP.text "∷"
-implies     = PP.text "⇒"
+defEq       = PP.text ":="
+doubleColon = PP.text "::"
+implies     = PP.text "=>"
 bar         = PP.char '|'
-arrow       = PP.text "→"
+arrow       = PP.text "->"
 langle      = PP.char '<'
 rangle      = PP.char '>'
 comma       = PP.char ','

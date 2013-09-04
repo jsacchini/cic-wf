@@ -17,41 +17,43 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
--- | Positions and ranges are used to print information about where errors occur
-
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances
   #-}
+
+-- | Positions and ranges are used to print information about where errors occur
 
 module Syntax.Position where
 
 import Text.PrettyPrint as PP
 
 import Utils.Pretty
-import Utils.Value
 
-
+-- | Datatype for representing positions in a file.
+--   Initial position is (1,1).
 data Position = Pn { posFile :: FilePath,
                      posLine :: Int,
                      posCol :: Int }
                 deriving(Eq)
 
+-- | A range is a pair of 'Position'. An invariant of the representation is
+--   that the 'FilePath' should be the same on both positions.
 data Range = Range { rStart, rEnd :: !Position }
            | NoRange
            deriving(Eq)
 
+-- | Adds a 'Range' to a type.
 data Ranged a = Ranged { rangeTag :: Range,
                          rangedValue :: a }
                 deriving(Show, Eq)
 
-instance HasValue (Ranged a) a where
-  value = rangedValue
-
 instance Functor Ranged where
   fmap f x = x { rangedValue = f (rangedValue x) }
 
+-- | Constructor for 'Ranged'.
 mkRanged :: Range -> a -> Ranged a
 mkRanged = Ranged
 
+-- | Types that have a 'Range'.
 class HasRange a where
   range :: a -> Range
 
@@ -93,44 +95,55 @@ instance HasRange a => HasRange [a] where
 instance HasRange a => HasRange (Maybe a) where
   range = maybe NoRange range
 
+-- | Types where 'Range' can be changed.
 class HasRange t => SetRange t where
   setRange :: Range -> t -> t
 
 instance SetRange Range where
   setRange = const
 
+-- | An invalid position (0,0) for a given filename.
 noPosFile :: FilePath -> Position
 noPosFile f = Pn f 0 0
 
+-- | @'noPosFile' \"\"@
 noPos :: Position
 noPos = noPosFile ""
 
+-- | Initial position (1,1) for a given filename.
 initPosFile :: FilePath -> Position
 initPosFile f = Pn f 1 1
 
+-- | @'initPosFile' \"\"@
 initPos :: Position
 initPos = initPosFile ""
 
+-- | Synonym of 'NoRange'
 noRange :: Range
-noRange = NoRange -- Range noPos noPos
+noRange = NoRange
 
+-- | 'noRange' for a given filename.
 noRangeFile :: FilePath -> Range
 noRangeFile f = Range (noPosFile f) (noPosFile f)
 
 
+-- | @'movePos' p c@ advances 'Position' @p@ by @c@ which can be a whitespace
+--   character (i.e. @\'\\t\'@ or @\'\\n\'@)
 movePos :: Position -> Char -> Position
 movePos (Pn f l c) '\t' = Pn f l (((c+7) `div` 8)*8+1)
 movePos (Pn f l _) '\n' = Pn f (l+1) 1
 movePos (Pn f l c) _    = Pn f l (c+1)
 
+-- | @'advancePos' p n@ advances 'Position' @p@ in the same line by @n@.
 advancePos :: Position -> Int -> Position
 advancePos (Pn f l c) n = Pn f l (c + n)
 
+-- | @'mkRangeLen' p n@ returns a 'Range' from @p@ to @'advancePos' p n@.
 mkRangeLen :: Position -> Int -> Range
 mkRangeLen pos n = Range pos (advancePos pos n)
 
--- Combines two ranges
--- Assumes that the first range is to the left of the second
+-- | Combines two ranges.
+--   Assumes that the first range is to the left of the second
 fuseRange :: (HasRange a, HasRange b) => a -> b -> Range
 fuseRange x y = case (range x, range y) of
                   (Range posl _ , Range _ posr ) -> Range posl posr
@@ -138,6 +151,6 @@ fuseRange x y = case (range x, range y) of
                   (r@(Range _ _), NoRange      ) -> r
                   (_            , _            ) -> NoRange
 
--- fuseRanges only works in non-empty lists
+-- | List version of 'fuseRange'. Expects a non-empty list as argument.
 fuseRanges :: HasRange a => [a] -> Range
 fuseRanges = foldr1 fuseRange . map range

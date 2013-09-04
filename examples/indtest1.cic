@@ -22,4 +22,10 @@ check fun (x : nat) (y : nat) (z: nat) (H : leq x y) => lS x y H.
 
 check forall A:Type, list A.
 
-check fun (A:Type) (x:A) => cons A x (nil A).
+check fun (A:Type) => cons A.
+
+assume A : Type.
+
+check vnil A.
+
+check fun x:A => vcons A O x (vnil A).

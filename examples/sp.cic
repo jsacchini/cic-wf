@@ -7,7 +7,7 @@ data SPi (X ++: Type) (A : Type) (B : Type) : Type :=
 | get : (A -> SPi X A B) -> SPi X A B
 | put : B -> X -> SPi X A B.
 
-data SPc (A : Type) (B : Type) : Type :=
+codata SPc (A : Type) (B : Type) : Type :=
 | out : SPi (SPc A B) A B -> SPc A B.
 
 -- check fun (A B C : Type) (f : A -> SPi C A B) => get C A B f.
@@ -32,3 +32,4 @@ define runc : forall A B : Type, SPc A B -> stream A -> stream B :=
        end.
 
 check runc.
+

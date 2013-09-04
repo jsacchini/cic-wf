@@ -41,7 +41,6 @@ Executable cicminus
                      Utils.Pretty
                      Utils.Impossible
                      Utils.Sized
-                     Utils.Value
                      TypeChecking.Permutation
                      TypeChecking.Constraints
                      TypeChecking.TCM

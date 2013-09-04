@@ -25,8 +25,6 @@ module TypeChecking.PrettyTCM where
 import Control.Applicative hiding (empty)
 import Control.Monad.Reader
 
-import qualified Data.Foldable as Fold
-
 import qualified Text.PrettyPrint as PP
 
 import qualified Utils.Pretty as MP
@@ -130,8 +128,8 @@ instance PrettyTCM Name where
   prettyPrintTCM = return . MP.prettyPrint
 
 instance PrettyTCM Term where
-  prettyPrintTCM x = do traceTCM 99 $ hsep [text "prettyPrintTCM term",
-                                            text ("reifying " ++ show x)]
+  prettyPrintTCM x = do -- traceTCM 99 $ hsep [text "prettyPrintTCM term",
+                        --                     text ("reifying " ++ show x)]
                         x' <- reify x
                         traceTCM 99 $ hsep [text "reified ",
                                             return (MP.prettyPrint x')]
@@ -146,9 +144,9 @@ instance PrettyTCM TCEnv where
                           return $ PP.fsep (PP.punctuate MP.comma ds)
     where
       ppEnv EnvEmpty = return []
-      ppEnv (EnvExtend es e) = do ds <- ppEnv es
-                                  d <- local (const es) $ prettyPrintTCM e
-                                  return (ds ++ [d])
+      ppEnv (es :< e) = do ds <- ppEnv es
+                           d <- local (const es) $ prettyPrintTCM e
+                           return (ds ++ [d])
 
 instance PrettyTCM Bind where
   prettyPrintTCM b =
@@ -173,9 +171,9 @@ instance PrettyTCM Context where
                           return $ PP.fsep (PP.punctuate MP.comma ds)
     where
       prettyCtx CtxEmpty = return []
-      prettyCtx (CtxExtend b bs) = do d <- prettyPrintTCM b
-                                      ds <- pushBind b $ prettyCtx bs
-                                      return (d:ds)
+      prettyCtx (b :> bs) = do d <- prettyPrintTCM b
+                               ds <- pushBind b $ prettyCtx bs
+                               return (d:ds)
 
 instance PrettyTCM CaseIn where
   prettyPrintTCM c = do c' <- reify c

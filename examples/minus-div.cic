@@ -1,13 +1,26 @@
 data ℕ : Type := O : ℕ | S : ℕ → ℕ.
 
-define div : ℕ → ℕ → ℕ :=
-   fix 1 div : ℕ* → ℕ → ℕ* :=
-     λ (m n:ℕ) =>
+define minus : ℕ → ℕ → ℕ :=
+   fix 1 minus : ℕ* → ℕ → ℕ* :=
+     λ (m : ℕ) (n:ℕ) =>
      < ℕ >
      case m of
      | O => O
-     | S m' => S (div ((fix₁ minus : ℕ* → ℕ → ℕ* :=
-                       λ (m n : ℕ) =>
+     | S m' => < ℕ > case n of
+               | O => m
+               | S n' => minus m' n'
+               end
+     end.
+
+
+define div : ℕ → ℕ → ℕ :=
+   fix 1 div : ℕ* → ℕ → ℕ* :=
+     λ (m :ℕ)(n:ℕ) =>
+     < ℕ >
+     case m of
+     | O => O
+     | S m' => S (div ((fix 1 minus : ℕ* → ℕ → ℕ* :=
+                       λ (m : ℕ) (n:ℕ) =>
                        < ℕ > case m of
                                | O => O
                                | S m' => < ℕ > case n of

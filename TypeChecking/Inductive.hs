@@ -27,6 +27,7 @@ import Control.Monad.Reader
 
 import qualified Data.Foldable as Fold
 import Data.Maybe
+import Data.Monoid
 
 import Syntax.Internal hiding (lift)
 import Syntax.Internal as I
@@ -36,7 +37,8 @@ import Syntax.Size
 import qualified Syntax.Abstract as A
 import TypeChecking.Conversion
 import TypeChecking.TCM
-import TypeChecking.PrettyTCM
+import qualified TypeChecking.PrettyTCM as PP ((<>))
+import TypeChecking.PrettyTCM hiding ((<>))
 import TypeChecking.Whnf
 import {-# SOURCE #-} TypeChecking.TypeChecking
 
@@ -57,7 +59,7 @@ inferInd i@(A.InductiveDef {}) =
        _          <- isSort (range (A.indType i)) s2
        (args, s3) <- isArity (range (A.indType i)) tp'
        cs         <- mapM (pushCtx pars' . flip checkConstr (A.indName i, pars', args, s3)) (A.indConstr i)
-       traceTCM 30 $ text ("Constructors\n" ++ show cs)
+       -- traceTCM 30 $ text ("Constructors\n" ++ show cs)
 
        -- Preparing the constructors
        -- We replace all occurrences of other inductive types with infty
@@ -71,7 +73,7 @@ inferInd i@(A.InductiveDef {}) =
            replInd c = c { constrArgs = substIndCtx (A.indName i) numPars 0 (constrArgs c) }
            cs' = map (fmap (replInd . replInfty)) cs
 
-       traceTCM 30 $ text ("Constructors!!!\n" ++ show cs')
+       -- traceTCM 30 $ text ("Constructors!!!\n" ++ show cs')
 
        removeStages annots
        return $ mkNamed (A.indName i) (Inductive (A.indKind i) (replInfty pars') (A.indPolarities i) (replInfty args) s3 constrNames) : fillIds cs'
@@ -120,8 +122,8 @@ substIndCtx :: Name -> Int -> Int -> Context -> Context
 substIndCtx nmInd numPars var ctx =
   case ctx of
     CtxEmpty -> CtxEmpty
-    CtxExtend b ctx' ->
-      CtxExtend b' (substIndCtx nmInd numPars (var + 1) ctx')
+    b :> ctx' ->
+      b' :> substIndCtx nmInd numPars (var + 1) ctx'
         where
           b' = b { bindType = substInd nmInd numPars var (bindType b) }
 
@@ -142,11 +144,11 @@ inferParam (A.Bind _ names tp) | isJust (implicitValue tp) =
 
 inferParamList :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
 inferParamList CtxEmpty = return (CtxEmpty, Prop)
-inferParamList (CtxExtend p ps) =
+inferParamList (p :> ps) =
   do (ctx1, s1) <- inferParam p
      (ctx2, s2) <- pushCtx ctx1 $ inferParamList ps
      s' <- maxSort s1 s2
-     return (ctx1 +: ctx2, s')
+     return (ctx1 <> ctx2, s')
 
 
 checkConstr :: (MonadTCM tcm) =>  A.Constructor -> (Name, Context, Context, Sort) -> tcm (Named Global)
@@ -163,7 +165,7 @@ checkConstr (A.Constructor _ name tp)
        traceTCM 30 $ vcat [ text "Sort of inductive type:" <+> prettyPrintTCM (Sort sortInd)
                           , text "Sort of constructor:" <+> prettyPrintTCM (Sort s') ]
        unlessM (subType s' sortInd) $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd
-       let indBind = mkBind nmInd (mkPi (parsInd +: indicesInd) (Sort sortInd))
+       let indBind = mkBind nmInd (mkPi (parsInd <> indicesInd) (Sort sortInd))
        (args, indices, recArgs) <- pushBind indBind $
                                    isConstrType name nmInd numPars tp'
 
@@ -172,7 +174,7 @@ checkConstr (A.Constructor _ name tp)
       where numPars = ctxLen parsInd
             indType
               | ctxLen parsInd + ctxLen indicesInd == 0 = Sort sortInd
-              | otherwise = Pi (parsInd +: indicesInd) (Sort sortInd)
+              | otherwise = Pi (parsInd <> indicesInd) (Sort sortInd)
             indBind = mkBind nmInd indType
 
 -- TODO: check that inductive type are applied to the parameters in order
@@ -205,7 +207,7 @@ isConstrType nmConstr nmInd numPars tp =
          when (i /= numInd) $ error $ "Not constructor other " ++ show nmConstr
          return (ctx, [], recArgs)
 
-       t'                 -> error $ "Not constructor 2. Make up value in TCErr " ++ show t' ++ " on " ++ show nmConstr
+       t'                 -> error $ "Not constructor 2. Make up value in TCErr " -- ++ show t' ++ " on " ++ show nmConstr
 
 
 -- | Checks that the inductive type var (Bound var 0) appears strictly positive
@@ -214,7 +216,7 @@ checkStrictPos :: (MonadTCM tcm) => Name -> Context -> tcm [Int]
 checkStrictPos nmConstr ctx = cSP 0 ctx
   where
     cSP _ CtxEmpty = return []
-    cSP k (CtxExtend (b@(Bind x _ t Nothing)) ctx)
+    cSP k ((b@(Bind x _ t Nothing)) :> ctx)
       | not (isFree k t) = pushBind b $ cSP (k + 1) ctx
       | otherwise = do
         -- traceTCM_ ["considering arg ", show k, "  -->  ", show (Bind x t)]
