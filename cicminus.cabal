@@ -23,35 +23,38 @@ Executable cicminus
   Build-Tools:       alex -any,
                      happy -any
   extensions:        CPP
-  other-modules:     Syntax.Lexer
-                     Syntax.Parser
+  other-modules:
                      Syntax.Abstract
+                     Syntax.Alex
+                     Syntax.Common
                      Syntax.Internal
                      Syntax.InternaltoAbstract
-                     Syntax.Position
-                     Syntax.Alex
+                     Syntax.Lexer
                      Syntax.ParseMonad
-                     Syntax.Tokens
-                     Syntax.Common
+                     Syntax.Parser
+                     Syntax.Position
                      Syntax.Scope
                      Syntax.Size
+                     Syntax.Tokens
                      Utils.Fresh
-                     Utils.Misc
-                     Utils.Maybe
-                     Utils.Pretty
                      Utils.Impossible
+                     Utils.Maybe
+                     Utils.Misc
+                     Utils.MonadUndo
+                     Utils.Pretty
                      Utils.Sized
-                     TypeChecking.Permutation
+                     TypeChecking.Case
                      TypeChecking.Constraints
-                     TypeChecking.TCM
+                     TypeChecking.Conversion
+                     TypeChecking.Fix
+                     TypeChecking.Inductive
+                     TypeChecking.Permutation
                      TypeChecking.PrettyTCM
+                     TypeChecking.RecCheck
+                     TypeChecking.TCM
                      TypeChecking.TCMErrors
                      TypeChecking.TypeChecking
-                     TypeChecking.Whnf
-                     TypeChecking.Conversion
                      TypeChecking.Unification
-                     TypeChecking.Fix
-                     TypeChecking.Case
-                     TypeChecking.Inductive
+                     TypeChecking.Whnf
                      TopLevel.Monad
                      TopLevel.TopLevel
