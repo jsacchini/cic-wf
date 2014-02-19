@@ -1,8 +1,8 @@
 data list (A:Type) : Type := | nil : list A -- firs constructor
                              | cons : A -> list A -> list A. -- second
 
-data nat : Type := O : nat | S : nat -> nat.
+-- data nat : Type := O : nat | S : nat -> nat.
 
 data vec (A:Type) : nat -> Type :=
 | vnil : vec A O
-| vcons : forall n : nat, A -> vec A n -> vec A (S n).
+| vcons : forall n : nat. A -> vec A n -> vec A (S n).

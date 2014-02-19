@@ -7,14 +7,11 @@ data IOi (X ++: Type) : Type :=
 codata IOc : Type :=
 | io_out : IOi IOc -> IOc.
 
-define comp : IOc -> IOc -> IOc :=
-  cofix comp_c : IOc -> IOc -> IOc* :=
-    fun (s : IOc) (t : IOc) =>
+cofixpoint comp_c (s : IOc) (t : IOc) : IOc* :=
     <IOc> case s of
             io_out s' =>
             io_out
-            ((fix 1 comp_i : IOi* IOc -> IOc -> IOi IOc :=
-              fun (s : IOi IOc) (t : IOc) =>
+            ((fix comp_i (s : IOi* IOc) (t : IOc) : IOi IOc :=
               <IOi IOc> case s of
                     | bot => bot IOc
                     | plus s' => plus IOc (comp_c s' t)
@@ -30,4 +27,4 @@ define comp : IOc -> IOc -> IOc :=
                     end ) s' t)
            end.
 
-check comp.
+print comp_c.

@@ -1,0 +1,37 @@
+data list (A++:Type) : Type :=
+     | nil : list A
+     | cons : A -> list A -> list A.
+
+
+fixpoint map (A B : Type) (f : A -> B) (xs: list A) { rec xs } : list B :=
+  <list B>
+  case xs of
+  | nil => nil B
+  | cons y ys => cons B (f y) (map A B f ys)
+  end.
+
+data tree (A++:Type) : Type :=
+  node : A -> list (tree A) -> tree A.
+
+-- fixpoint tmap (A B : Type) (f: A -> B) (t : tree A) { rec t } : tree B :=
+--   <tree B>
+--   case t of
+--   | node x ts => node B (f x) (map (tree A) (tree B) (tmap A B f) ts)
+--   end.
+
+fixpoint tmap (A B : Type) (f: A -> B) (t : tree* A) {- rec t -} : tree B :=
+  <tree B>
+  case t of
+  | node x ts => node B (f x)
+    ((fix lmap (xs : list* (tree A)) {- rec xs -} : list (tree B) :=
+       <list (tree B)>
+       case xs of
+       | nil => nil (tree B)
+       | cons y ys => cons (tree B) (tmap A B f y) (lmap ys)
+       end) ts)
+  end.
+
+
+print map.
+print node.
+print tmap.

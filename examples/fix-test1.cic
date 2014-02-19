@@ -1,6 +1,6 @@
-data nat : Type := O : nat | S : nat -> nat.
+-- data nat : Type := O : nat | S : nat -> nat.
 
-define id := fix 1 f : nat* -> nat* := fun x : nat =>
+define id := fix f (x : nat*) : nat* :=
              < nat > case x of
                      | O => O
                      | S x' => S (f x')

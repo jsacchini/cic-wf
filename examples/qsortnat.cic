@@ -1,0 +1,62 @@
+data list (A : Type) : Type :=
+| nil : list A
+| cons : A -> list A -> list A.
+
+data bool : Type := true : bool | false : bool.
+
+fixpoint filter (A : Type) (f : A -> bool) (l : list A) {rec l}: list A :=
+                 < list A > case l of
+                            | nil => nil A
+                            | cons h t => < list A > case f h of
+                                          | true => cons A h (filter A f t)
+                                          | false => filter A f t
+                                          end
+                            end.
+
+-- assume filter : {i} => forall (A:Type) (f:A -> bool). list<i> A -> list<i> A.
+
+define append := fun (A : Type) =>
+                 fix append (l1 : list* A) (l2 : list A) : list A :=
+                 < list A > case l1 of
+                            | nil => l2
+                            | cons h t => cons A h (append t l2)
+                            end.
+
+
+fixpoint leq (m : nat*) (n:nat) : bool :=
+  <bool> case m of
+         | O => true
+         | S m' => <bool>
+                   case n of
+                   | S n' => leq m' n'
+                   | O => false
+                   end
+         end.
+
+define not := fun b : bool => < bool > case b of true => false | false => true end.
+
+define gt := fun (x : nat) (y : nat) => not (leq x y).
+
+define quicksort : {i} => list nat<i> -> list nat :=
+  fix qsort (l : list {-15-} nat) {rec l}: list {-16-} nat :=
+                    < list{-18-} nat > case l {-17-}  of
+                               | nil => nil{-19-} nat
+                               | cons h t =>
+                               append nat (qsort (filter nat (gt h) t))
+                               (cons {-20-} nat h (qsort (filter nat (leq h) t)))
+                               end.
+
+-- print filter.
+-- check quicksort.
+
+-- eval quicksort (nil nat).
+-- eval quicksort (cons nat 1 (nil nat)).
+
+define cn := cons nat.
+define nn := nil nat.
+
+eval quicksort (cn 8 (cn 4 (cn 10 (cn 1 (cn 2 nn))))).
+
+print quicksort.
+
+print filter.

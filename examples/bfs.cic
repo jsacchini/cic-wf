@@ -1,6 +1,6 @@
 {- See Abel & Pientka, ICFP 2013 -}
 
-data nat : Type := O : nat | S : nat -> nat.
+-- data nat : Type := O : nat | S : nat -> nat.
 
 codata cotree (A ++: Type) : Type :=
   node : A -> cotree A -> cotree A -> cotree A.
@@ -9,27 +9,23 @@ codata stream (A ++:Type) : Type :=
   ccons : A -> stream A -> stream A.
 
 
-define bf2 := fun A : Type =>
-  cofix bf2 : stream* (stream A) -> stream* (stream A) :=
-    fun (xs : stream (stream A)) =>
+cofixpoint bf2 (A : Type) (xs : stream* (stream A)) : stream* (stream A) :=
       <stream (stream A)>
         case xs of
                 | ccons xs' ys => <stream (stream A)>
                                   case xs' of
-                                    | ccons x' xs'' => ccons (stream A) xs'' (bf2 (bf2 ys))
+                                    | ccons x' xs'' => ccons (stream A) xs'' (bf2 A (bf2 A ys))
                                   end
              end.
 
 check bf2.
 
-define bf1 := fun A : Type =>
-  cofix bf1 : stream* (stream A) -> cotree* A :=
-    fun (xs : stream (stream A)) =>
+cofixpoint bf1 (A : Type) (xs : stream* (stream A)) : cotree* A :=
       <cotree A>
         case xs of
                 | ccons xs' ys => <cotree A>
                                   case xs' of
-                                    | ccons x' xs'' => node A x' (bf1 ys) (bf1 (bf2 A ys))
+                                    | ccons x' xs'' => node A x' (bf1 A ys) (bf1 A (bf2 A ys))
                                   end
              end.
 
@@ -37,8 +33,7 @@ check bf1.
 
 
 define bfp2 := fun A : Type =>
-  cofix bfp2 : stream* A -> stream* (stream A) :=
-    fun (xs : stream A) =>
+  cofix bfp2 (xs : stream* A) : stream* (stream A) :=
     <stream (stream A)>
     case xs of
     | ccons x xs' => ccons (stream A) xs' (bf2 A (bf2 A (bfp2 (ccons A x xs'))))
@@ -51,7 +46,7 @@ check bfp2.
 check bfp1.
 
 define zeros := cofix zeros : stream* nat := ccons nat 0 zeros.
-define nats := cofix nats : nat -> stream nat := fun n : nat => ccons nat n (nats (S n)).
+define nats := cofix nats (n : nat) : stream* nat := ccons nat n (nats (S n)).
 
 define zt := cofix zt : cotree* nat := node nat 0 zt zt.
 
@@ -69,5 +64,6 @@ define force2 := fun (t : cotree nat) =>
                    end
   end.
 
+check force2.
 
-eval force2 (bfp1 nat (nats 0)).
+eval force nat (bfp1 nat (nats 0)).

@@ -4,21 +4,18 @@ data list (A : Type) : Type :=
 
 data bool : Type := true : bool | false : bool.
 
-define filter := fun (A : Type) (f : A -> bool) =>
-                 fix 1 filter : list* A -> list* A :=
-                 fun (l : list A) =>
+fixpoint filter (A : Type) (f : A -> bool) (l : list* A) : list* A :=
                  < list A > case l of
                             | nil => nil A
                             | cons h t => < list A > case f h of
-                                          | true => cons A h (filter t)
-                                          | false => filter t
+                                          | true => cons A h (filter A f t)
+                                          | false => filter A f t
                                           end
                             end.
 
 
 define append := fun (A : Type) =>
-                 fix 1 append : list* A -> list A -> list A :=
-                 fun (l1 : list A) (l2 : list A) =>
+                 fix append (l1 : list* A) (l2 : list A) : list A :=
                  < list A > case l1 of
                             | nil => l2
                             | cons h t => cons A h (append t l2)
@@ -32,13 +29,14 @@ define not := fun b : bool => < bool > case b of true => false | false => true e
 
 define geq := fun (x : A) (y : A) => not (leq x y).
 
-define quicksort := fix 1 qsort : list* A -> list A :=
-                    fun (l : list A) =>
-                    < list A > case l of
-                               | nil => nil A
+define quicksort := fix qsort (l : list* {-15-} A) : list {-16-} A :=
+                    < list{-18-} A > case l {-17-}  of
+                               | nil => nil{-19-} A
                                | cons h t =>
-                               append A (filter A (leq h) t)
-                               (cons A h (filter A (geq h) t))
+                               append A (qsort (filter A (leq h) t))
+                               (cons {-20-} A h (qsort (filter A (geq h) t)))
                                end.
+
+print filter.
 
 check quicksort.

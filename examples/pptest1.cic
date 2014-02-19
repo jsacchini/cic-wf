@@ -1,5 +1,0 @@
-define t1 := forall (x y : A) {_ _ : B}, fun (x y : A) (x y : A) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (x y : A) (x y : A)(x y : A) (x y : A) (x y : A)(x y : A) (x y : A) (x y : A) { _ _ x : B } => fun _ : A => X a b g  e t s t y u f a w e r t sdfd df sds dfs dsdf sdf sd fsd sdfd fsdf sdfsd fsd sdf sd fsd fsdf sdf sd fsd fsdf sd fsdfs df.
-
-define t1 := forall (x y : A) {_ _ : B}, fun (x y : A) (x y : A) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (_ : B) (x y : A) (x y : A) (x y : A)(x y : A) (x y : A) (x y : A)(x y : A) (x y : A) (x y : A) { _ _ x : B } => X.
-
-define t2 := forall (x y : A) {_ _ : B}, fun (x y : A) => X a b g  e t s t y u f a w e r t.

@@ -1,4 +1,0 @@
-data nat : Type := O : nat | S : nat -> nat.
-
-check fun x : nat => S x.
-

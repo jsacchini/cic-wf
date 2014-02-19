@@ -1,2 +1,0 @@
-define leqS_False := <Prop> case x in [(n0:Prop)] I a b of
-                     end.

@@ -1,20 +1,20 @@
-data nat : Type := O : nat | S : nat -> nat.
+-- data nat : Type := O : nat | S : nat -> nat.
 
 data vec (A : Type) : nat -> Type :=
 | vnil : vec A 0
-| vcons : forall (n : nat), A -> vec A n -> vec A (S n).
+| vcons : forall (n : nat). A -> vec A n -> vec A (S n).
 
 
 define head :=
   fun (A : Type) (n : nat) (v : vec A (S n)) =>
-  < A > case v1 := v in [(n0 : nat)] vec (S n0) of
-    | vcons n x xs => x
+  < A > case v1 := v in vec _ (S n) of
+    | vcons (n) x xs => x
   end.
 
 define tail :=
   fun (A : Type) (n : nat) (v : vec A (S n)) =>
-  < vec A n0 > case v1 := v in [(n0 : nat)] vec (S n0) of
-    | vcons n x xs => xs
+  < vec A n > case v1 := v in vec _ (S n) of
+    | vcons (n) x xs => xs
   end.
 
 check head.

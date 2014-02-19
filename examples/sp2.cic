@@ -18,7 +18,7 @@ define runc :=
   cofix runc (sp : SPc* A B) (xs: stream A) : stream* B :=
       < stream B > case sp of
       | out spi =>
-      ( fix run (sp : SPi* (SPc A B) A B) (zs: stream A) : stream B :=
+      ( fix run (sp : SPi (SPc A B) A B) (zs: stream A) {rec sp}: stream B :=
         < stream B >
         case sp of
         | get f => < stream B > case xs of

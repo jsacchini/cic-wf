@@ -1,5 +1,0 @@
-let id := fun (A : Type) (x : A) => x.
-
-axiom False : forall P:Type, P.
-      
-(* axiom AA := Type. *)
