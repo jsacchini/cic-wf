@@ -1,0 +1,33 @@
+{- See Data-Oblivious Stream Productivity (long version available at arxiv) -}
+data IOi (X ++: Type) : Type :=
+| plus : X -> IOi X
+| minus : IOi X -> IOi X
+| bot : IOi X.
+
+codata IOc : Type :=
+| io_out : IOi IOc -> IOc.
+
+define comp : IOc -> IOc -> IOc :=
+  cofix comp_c : IOc -> IOc -> IOc* :=
+    fun (s : IOc) (t : IOc) =>
+    <IOc> case s of
+            io_out s' =>
+            io_out
+            ((fix 1 comp_i : IOi* IOc -> IOc -> IOi IOc :=
+              fun (s : IOi IOc) (t : IOc) =>
+              <IOi IOc> case s of
+                    | bot => bot IOc
+                    | plus s' => plus IOc (comp_c s' t)
+                    | minus s' =>
+                    <IOi IOc> case t of
+                            io_out t' =>
+                            <IOi IOc> case t' of
+                                  | bot => bot IOc
+                                  | plus t'' => comp_i s' t''
+                                  | minus t'' => minus IOc (comp_i s' (io_out t''))
+                                  end
+                          end
+                    end ) s' t)
+           end.
+
+check comp.
