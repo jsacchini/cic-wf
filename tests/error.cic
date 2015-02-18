@@ -1,0 +1,5 @@
+define id := fun (A : Type) (x : A) => x.
+
+assume False : forall P:Type. P.
+
+-- axiom AA := Type.

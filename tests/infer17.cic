@@ -1,0 +1,17 @@
+-- fixpoint plus (m: nat) (n:nat) {struct m}: nat :=
+--      < nat > case m of
+--              | O => n
+--              | S m' => S (plus m' n)
+--              end.
+fixpoint minus (m: nat) (n:nat) { struct m } : nat :=
+                      < nat >
+                        case m of
+                        | O => O
+                        | S m' => < nat > case n of
+                                  | O => m
+                                  | S n' => (minus m' n')
+                                  end
+                        end.
+
+print minus.
+-- print plus.

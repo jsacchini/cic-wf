@@ -1,0 +1,8 @@
+-- Weird behavior:
+-- id is well typed, but id2 is not. However, reifying id shows id2
+define id : {i j} => nat<i> -> nat<j> -> nat<j> := fun (x:nat) (y:nat) => x.
+
+print id.
+
+-- This can be solved by re-typechecking the type for each bind
+-- define id2 : {i j} => nat<i> -> nat<j> -> nat<j> := fun x y:nat => x.

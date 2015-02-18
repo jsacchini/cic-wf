@@ -1,0 +1,59 @@
+data list (A : Type) : Type :=
+| nil : list A
+| cons : A -> list A -> list A.
+
+data bool : Type := true : bool | false : bool.
+
+fixpoint filter (A : Type) (f : A -> bool) (l : list* A) : list* A :=
+                 < list A > case l of
+                            | nil => nil A
+                            | cons h t => < list A > case f h of
+                                          | true => cons A h (filter A f t)
+                                          | false => filter A f t
+                                          end
+                            end.
+
+-- assume filter : {i} => forall (A:Type) (f:A -> bool). list<i> A -> list<i> A.
+
+
+fixpoint leq (m : nat*) (n:nat) : bool :=
+  <bool> case m of
+         | O => true
+         | S m' => <bool>
+                   case n of
+                   | O => false
+                   | S n' => leq m' n'
+                   end
+         end.
+
+
+-- print filter.
+-- check quicksort.
+
+-- eval quicksort (nil nat).
+-- eval quicksort (cons nat 1 (nil nat)).
+-- eval quicksort (cons nat 2 ((cons nat 1 (nil nat)))).
+
+eval filter nat (leq 0) (cons nat 0 (nil nat)).
+
+eval leq 1 0.
+
+-- eval  <bool> case 1 of
+--          | O => true
+--          | S m' => <bool>
+--                    case 1 of
+--                    | O => false
+--                    | S n' => leq m' n'
+--                    end
+--          end.
+
+-- eval leq 23 24.
+
+-- eval (fun (A:Type) (f:A -> bool) (l:list A) =>
+--                  < list A > case l of
+--                             | nil => nil A
+--                             | cons h t => < list A > case f h of
+--                                           | true => cons A h (filter A f t)
+--                                           | false => filter A f t
+--                                           end
+--                             end) nat (leq 1) (cons nat 0 (nil nat)).

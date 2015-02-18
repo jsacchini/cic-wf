@@ -1,0 +1,69 @@
+define t1 := λ {_ : Prop} (x y : Prop) => S O.
+
+define t2 := Π (x _ y _ : Prop) { y: Type2}. x.
+
+define t3 : Prop -> Prop := Prop.
+
+define t4 : { i j } => Prop -> nat := Prop.
+
+define t5 := forall x y:Prop. forall x:Prop. Prop.
+
+assume t6 : forall x:Prop. nat.
+
+assume t7 : { i } => nat <i+2>.
+
+define t8 := fix loop (x y : nat) ( z: nat ) { struct x } : nat := S O.
+
+define t9 := fix loop (x y : nat) ( z: nat* ) : nat := S O.
+
+define t10 := fix loop <i> (x y : nat<i>) ( z: nat ) : nat<i+1> := S O.
+
+define plus := case O of
+              | O => O
+              | S m' => S (nat m' O)
+              end.
+
+define plus :=
+   fix plus (x : nat*) (y : nat) : nat :=
+     λ (m n : nat) => < nat >
+                        case m of
+                        | O => n
+                        | S m' => S (plus m' n)
+                        end.
+
+define plus :=
+   fix plus <i> (x : nat<i>) (y : nat) : nat<i+1> :=
+     λ (m n : nat) => < nat >
+                        case m of
+                        | O => n
+                        | S m' => S (plus m' n)
+                        end.
+
+define plus :=
+   cofix plus (x : nat*) (y : nat) : nat<*> :=
+     λ (m n : nat) => < nat >
+                        case m of
+                        | O => n
+                        | S m' => S (plus m' n)
+                        end.
+
+define vtail := λ (A : Type) (n : nat) (v : nat A (S n)) =>
+                < nat A n >
+                case v1 := v in nat _ .(n0 := S n) .A of
+                | S t1 => t1
+                | S .A => A
+                end.
+
+cofixpoint plus (x : nat*) (y : nat) : nat :=
+     λ (m n : nat) => < nat >
+                        case m of
+                        | O => n
+                        | S m' => S (plus m' n)
+                        end.
+
+fixpoint plus <i> (x : nat<i>) (y : nat) : nat<i+1> :=
+     λ (m n : nat) => < nat >
+                        case m of
+                        | O => n
+                        | S m' => S (plus m' n)
+                        end.

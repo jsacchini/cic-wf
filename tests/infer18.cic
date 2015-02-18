@@ -1,0 +1,1 @@
+define t := fix f (n:nat* -> nat) : nat -> nat := fun n:nat => n.

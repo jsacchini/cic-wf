@@ -1,0 +1,20 @@
+data list (A : Type) : Type :=
+| nil : list A
+| cons : A -> list A -> list A.
+
+data bool : Type := true : bool | false : bool.
+
+assume A : Type.
+assume a : A.
+fixpoint filter (f : A -> bool) (l : list A) {struct l}: list A :=
+                 < list A > case l of
+                            | nil => cons A a (cons A a (cons A a (nil A)))
+                            | cons h t => < list A > case f h of
+                                          | true => cons A h (filter f t)
+                                          | false => filter f t
+                                          end
+                            end.
+
+-- assume filter : {i} => forall (A:Type) (f:A -> bool). list<i> A -> list<i> A.
+
+print filter.

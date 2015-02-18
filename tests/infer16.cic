@@ -1,0 +1,15 @@
+data vec (A:Type) : nat -> Type :=
+| vnil : vec A O
+| vcons : forall n : nat. A -> vec A n -> vec A (S n).
+
+define vtail := λ (A : Type) (n : nat) (v : vec A (S n)) =>
+                < vec A n >
+                case v1 := v in vec _ (n1:=S n) of
+                | vcons (n0:=n) h1 t1 => t1
+                end.
+
+define vhead := λ (A : Type) (n : nat) (v : vec A (S n)) =>
+                < A >
+                case v1 := v in vec _ (S n) of
+                | vcons (n) h1 _ => h1
+                end.

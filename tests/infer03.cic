@@ -1,0 +1,3 @@
+define t3 : nat -> nat := fun x : nat => S x.
+
+define t1 := fun x x x y z w : nat => S x.

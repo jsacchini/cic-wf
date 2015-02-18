@@ -1,0 +1,11 @@
+define t1 := fun x x _ _:Type -> Type => O.
+
+-- define t1 := fun x x _ _:Type -> Type => O.
+
+define t2 := S O.
+
+define t11 := Type -> Type.
+
+define t3 := forall (f x _ _:Prop -> Type) (x x y : Prop). f x.
+
+eval t3.

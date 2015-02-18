@@ -1,0 +1,4 @@
+define f0 := fix f0 (m:nat<*>) : nat :=
+       <nat> case m of O => O | S m' => S (f0 m') end.
+
+print f0.

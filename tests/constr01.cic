@@ -1,0 +1,3 @@
+define id : { i j } => nat<i> -> nat<j> := fun x:nat => S x.
+
+print id.

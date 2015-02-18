@@ -1,0 +1,11 @@
+data vec (A++:Type) : nat -> Type :=
+| vnil : vec A O
+| vcons : forall n : nat. A -> vec A n -> vec A (S n).
+
+data ord : Type :=
+| zero : ord
+| succ : ord -> ord
+| lim : (nat -> ord) -> ord.
+
+data forest (A++:Type) : Type :=
+  node : forall n:nat. vec (forest A) n -> forest A.

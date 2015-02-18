@@ -1,0 +1,7 @@
+fixpoint id (n : nat) { struct n } : nat :=
+  <nat> case n of
+  | O => 3
+  | S x => S (id x)
+  end.
+
+print id.

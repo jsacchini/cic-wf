@@ -1,0 +1,15 @@
+define t1 := Prop.
+
+define t2 := Type.
+
+define t3 := t1.
+
+define t4 := t2.
+
+define t5 : Type2 := t2.
+
+define t6 := forall x:Prop. x.
+
+define t7 := fun x _ _:Type -> Type => Prop.
+
+define t8 := S.

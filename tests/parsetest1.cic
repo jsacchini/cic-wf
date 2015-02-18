@@ -1,0 +1,1 @@
+define t1 := fun (x  _ : A) => z.

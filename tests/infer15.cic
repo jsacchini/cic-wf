@@ -1,0 +1,13 @@
+data I : nat -> nat -> nat -> Type :=
+| C0 : I O O O
+| C1 : forall n: nat. I n n O -> I (S n) n O.
+
+
+define t := fun (m n k: nat) (x : I (S m) m k) =>
+        <nat>
+        case x in I (n0:=S m) (n1:=m) k0 of
+        | C1 (m) x' => O
+        end.
+
+print C0.
+check t.

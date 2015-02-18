@@ -1,0 +1,17 @@
+fixpoint plus (m: nat<*>) (n:nat) : nat :=
+     < nat > case m of
+             | O => n
+             | S m' => S (plus m' n)
+             end.
+
+eval plus O (S (S (S O))).
+
+define mult : nat -> nat -> nat :=
+   fix mult (m: nat<*>) (n:nat) : nat :=
+                      < nat >
+                        case m of
+                        | O => O
+                        | S m' => plus n (mult m' n)
+                        end.
+
+eval mult 12 12.

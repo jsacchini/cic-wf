@@ -1,0 +1,96 @@
+define id := λ (A : Type) (x : A) => x.
+
+assume False : forall P:Type. P.
+
+assume True : forall P:Type. P -> P.
+
+
+data list (A:Type) : Type := | nil : list A -- firs constructor
+                             | cons : A -> list A -> list A. -- second
+
+-- data nat : Type := O : nat | S : nat -> nat.
+
+data vec (A:Type) : nat -> Type :=
+| vnil : vec A O
+| vcons : forall n : nat. A -> vec A n -> vec A (S n).
+
+fixpoint plus (m: nat<*>) (n:nat) : nat :=
+     < nat > case m of
+             | O => n
+             | S m' => S (plus m' n)
+             end.
+
+-- assume plus : nat -> nat -> nat.
+
+define idNat : { i } => nat<i> -> nat<i> := fun x:nat => x.
+
+fixpoint minus <i> (m: nat<i>) (n:nat) : nat<i> :=
+                      < nat >
+                        case m of
+                        | O => O
+                        | S m' => < nat > case n of
+                                  | O => m
+                                  | S n' => minus m' n'
+                                  end
+                        end.
+
+define mult : nat -> nat -> nat :=
+   fix mult (m: nat<*>) (n:nat) : nat :=
+                      < nat >
+                        case m of
+                        | O => O
+                        | S m' => plus n (mult m' n)
+                        end.
+
+define div : {i} => nat<i> -> nat -> nat<i> :=
+   fix div (m: nat<*>) (n: nat) : nat* :=
+     < nat >
+     case m of
+     | O => O
+     | S m' => S (div (minus m' n) n)
+     end.
+
+define fact : nat -> nat :=
+  fix fact (m: nat<*>) : nat :=
+    < nat >
+    case m of
+    | O => S O
+    | S m' => mult (fact m') m
+    end.
+
+define vtail := λ (A : Type) (n : nat) (v : vec A (S n)) =>
+                < vec A n >
+                case v1 := v in vec _ (n1:=S n) of
+                | vcons (n0:=n) h1 t1 => t1
+                end.
+
+define vhead := λ (A : Type) (n : nat) (v : vec A (S n)) =>
+                < A >
+                case v1 := v in vec _ (S n) of
+                | vcons (n) h1 _ => h1
+                end.
+
+check λ (A : Type) => vnil A.
+
+check λ (A : Type) (m n : nat) (v : vec A n) (x : A)  => vcons A n x v.
+
+
+eval fact 6.
+
+eval div 13 11.
+
+check vtail.
+
+check vhead.
+
+check fun (A : Type)  => vcons A O.
+
+check plus.
+
+check idNat.
+
+print minus.
+print div.
+print vec.
+print vcons.
+print vtail.

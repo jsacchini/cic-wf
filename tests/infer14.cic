@@ -1,0 +1,6 @@
+fixpoint succ (m : nat*)
+         : nat* :=
+         S m.
+
+print succ.
+check succ.

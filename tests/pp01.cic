@@ -1,0 +1,9 @@
+data vec (A : Type) : nat -> Type  :=
+| vnil : vec A O
+| vcons : forall n : nat. A -> vec A n -> vec A (S n).
+
+assume A : Type.
+
+check vnil A.
+
+check vnil nat.

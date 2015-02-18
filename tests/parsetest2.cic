@@ -1,0 +1,2 @@
+-- TODO: add a constructor Parens to Abstract to forbid this example
+eval (A (B) : Type) -> A.

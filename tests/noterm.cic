@@ -1,0 +1,1 @@
+define t := fix loop (x:nat*) : nat* := loop x.

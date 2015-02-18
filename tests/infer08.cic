@@ -1,0 +1,5 @@
+define t1 := fun x y z : nat => z.
+
+define t2 := t1 O O.
+
+print t2.

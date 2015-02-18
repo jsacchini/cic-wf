@@ -1,0 +1,10 @@
+data vec (A++:Type) : nat -> Type :=
+| vnil : vec A O
+| vcons : forall n0 : nat. A -> vec A n0 -> vec A (S n0).
+
+
+define t:= fun (A : Type) (n : nat) (v : vec A (S n)) =>
+           <vec A n> case v in vec _ (n1 := S n) of
+                     | vcons (n) _ t => t
+                     -- | C2 _ _ _ => S O
+                     end.
