@@ -1,0 +1,5 @@
+data False : Type :=.
+
+define elimFalse := fun (x:False) (A:Type) => < A > case x of end.
+
+print elimFalse.
