@@ -18,6 +18,8 @@ maxSort :: (MonadTCM tcm) => Sort -> Sort -> tcm Sort
 
 inferBinds :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
 
+inferType :: (MonadTCM tcm) => A.Expr -> tcm (Type, Sort)
+
 infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
 
 check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term

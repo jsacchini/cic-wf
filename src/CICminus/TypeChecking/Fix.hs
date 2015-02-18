@@ -128,9 +128,8 @@ inferFix (A.FixExpr r CoI num f tp body) =
 
     traceTCM 20 $ hsep [text "Typechecking cofixpoint type: ",
                         prettyTCM tp]
-    (tp', s) <- infer tp
+    (tp', s') <- inferType tp
     traceTCM 20 $ hsep [text "Typechecked cofixpoint type: ", prettyTCM tp']
-    s' <- isSort (range tp) s
 
     is <- collectStars tp tp'
     traceTCM 30 $ hsep [text "Star stages:", prettyTCM is]
@@ -181,14 +180,13 @@ inferFix fixexpr@(A.FixExpr r I num f tp body) =
     do allOld <- allStages -- all stages before typechecking fix
        traceTCM 20 $ hsep [text "Typechecking fixpoint type: ",
                            prettyTCM tp]
-       (tp', s) <- infer tp
+       (tp', s) <- inferType tp
        traceTCM 15 $ hsep [text "Typechecked fixpoint type: ", prettyTCM tp']
        is <- collectStars tp tp'
        traceTCM 30 $ hsep [text "Star stages:", prettyTCM is]
 
        -- e <- ask
        -- traceTCM_ ["V* ", show is, " in ", show tp', "\nenv :", show e]
-       _ <- isSort (range tp) s
 
        -- Check that the fix type is correct
        (ctx, tpRes) <- unfoldPi tp'

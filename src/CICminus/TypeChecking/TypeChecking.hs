@@ -24,7 +24,6 @@
 
 module CICminus.TypeChecking.TypeChecking where
 
-#include "undefined.h"
 import           CICminus.Utils.Impossible
 
 import           Control.Monad.Reader
@@ -80,20 +79,26 @@ isSort rg t = do t' <- whnf t
                    _      -> throwNotSort rg t'
 
 
+inferType :: (MonadTCM tcm) => A.Expr -> tcm (Type, Sort)
+inferType e = do
+  (tp, s) <- infer e
+  s0 <- isSort (range e) s
+  return (tp, s0)
+
 -- We assume that in the global environment, types are normalized
 
 inferBinds :: (MonadTCM tcm) => A.Context -> tcm (Context, Sort)
 inferBinds CtxEmpty = return (CtxEmpty, Prop)
 inferBinds (b :> bs) = do
   (ctx1, s1) <- inferBind b
+  traceTCM 40 $ text "Bind inferred: " <+> prettyTCM ctx1
   (ctx2, s2) <- pushCtx ctx1 $ inferBinds bs
   s' <- maxSort s1 s2
   return (ctx1 <> ctx2, s')
     where
       inferBind (A.Bind _ [] _) = __IMPOSSIBLE__
       inferBind (A.Bind _ (x:xs) e) = do
-        (t1, r1) <- infer (unArg e)
-        s1 <- isSort (range e) r1
+        (t1, s1) <- inferType (unArg e)
         return (ctxFromList (mkCtx (x:xs) t1 0), s1)
           where
             mkCtx [] _ _ = []
@@ -102,8 +107,7 @@ inferBinds (b :> bs) = do
 
 infer :: (MonadTCM tcm) => A.Expr -> tcm (Term, Type)
 infer (A.Ann _ t u) = do
-  (u', r) <- infer u
-  _ <- isSort (range u) r
+  (u', r) <- inferType u
   t' <- check t u'
   w <- whnf u'
   return (t', w)
@@ -114,19 +118,9 @@ infer expr@(A.Pi _ ctx t) = do
   traceTCM 35 $ hsep [text "Inferring product",
                       prettyTCM expr]
   (ctx', s1) <- inferBinds ctx
-  (t', r2) <- pushCtx ctx' $ infer t
-  s2 <- pushCtx ctx' $ isSort (range t) r2
+  (t', s2) <- pushCtx ctx' $ inferType t
   s' <- checkProd s1 s2
   return (mkPi ctx' t', Sort s')
--- infer exp@(A.Arrow _ e1 e2) = -- TODO: check arrows with implicit arguments
---   do traceTCM 35 $ hsep [text "Inferring arrow",
---                          prettyTCM exp]
---      (t1, r1) <- infer (implicitValue e1)
---      s1 <- isSort (range e1) r1
---      (t2, r2) <- pushType t1 $ infer e2
---      s2 <- pushType t1 $ isSort (range e2) r2
---      s' <- checkProd s1 s2
---      return (mkPi (ctxSingle (unNamed t1)) t2, Sort s')
 
 infer (A.Local _ x) = do
   (n, b) <- localGetByName x
@@ -168,7 +162,7 @@ infer (A.Lam _ bs t) = forbidAnnot $ do
   traceTCM 35 $ text "inferred Lam body" <+> text (show t')
   return (mkLam (eraseSize ctx) t', mkPi ctx u)
 
-infer (A.App _ e1 _ e2) = forbidAnnot $ do -- inferApp e1 e2
+infer (A.App _ e1 _ e2) = do -- inferApp e1 e2
   (t1, r1) <- infer e1
   traceTCM 35 $ vcat [ text "Checking function part"
                      , text "from" <+> prettyTCM e1
@@ -177,7 +171,7 @@ infer (A.App _ e1 _ e2) = forbidAnnot $ do -- inferApp e1 e2
   case r1 of
     Pi ctx u2 -> do
       let (ch, ct) = ctxSplit ctx
-      t2 <- check e2 (unArg (bindType ch))
+      t2 <- forbidAnnot $ check e2 (unArg (bindType ch))
       w  <- whnf $ mkPi (subst t2 ct) (substN (ctxLen ct) t2 u2)
       traceTCM 35 $ hsep [ text "Checked APP:"
                          , prettyTCM (mkApp t1 [t2]) ]
@@ -190,7 +184,7 @@ infer (A.Meta r _) = typeError $ CannotInferMeta r
 
 infer i@(A.Ind r x sexpr pars) = do
   -- Get Inductive; for well-scoped terms, this should not fail
-  traceTCM 40 $ text "Typechecking (co)inductive type:" <+> prettyTCM i
+  traceTCM 40 $ text "Typechecking (co)inductive type:" <+> prettyTCM i <+> text (show sexpr) <+> text "applied to" <+> prettyTCM pars
 
   ind@Inductive{} <- getGlobal x
   pars' <- checkList pars (indPars ind)
@@ -215,6 +209,7 @@ infer i@(A.Ind r x sexpr pars) = do
 
       inferSizeExpr A.SizeEmpty rg = do
         stage <- freshStage rg
+        traceTCM 40 $ text ("fresh stage " ++ show stage)
         return $ I.Stage (I.StageVar stage 0)
 
 infer (A.Constr rg x pars) = forbidAnnot $ do
@@ -326,8 +321,7 @@ checkPattern (p:ps) (b :> ctx) = do
 inferNoTerm :: (MonadTCM tcm) => A.FixExpr -> tcm (FixTerm, Type)
 inferNoTerm fix = do
   (ctx, _) <- inferBinds (A.fixArgs fix)
-  (tp, r) <- pushCtx ctx $ infer (A.fixType fix)
-  _ <- isSort (range (A.fixType fix)) r
+  (tp, r) <- pushCtx ctx $ inferType (A.fixType fix)
   let recTp = mkPi ctx tp
   (body, bodyTp) <- pushBind (mkBind (A.fixName fix) recTp)
                     $ pushCtx ctx $ infer (A.fixBody fix)

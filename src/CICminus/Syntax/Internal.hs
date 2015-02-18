@@ -776,10 +776,10 @@ instance IsFree FixTerm where
 
 instance IsFree CaseTerm where
   isFree k (CaseTerm arg _ _ _ pars cin tpRet branches) =
-    isFree k arg || isFree k pars || isFree k tpRet || isFree k cin || any (isFree k) branches
+    isFree k arg || isFree k pars || isFree (k + size cin + 1) tpRet || isFree k cin || any (isFree k) branches
 
   fvN k (CaseTerm arg _ _ _ pars cin tpRet branches) =
-    fvN k arg ++ fvN k pars ++ fvN k tpRet ++ fvN k cin ++ concatMap (fvN k) branches
+    fvN k arg ++ fvN k pars ++ fvN (k + size cin + 1) tpRet ++ fvN k cin ++ concatMap (fvN k) branches
 
 instance IsFree SinglePattern where
   isFree k (PatternDef _ t) = isFree k t

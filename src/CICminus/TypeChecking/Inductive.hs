@@ -23,7 +23,6 @@
 
 module CICminus.TypeChecking.Inductive where
 
-#include "undefined.h"
 import           Control.Monad.Reader
 
 import           Data.Monoid
@@ -52,9 +51,8 @@ inferInd :: (MonadTCM tcm) => A.InductiveDef -> tcm [Named Global]
 inferInd i@(A.InductiveDef {}) =
     do -- traceTCM $ "Checking inductive definition\n" ++ show ind
        (pars', _) <- inferBinds (A.indPars i)
-       (tp', s2)  <- pushCtx pars' $ infer (A.indType i)
+       (tp', s2)  <- pushCtx pars' $ inferType (A.indType i)
        -- traceTCM $ "Type\n" ++ show tp'
-       _          <- isSort (range (A.indType i)) s2
        (args, s3) <- isArity (range (A.indType i)) tp'
        cs         <- mapM (pushCtx pars' . flip checkConstr (A.indName i, pars', args, s3)) (A.indConstr i)
        -- traceTCM 30 $ text ("Constructors\n" ++ show cs)
@@ -142,11 +140,10 @@ checkConstr (A.Constructor _ name tp)
     do
        traceTCM 30 $ hsep [ text "CHECKCONSTR"
                           , text "from:" <+> (pushBind indBind $ prettyTCM tp) ]
-       (tp', s) <- pushBind indBind $  infer tp
+       (tp', s') <- pushBind indBind $  inferType tp
        traceTCM 30 $ hsep [ text "CHECKCONSTR"
                           , text "to:" <+> (pushBind indBind $ prettyTCM tp')
-                          , text "of type:" <+> (pushBind indBind $ prettyTCM s) ]
-       s' <- isSort (range tp) s
+                          , text "of type:" <+> (pushBind indBind $ prettyTCM s') ]
        traceTCM 30 $ vcat [ text "Sort of inductive type:" <+> prettyTCM sortInd
                           , text "Sort of constructor:" <+> prettyTCM s' ]
        unlessM (subType s' sortInd) $ error $ "sort of constructor " ++ show name ++ " is "++ show s' ++ " but inductive type " ++ show nmInd ++ " has sort " ++ show sortInd

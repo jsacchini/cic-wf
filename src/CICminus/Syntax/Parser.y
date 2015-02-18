@@ -58,7 +58,7 @@ import CICminus.Utils.Sized
   'cofix'          { TokKeyword KwCofix $$ }
   'fixpoint'       { TokKeyword KwFixpoint $$ }
   'cofixpoint'     { TokKeyword KwCofixpoint $$ }
-  'struct'         { TokKeyword KwStruct $$ }
+  'rec'            { TokKeyword KwRec $$ }
   'where'          { TokKeyword KwWhere $$ }
   'end'            { TokKeyword KwEnd $$ }
   fixN             { TokFixNumber $$ }
@@ -274,15 +274,18 @@ Pattern : BindName Pattern     { C.PatternVar (range $1) (rangedValue $1) : $2 }
 
 
 Branches :: { [C.Branch] }
-Branches : Branch1 Branch2   { maybe [] return $1 ++ reverse $2 }
+Branches : BasicBranch Branch2   { $1 : $2 }
+         | '|' BasicBranch Branch2 { $2 : $3 }
+         | {- empty -}           { [] }
+
 
 Branch1 :: { Maybe C.Branch }
 Branch1 : BasicBranch            { Just $1 }
         | {- empty -}            { Nothing }
 
 Branch2 :: { [C.Branch] }
-Branch2 : {- empty -}                { [] }
-        | Branch2 '|' BasicBranch    { $3 : $1 }
+Branch2 : '|' BasicBranch Branch2    { $2 : $3 }
+        | {- empty -}     { [] }
 
 BasicBranch :: { C.Branch }
 BasicBranch : Name Pattern '=>' Exp
@@ -340,7 +343,7 @@ endPosType : {- empty -}         {% forbidStar }
 --          | {- empty -}                       { [] }
 
 BindingStruct :: { ([C.Bind], Maybe (Ranged Name)) }
-BindingStruct : '{' 'struct' Name '}'
+BindingStruct : '{' 'rec' Name '}'
               { ([], Just (setRange (fuseRange $2 $3) $3)) }
               | '{' SimpleBind '}' BindingStruct
               { let (bs, x) = $4

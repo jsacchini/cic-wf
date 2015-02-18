@@ -610,7 +610,7 @@ instance Pretty FixExpr where
           prettyCtx args <> prettySpec spec, colon, pretty tp, defEq]
     $$ (pretty body)
     where
-      prettySpec (FixStruct _ x) = empty <+> braces (prettyKeyword "struct" <+> pretty x)
+      prettySpec (FixStruct _ x) = empty <+> braces (prettyKeyword "rec" <+> pretty x)
       prettySpec _ = empty
       prettyStage (FixStage _ x) = empty <+> red (text "<" <> pretty x <> text ">")
       prettyStage _ = empty

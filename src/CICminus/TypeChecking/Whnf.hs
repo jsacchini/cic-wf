@@ -17,13 +17,11 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module CICminus.TypeChecking.Whnf where
 
-#include "undefined.h"
 import           CICminus.Utils.Impossible
 
 import           Control.Monad.Reader
@@ -54,7 +52,7 @@ instance Whnf a => Whnf (Implicit a) where
               return $ y <$ x
 
 instance Whnf Term where
-  whnf t = wH t -- metaexp t >>= wH
+  whnf = wH -- metaexp t >>= wH
     where
       wH (App f ts) = do
         w <- wH f
@@ -66,7 +64,7 @@ instance Whnf Term where
               recArg' <- normalForm recArg
               case recArg' of
                 Constr {} -> do
-                  traceTCM 40 $ vcat [ text "Mu Reduction"
+                  traceTCM 70 $ vcat [ text "Mu Reduction"
                                      , prettyTCM w
                                      , text "on"
                                      , prettyTCM (fs ++ recArg' : ls)
@@ -74,7 +72,7 @@ instance Whnf Term where
                                      , prettyTCM (muRed f (fs ++ recArg' : ls)) ]
                   wH (muRed f (fs ++ recArg' : ls))
                 App (Constr {}) _ -> do
-                  traceTCM 40 $ vcat [ text "Mu Reduction"
+                  traceTCM 70 $ vcat [ text "Mu Reduction"
                                      , prettyTCM w
                                      , text "on"
                                      , prettyTCM (fs ++ recArg' : ls)
@@ -112,7 +110,7 @@ instance Whnf Term where
            case arg' of
              App (Constr _ (_,cid) _) cArgs -> wH $ iotaRed cid cArgs (caseBranches c)
              _ -> case isCofix arg' of
-                    Just (_, body, cofix, args) -> wH $ Case (c { caseArg = App (subst cofix body) args })
+                    Just (cofix, args) -> wH $ Case (c { caseArg = muRed cofix args })
                     Nothing -> return $ Case (c { caseArg = arg' })
       wH t = return t
 
@@ -123,11 +121,17 @@ instance Whnf Term where
 --                              return $ LocalDef x t w
 
 
--- isCofix (App (cofix f:T := M) ts) = Just (f, T, M, cofix f := M, ts)
-isCofix :: Term -> Maybe (Bind, Term, Term, [Term])
-isCofix t@(Fix (FixTerm CoI _ f stage ctx tp body))    = Just (mkBind f (mkPi ctx tp), body, t, [])
-isCofix (App t@(Fix (FixTerm CoI _ f stage ctx tp body)) ts) = Just (mkBind f (mkPi ctx tp), body, t, ts)
-isCofix _                                    = Nothing
+-- isCofix (App (Fix f...) ts) | fixKind f == CoI = Just (Fix f..., ts)
+isCofix :: Term -> Maybe (FixTerm, [Term])
+isCofix (Fix f)          | fixKind f == CoI = Just (f, [])
+isCofix (App (Fix f) ts) | fixKind f == CoI = Just (f, ts)
+isCofix _                                   = Nothing
+
+-- -- isCofix (App (cofix f:T := M) ts) = Just (f, T, M, cofix f := M, ts)
+-- isCofix :: Term -> Maybe (Bind, Term, Term, [Term])
+-- isCofix t@(Fix (FixTerm CoI _ f stage ctx tp body))    = Just (mkBind f (mkPi ctx tp), body, t, [])
+-- isCofix (App t@(Fix (FixTerm CoI _ f stage ctx tp body)) ts) = Just (mkBind f (mkPi ctx tp), body, t, ts)
+-- isCofix _                                    = Nothing
 
 unfoldPi :: (MonadTCM tcm) => Type -> tcm (Context, Type)
 unfoldPi t =
@@ -163,7 +167,7 @@ instance NormalForm a => NormalForm (Implicit a) where
 
 
 instance NormalForm Sort where
-  normalForm = return . id
+  normalForm = return
 
 instance NormalForm a => NormalForm (Arg a) where
   normalForm = Tr.mapM normalForm
@@ -184,14 +188,14 @@ instance NormalForm Context where
 
 
 instance NormalForm Term where
-  normalForm x = nF x -- metaexp x >>= nF
+  normalForm = nF -- metaexp x >>= nF
     where
       nF :: (MonadTCM tcm) => Term -> tcm Term
       nF t@(Sort s) = return t
       nF (Pi c t) = liftM2 Pi (normalForm c) (pushCtx c $ nF t)
       nF t@(Bound k) = do
         e <- ask
-        traceTCM 35 $ hsep [ text "normal form bound"
+        traceTCM 70 $ hsep [ text "normal form bound"
                            , prettyTCM k
                            , text "in ctx"
                            , ask >>= prettyTCM ]
@@ -205,25 +209,25 @@ instance NormalForm Term where
           Nothing -> return t
           Just x  -> nF x
       nF t@(Var x) = do
-        traceTCM 30 $ hsep [text "Normalizing Var ", prettyTCM x]
+        traceTCM 70 $ hsep [text "Normalizing Var ", prettyTCM x]
         u <- getGlobal x
         case u of
           Definition {} -> do
-            traceTCM 30 $ hsep [text "global", prettyTCM (defTerm u)]
+            traceTCM 70 $ hsep [text "global", prettyTCM (defTerm u)]
             nF (defTerm u)
           Assumption _    -> return t
           Cofixpoint {} -> do
-            traceTCM 30 $ hsep [text "NF cofixpoint", prettyTCM (Fix (cofixTerm u))]
+            traceTCM 70 $ hsep [text "NF cofixpoint", prettyTCM (Fix (cofixTerm u))]
             nF (Fix (cofixTerm u))
           _               -> __IMPOSSIBLE__
       nF (Lam c t) = liftM2 Lam (normalForm c) (pushCtx c $ nF t)
       nF t@(App t1 ts) = do
-        traceTCM 30 $ vcat [ text "Normalizing in ", ask >>= prettyTCM
+        traceTCM 70 $ vcat [ text "Normalizing in ", ask >>= prettyTCM
                            , text "APP :" <+> prettyTCM t]
         t1' <- whnf t1
         case t1' of
           Lam ctx u  ->
-            do traceTCM 30 $ (hsep [text "Beta Reduction on ",
+            do traceTCM 70 $ (hsep [text "Beta Reduction on ",
                                     prettyTCM t1',
                                     text " and ",
                                     prettyTCM ts]
@@ -241,7 +245,7 @@ instance NormalForm Term where
                  recArg' <- nF recArg
                  case recArg' of
                    Constr {} -> do
-                     traceTCM 40 $ vcat [ text "Mu Reduction"
+                     traceTCM 70 $ vcat [ text "Mu Reduction"
                                         , prettyTCM t1'
                                         , text "on"
                                         , prettyTCM (fs ++ recArg' : ls)
@@ -249,7 +253,7 @@ instance NormalForm Term where
                                         , prettyTCM (muRed f (fs ++ recArg' : ls)) ]
                      nF (muRed f (fs ++ recArg' : ls))
                    (App (Constr {}) _) -> do
-                     traceTCM 40 $ vcat [ text "Mu Reduction"
+                     traceTCM 70 $ vcat [ text "Mu Reduction"
                                         , prettyTCM t1'
                                         , text "on"
                                         , prettyTCM (fs ++ recArg' : ls)
@@ -257,7 +261,7 @@ instance NormalForm Term where
                                         , prettyTCM (muRed f (fs ++ recArg' : ls)) ]
                      nF (muRed f (fs ++ recArg' : ls))
                    _    -> do
-                     traceTCM 40 $ hsep [text "No recursion arg = ", text (show recArg')]
+                     traceTCM 70 $ hsep [text "No recursion arg = ", text (show recArg')]
                      fs' <- mapM nF fs
                      ls'  <- mapM nF ls
                      return $ mkApp t1' (fs' ++ recArg' : ls')
@@ -272,12 +276,12 @@ instance NormalForm Term where
           traceTCM 80 $ hsep [text "Normalizing Ind ", prettyTCM t]
           liftM (Ind a x) (mapM nF ps)
       nF t@(Case c) =
-        do traceTCM 30 $ (hsep [text "Normalizing Case in ", prettyTCM t]
+        do traceTCM 70 $ (hsep [text "Normalizing Case in ", prettyTCM t]
                           $$ hsep [text "arg ", prettyTCM (caseArg c)])
            arg' <- nF $ caseArg c
            case unApp arg' of
              (Constr _ (_,cid) cPars,  cArgs) -> do
-               traceTCM 40 $ vcat [ text "Iota Reduction "
+               traceTCM 70 $ vcat [ text "Iota Reduction "
                                   , prettyTCM cid
                                   , prettyTCM cArgs
                                   , text "RESULT"
@@ -285,17 +289,16 @@ instance NormalForm Term where
                                   ]
                nF $ iotaRed cid cArgs (caseBranches c)
              _ -> case isCofix arg' of
-                    Just (bind, body, cofix, args) -> do
-                      traceTCM 30 $ vcat [text "normal form case " PP.<> prettyTCM t,
-                                          text "body " PP.<> pushBind bind (prettyTCM body),
+                    Just (cofix, args) -> do
+                      traceTCM 70 $ vcat [text "normal form case " PP.<> prettyTCM t,
                                           text "cofix " PP.<> prettyTCM cofix,
                                           text "args " PP.<> prettyTCM args]
-                      nF $ Case (c { caseArg = App (subst cofix body) args })
+                      nF $ Case (c { caseArg = muRed cofix args })
                     Nothing -> do
-                      traceTCM 40 $ text "Case in normal form " <+> prettyTCM t
-                      traceTCM 40 $ text "Normalizing RET " <+> prettyTCM (caseTpRet c)
+                      traceTCM 70 $ text "Case in normal form " <+> prettyTCM t
+                      traceTCM 70 $ text "Normalizing RET " <+> prettyTCM (caseTpRet c)
                       ret' <- nF (caseTpRet c)
-                      traceTCM 40 $ text "Normalizing branches "
+                      traceTCM 70 $ text "Normalizing branches "
                       branches' <- mapM normalForm (caseBranches c)
                       in' <- normalForm (caseIndices c)
                       return $ Case (c { caseArg      = arg'

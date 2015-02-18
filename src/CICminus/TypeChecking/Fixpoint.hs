@@ -54,7 +54,7 @@ extractIndType tp = do
     case tp of
       App (Ind a n ps) ts -> return (a, n, ps ++ ts)
       Ind a n ps          -> return (a, n, ps)
-      _                   -> notImplemented noRange "Recursive argument not inductive"
+      _                   -> notImplemented noRange ("Recursive argument not inductive" ++ show tp)
   i <- getGlobal nm -- must be (co-)inductive
   return (nm, indKind i, fromJust (sbase annot), args)
 
@@ -263,7 +263,7 @@ inferFix fixexpr@(A.FixExpr rg ki nmf (A.FixPosition nRec) args tp body) = do
 
   clearStarStageVar
   allOld <- allStages -- all stages before typechecking fix
-  traceTCM 20 $ hsep [ text "Typechecking fixpoint type: "
+  traceTCM 20 $ hsep [ text "Typechecking fixpoint type (position): "
                      , prettyTCM args
                      , text ":"
                      , prettyTCM tp ]
@@ -271,14 +271,12 @@ inferFix fixexpr@(A.FixExpr rg ki nmf (A.FixPosition nRec) args tp body) = do
   (argCtx, _) <- allowStar $ inferBinds args
   traceTCM 20 $ hsep [ text "Typechecked args"
                      , prettyTCM argCtx ]
-  (tp', s) <- allowStar $ pushCtx argCtx $ infer tp
+  (tp', s) <- allowStar $ pushCtx argCtx $ inferType tp
   traceTCM 20 $ hsep [ text "Typechecked fixpoint type: "
                      , prettyTCM (mkPi argCtx tp')]
   is <- getStarStageVar
   traceTCM 20 $ hsep [ text "Position args: "
                      , prettyTCM is ]
-
-  _ <- isSort (range tp) s
 
   (alpha, argCtx', retTp) <- checkAdmissibility (fuseRange args tp) ki nRec argCtx tp'
 
@@ -365,8 +363,7 @@ inferFix fixexpr@(A.FixExpr rg I nmf
   addSize stage alpha
 
   (argCtx, _) <- allowSizes  $ inferBinds args
-  (tp', s) <- allowSizes $ pushCtx argCtx $ infer tp
-  _ <- isSort (range tp) s
+  (tp', s) <- allowSizes $ pushCtx argCtx $ inferType tp
 
 
   traceTCM 20 $ hsep [ text "Typechecked fixpoint type: "
@@ -467,8 +464,7 @@ inferFix fixexpr@(A.FixExpr rg I nmf
   allOld <- allStages -- all stages before typechecking fix
 
   (argCtx, _) <- forbidAnnot  $ inferBinds args
-  (tp', s) <- forbidAnnot $ pushCtx argCtx $ infer tp
-  _ <- isSort (range tp) s
+  (tp', s) <- forbidAnnot $ pushCtx argCtx $ inferType tp
 
 
   traceTCM 20 $ hsep [ text "Typechecked fixpoint type: "

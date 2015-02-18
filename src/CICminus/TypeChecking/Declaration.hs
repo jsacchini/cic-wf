@@ -17,24 +17,19 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE CPP                    #-}
-{-# LANGUAGE FlexibleInstances      #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE TupleSections          #-}
-{-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE TupleSections #-}
 
 module CICminus.TypeChecking.Declaration (inferDecl) where
 
 import           Control.Monad
 
 import qualified CICminus.Syntax.Abstract           as A
-import qualified CICminus.Syntax.InternalToAbstract as IA
 import qualified CICminus.Syntax.AbstractToConcrete as AC
 import           CICminus.Syntax.Colors
 import           CICminus.Syntax.Common
 import           CICminus.Syntax.Internal           hiding (lift)
 import           CICminus.Syntax.Position
+
 import           CICminus.TypeChecking.Constraints
 import           CICminus.TypeChecking.Conversion
 import           CICminus.TypeChecking.Fixpoint
@@ -45,6 +40,7 @@ import           CICminus.TypeChecking.TCM
 import           CICminus.TypeChecking.TCMErrors
 import           CICminus.TypeChecking.TypeChecking
 import           CICminus.TypeChecking.Whnf
+
 import           CICminus.Utils.Misc
 
 
@@ -59,6 +55,9 @@ mkFreshStages rg (x:xs) = do
   sizeMap <- mkFreshStages rg xs
   return $ (x, sta) : sizeMap
 
+outputTopLevel :: (MonadTCM tcm) => tcm Doc -> tcm ()
+outputTopLevel d = printTCMLn (d PP.<> line)
+
 
 inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm ()
 inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
@@ -70,10 +69,7 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
   sizeMap <- mkFreshStages rg stas
   traceTCM 40 $ text "new size map" <+> prettyTCM sizeMap
 
-  (tp, s) <- allowSizes $ infer expType
-
-  -- Check that its type is a sort
-  _ <- isSort (range expType) s
+  (tp, s) <- allowSizes $ inferType expType
 
   -- Infer body forbidding annotations
   (body, bodyTp) <- forbidAnnot $ infer expBody
@@ -90,13 +86,13 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
 
   let body0 = toInfty body
       tp0   = toInftyBut stas tp
-  mapM_ addGlobal [mkNamed nm (Definition { defType = ConstrType stas tp0
-                                          , defTerm = body0 })]
+  mapM_ addGlobal [mkNamed nm Definition { defType = ConstrType stas tp0
+                                         , defTerm = body0 }]
 
     where
       pairs :: [a] -> [(a,a)]
       pairs [] = []
-      pairs (x:xs) = map ((x,)) xs ++ pairs xs
+      pairs (x:xs) = map (x,) xs ++ pairs xs
 
       checkConstraint :: (MonadTCM tcm) => (Name, StageVar) -> tcm ()
       checkConstraint (nmsize, s) = do
@@ -117,26 +113,24 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
         constraints <- allConstraints
         -- Check that there is no path from s1 to s2
         let ups = upward (unSC constraints) [VarNode s1]
-        if VarNode s2 `elem` ups
-          then notImplemented rg ("Size constraint not satisfied "
-                                  ++ show nmsize)
-          else return ()
+        when (VarNode s2 `elem` ups)
+          $ notImplemented rg ("Size constraint not satisfied "
+                               ++ show nmsize)
 
 inferDecl (A.Definition _ x Nothing e) = do
   resetConstraints
   (tm, tp) <- infer e
   let tm0 = toInfty tm
       tp0 = toInfty tp
-  mapM_ addGlobal [mkNamed x (Definition { defType = ConstrType [] tp0
-                                         , defTerm = tm0 })]
+  mapM_ addGlobal [mkNamed x Definition { defType = ConstrType [] tp0
+                                        , defTerm = tm0 }]
 
 inferDecl (A.Assumption rg nm (A.ConstrExpr _ stas expr)) = do
   resetConstraints
   _ {- sizeMap -} <- mkFreshStages rg stas
-  (tm, tp) <- allowSizes $ infer expr
+  (tm, tp) <- allowSizes $ inferType expr
   let tm0 = toInftyBut stas tm
   clearSizeMap
-  _ <- isSort rg tp
   mapM_ addGlobal [mkNamed nm (Assumption (ConstrType stas tm0))]
 
 inferDecl (A.Inductive _ indDef) = do
@@ -144,65 +138,56 @@ inferDecl (A.Inductive _ indDef) = do
   inferInd indDef >>= mapM_ addGlobal
 
 inferDecl (A.Eval e) = do
-  traceTCM 70 $ hsep [text "========= EVAL "]
+  traceTCM 35 $ hsep [text "========= EVAL "]
   resetConstraints
   (e1, _) <- infer e
   let tm0 = toInfty e1
-  traceTCM 70 $ hsep [text "========= EVAL ", prettyTCM e1 PP.<> dot]
+  traceTCM 35 $ hsep [text "========= EVAL ", prettyTCM e1 PP.<> dot]
   tm1 <- nF tm0
-  traceTCM 70 $ vcat [text "Normal form obtained ", prettyTCM tm1]
-  printTCMLn $ (prettyKeyword "eval"
-                <+> prettyTCM tm0 <+> text "="
-                $$ nest 4 (prettyTCM tm1))
+  traceTCM 35 $ vcat [text "Normal form obtained ", prettyTCM tm1]
+  outputTopLevel (prettyKeyword "eval"
+                  <+> prettyTCM tm0 <+> text "="
+                  $$ text "  " <+> prettyTCM tm1)
 
 inferDecl (A.Check e1 (Just e2)) = do
   resetConstraints
-  (tp, s) <- infer e2
-  _ <- isSort (range e2) s
+  (tp, s) <- inferType e2
   tm <- check e1 tp
   let tm0 = toInfty tm
       tp0 = toInfty tp
-  ctm0 <- IA.reify tm0
-  ctp0 <- IA.reify tp0
-  traceTCM 5 $ hsep [ prettyKeyword "CHECK"
-                    , text (show ctm0), text ":"
-                    , text (show ctp0) ]
-  printTCMLn $ vcat [ prettyKeyword "check" <+>
-                      prettyTCM tm0
-                    , nest 4 $ text ":" <+> prettyTCM tp0 ]
+  outputTopLevel $ vcat [ prettyKeyword "check" <+>
+                          prettyTCM tm0
+                        , text " : " PP.<> align (prettyTCM tp0) ]
 
 inferDecl (A.Check e1 Nothing) = do
   resetConstraints
   (tm, tp) <- infer e1
   let tm0 = toInfty tm
       tp0 = toInfty tp
-  ctm0 <- IA.reify tm0
-  ctp0 <- IA.reify tp0
-  traceTCM 5 $ vcat [ prettyKeyword "CHECK"
-                    , text (show ctm0), text ":"
-                    , text (show ctp0) ]
-  printTCMLn $ vcat [ prettyKeyword "check" <+>
-                      prettyTCM tm0
-                    , nest 4 $ text ":" <+> prettyTCM tp0 ]
+  outputTopLevel $ vcat [ prettyKeyword "check" <+>
+                          prettyTCM tm0
+                        , text " : " PP.<> align (prettyTCM tp0) ]
 
 inferDecl (A.Print rg nm) = do
   resetConstraints
   g <- getGlobal nm
   case g of
     Definition ctype tm ->
-      printTCMLn (hsep [ prettyTCM nm, text "=", prettyTCM tm ]
-                  $$ nest 4 (text ":" <+> prettyTCM ctype))
+      outputTopLevel (hsep [ prettyKeyword "define" <+>
+                             prettyTCM nm, text ":", prettyTCM ctype ]
+                      $$ text " = " PP.<> align (prettyTCM tm))
     Cofixpoint fix ctype ->
-      printTCMLn $ (prettyKeyword "fixpoint"
-                    <+> prettyTCM fix
-                    $$ nest 4 (text ":" <+> prettyTCM ctype))
+      outputTopLevel (prettyKeyword "fixpoint"
+                      <+> prettyTCM fix
+                      $$ text " : " PP.<> align (prettyTCM ctype))
     Assumption ctype ->
-      printTCMLn $ hsep [ prettyTCM nm, text ":", prettyTCM ctype ]
+      outputTopLevel $ hsep [ prettyKeyword "assume"
+                            , prettyTCM nm, text ":", prettyTCM ctype ]
     ind@Inductive {} ->
-      printTCMLn $ prettyTCM (mkNamed nm ind)
+      outputTopLevel $ prettyTCM (mkNamed nm ind)
     constr@Constructor {} -> do
       ind@Inductive {} <- getGlobal (constrInd constr)
-      printTCMLn $ prettyTCM (mkNamed (constrInd constr) ind)
+      outputTopLevel $ prettyTCM (mkNamed (constrInd constr) ind)
 
 
 inferDecl (A.Cofixpoint fix) = do
@@ -210,5 +195,5 @@ inferDecl (A.Cofixpoint fix) = do
   (fix', tp, ctype) <- inferFix fix
   let fix0 = toInfty fix'
   addGlobal $
-    mkNamed (A.fixName fix) (Cofixpoint { cofixTerm = fix0
-                                        , cofixType = ctype})
+    mkNamed (A.fixName fix) Cofixpoint { cofixTerm = fix0
+                                       , cofixType = ctype}

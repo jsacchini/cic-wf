@@ -73,12 +73,16 @@ d1 <> d2    = (PP.<>) <$> d1 <*> d2
 d1 <+> d2   = (PP.<+>) <$> d1 <*> d2
 nest :: (MonadTCM tcm) => Int -> tcm Doc -> tcm Doc
 nest n d    = PP.nest n <$> d
+align :: (MonadTCM tcm) => tcm Doc -> tcm Doc
+align d    = PP.align <$> d
 braces, brackets, parens :: (MonadTCM tcm) => tcm Doc -> tcm Doc
 braces d    = PP.braces <$> d
 brackets d  = PP.brackets <$> d
 parens d    = PP.parens <$> d
 int :: (MonadTCM tcm) => Int -> tcm Doc
 int         = return . PP.int
+line :: (MonadTCM tcm) => tcm Doc
+line = return PP.line
 
 parensIf :: (MonadTCM tcm) => Bool -> tcm Doc -> tcm Doc
 parensIf True = fmap PP.parens

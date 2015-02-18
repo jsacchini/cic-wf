@@ -132,7 +132,7 @@ data AllowedAnnotations
   = NoAnnotationsAllowed
   | StarAllowed
   | FullSizeAllowed
-  deriving(Eq)
+  deriving(Eq,Show)
 
 -- Global state containing definition, assumption, datatypes, etc..
 data TCState =
@@ -369,15 +369,17 @@ pushCtx ctx m = -- do ctx' <- freshenCtx ctx
 
 
 extendEnv :: (MonadTCM tcm) => I.Environment -> tcm a -> tcm a
-extendEnv env m = local (`envCat` env) m
+extendEnv env = local (`envCat` env)
 
 
 withAllow :: (MonadTCM tcm) => AllowedAnnotations -> tcm a -> tcm a
 withAllow a m = do
   olda <- stAllowedAnnotations <$> get
+  -- liftIO $ putStrLn ("Allowing: " ++ show a)
   modify (\st -> st { stAllowedAnnotations = a })
   x <- m
   modify (\st -> st { stAllowedAnnotations = olda })
+  -- liftIO $ putStrLn ("Restored: " ++ show olda)
   return x
 
 allowStar :: (MonadTCM tcm) => tcm a -> tcm a
