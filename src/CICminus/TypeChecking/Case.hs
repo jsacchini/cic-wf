@@ -80,12 +80,11 @@ inferCase (A.CaseExpr rg arg asNm indspec (Just ret) branches) = do
 
   -- Check the return type and check that its type is a sort
   traceTCM 30 $ hsep [ text "CASE RETURN from", pushCtx returnTypeCtx $ prettyTCM ret ]
-  (ret', s) <- pushCtx returnTypeCtx $ infer ret
+  (ret', s) <- pushCtx returnTypeCtx $ inferType ret
   pushCtx returnTypeCtx $
     traceTCM 30 $ vcat [ text "CASE RETURN to" <+> prettyTCM ret'
                        , text "of type " <+>  prettyTCM s
                        , text "in ctx" <+> (ask >>= prettyTCM) ]
-  _ <- isSort (range ret) s
 
   -- Check branches
   -- Find possible and impossible branches
@@ -212,10 +211,13 @@ checkBranch sta asNm nmInd pars indicesPat returnType
     throwBranchPatternNotConvertible (range branchPat) ctx0 branchCtx
 
   let constrIndices = getConstrIndices constr pars (boundArgs (size branchPat))
+  traceTCM 30 $ text "Indices for branch: " <+> prettyTCM constrIndices
+  traceTCM 30 $ text "Return type: " <+> prettyTCM (I.lift (size branchPat) (size indicesPat + 1) returnType)
+  traceTCM 30 $ text "in ctx: " <+> (ask >>= prettyTCM)
   let instReturnType =
         substList0
         (constrIndices ++ [(Constr nmConstr
-                           (nmInd, idConstr) pars)]) (lift0 (size branchPat) returnType)
+                           (nmInd, idConstr) pars)]) (I.lift (size branchPat) (size indicesPat + 1) returnType)
 
   pushCtx branchCtx $ traceTCM 30 $ vcat [ hsep [ text "Return type for branch", prettyTCM nmConstr
                             , text ":", prettyTCM instReturnType ]
