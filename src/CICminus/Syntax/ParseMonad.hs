@@ -26,6 +26,7 @@ module CICminus.Syntax.ParseMonad where
 
 import Control.Exception
 import Data.Functor
+import Data.Maybe
 import Data.Typeable
 
 import Control.Monad.Error
@@ -71,11 +72,13 @@ initState path s = ParseState { lexerInput = initInput path s,
                                 positionType = False
                               }
 
-parse :: Parser a -> String -> ParseResult a
-parse (P p) s =
-  case runStateT p (initState "<interactive>" s) of
+parse :: Parser a -> Maybe String -> String -> ParseResult a
+parse (P p) filename s =
+  case runStateT p (initState f s) of
     Left e      -> ParseFail e
     Right (r,_) -> ParseOk r
+  where
+    f = fromMaybe "<interactive>" filename
 
 starAllowed :: Parser Bool
 starAllowed = positionType <$> get

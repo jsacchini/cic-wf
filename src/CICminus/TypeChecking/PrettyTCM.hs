@@ -116,6 +116,47 @@ printTCM d = do d' <- d
 printTCMLn :: (MonadTCM tcm) => tcm Doc -> tcm ()
 printTCMLn d = printTCM (d <> (return PP.line))
 
+
+instance PrettyTCM TypeError where
+  prettyTCM (NotConvertible t1 t2) =
+    hsep [ prettyTCM t1, text "is not convertible with", prettyTCM t2 ]
+  prettyTCM (TypeNotConvertible t u1 u2) =
+    hsep [ text "Term", prettyTCM t, text "has type", prettyTCM u1
+         , text "but is expected to have type", prettyTCM u2 ]
+  prettyTCM (NotFunction t u) =
+    hsep [ text "Term", prettyTCM t, text "has type", prettyTCM u
+         , text "but is expected to have a function type" ]
+  prettyTCM (NotSort t u) =
+    hsep [ text "Term", prettyTCM t, text "has type", prettyTCM u
+         , text "but is expected to have a sort type" ]
+  prettyTCM (NotArity t u) =
+    hsep [ text "Term", prettyTCM t, text "has type", prettyTCM u
+         , text "but is expected to have an arity type" ]
+  prettyTCM (InvalidProductRule s1 s2) =
+    text "Invalid product rule:" <+> prettyTCM (s1, s2)
+  -- prettyTCM (ConstantError s) = "ConstantError " ++ s
+  -- prettyTCM (CannotInferMeta r) = "CannotInferMeta " ++ prettyTCM r
+  -- prettyTCM (WrongNumberOfArguments r _ _ _) = "WrongNumberOfArguments " ++ prettyTCM r
+  -- prettyTCM (WrongFixNumber r _ _) = "WrongFixNumber " ++ prettyTCM r
+  prettyTCM (UndefinedName x) =
+    text "Undefined name:" <+> prettyTCM x
+  -- prettyTCM (NotInductive r n) = "NotInductive " ++ prettyTCM r ++ " " ++ prettyTCM n
+  -- prettyTCM (ConstructorNotApplied r n) = "ConstructorNotApplied " ++ prettyTCM r ++ " " ++ prettyTCM n
+  -- prettyTCM (InductiveNotApplied r n) = "InductiveNotApplied " ++ prettyTCM r ++ " " ++ prettyTCM n
+  -- prettyTCM (PatternNotConstructor n) = "PatternNotConstructor " ++ prettyTCM n
+  -- prettyTCM (FixRecursiveArgumentNotPositive r) = "FixRecursiveArgumentNotPositive " ++ prettyTCM r
+  -- prettyTCM (AlreadyDefined n) = "AlreadyDefined " ++ prettyTCM n
+  -- prettyTCM (NotUnifiable n) = "NotUnifiable " ++ prettyTCM n
+  -- prettyTCM (NotImpossibleBranch r) = "NotImpossibleBranch " ++ prettyTCM r
+  -- prettyTCM (NotImplemented r s) = "Feature not implemented " ++ prettyTCM r ++ " " ++ s
+  -- prettyTCM (BranchPatternCannotMatch r t1 t2) =
+  --   "Cannot match branch pattern " ++ prettyTCM r ++ " "
+  --   ++ prettyTCM t1 ++ " ~~ " ++ prettyTCM t2
+  -- prettyTCM (BranchPatternNotConvertible r c1 c2) =
+  --   "Branch pattern not compatible with matching " ++ prettyTCM r
+  --   ++ prettyTCM c1 ++ " ~~ " ++ prettyTCM c2
+
+
 instance PrettyTCM Int where
   prettyTCM = int
 

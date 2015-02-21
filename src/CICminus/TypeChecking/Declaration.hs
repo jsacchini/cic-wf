@@ -76,7 +76,7 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
 
   -- Check that types are convertible
   unlessM (bodyTp `subType` tp)
-    $ throwNotConvertible (Just (range expBody)) tp bodyTp
+    $ typeError (range expBody) $ NotConvertible tp bodyTp
 
   -- Check that constrained type is satisfiable
   -- Step 1: check that there is no negative cycle for each size variable

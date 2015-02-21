@@ -169,7 +169,7 @@ checkCaseIndices (Just c) nmInd pars inds
         checkIndicesConv [] [] = return ()
         checkIndicesConv (PatternVar _:ps) (_:ts) = checkIndicesConv ps ts
         checkIndicesConv (PatternDef _ u:ps) (t:ts) = do
-          unlessM (u `conv` t) $ throwNotConvertible (Just (range c)) u t
+          unlessM (u `conv` t) $ typeError (range c) $ NotConvertible u t
           checkIndicesConv ps ts
 
 
@@ -208,7 +208,7 @@ checkBranch sta asNm nmInd pars indicesPat returnType
 
   -- Check that context returned by matching is convertible with the pattern
   unlessM (ctx0 `conv` branchCtx) $
-    throwBranchPatternNotConvertible (range branchPat) ctx0 branchCtx
+    typeError (range branchPat) $ BranchPatternNotConvertible ctx0 branchCtx
 
   let constrIndices = getConstrIndices constr pars (boundArgs (size branchPat))
   traceTCM 30 $ text "Indices for branch: " <+> prettyTCM constrIndices

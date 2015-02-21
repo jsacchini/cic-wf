@@ -72,17 +72,18 @@ maxSort (Type m) (Type n) = do
   return $ Type (max m n)
 
 
-isSort :: (MonadTCM tcm) => Range -> Term -> tcm Sort
-isSort rg t = do t' <- whnf t
-                 case t' of
-                   Sort s -> return s
-                   _      -> throwNotSort rg t'
+isSort :: (MonadTCM tcm) => Range -> Term -> Type -> tcm Sort
+isSort rg t u = do
+  u' <- whnf u
+  case u' of
+    Sort s -> return s
+    _      -> typeError rg $ NotSort t u
 
 
 inferType :: (MonadTCM tcm) => A.Expr -> tcm (Type, Sort)
 inferType e = do
   (tp, s) <- infer e
-  s0 <- isSort (range e) s
+  s0 <- isSort (range e) tp s
   return (tp, s0)
 
 -- We assume that in the global environment, types are normalized
@@ -178,9 +179,9 @@ infer (A.App _ e1 _ e2) = do -- inferApp e1 e2
       traceTCM 35 $ hsep [ text "APP result type:"
                          , prettyTCM w ]
       return (mkApp t1 [t2], w)
-    _            -> throwNotFunction r1
+    _            -> typeError (range e1) $ NotFunction t1 r1
 
-infer (A.Meta r _) = typeError $ CannotInferMeta r
+infer (A.Meta r _) = typeError r CannotInferMeta
 
 infer i@(A.Ind r x sexpr pars) = do
   -- Get Inductive; for well-scoped terms, this should not fail
@@ -266,7 +267,7 @@ check t u = do
   traceTCM 35 $ hsep [text "Calling subtype with ", text (show r),
                       text "≤", text (show u)]
   b <- r `subType` u
-  unless b $ throwNotConvertible (Just (range t)) r u
+  unless b $ typeError (range t) $ NotConvertible r u
   return t'
 
 
@@ -326,7 +327,7 @@ inferNoTerm fix = do
   (body, bodyTp) <- pushBind (mkBind (A.fixName fix) recTp)
                     $ pushCtx ctx $ infer (A.fixBody fix)
   unlessM (tp `conv` bodyTp)
-    $ throwNotConvertible (Just (range fix)) recTp bodyTp
+    $ typeError (range fix) $ NotConvertible recTp bodyTp
   return (FixTerm { fixKind = A.fixKind fix
                   , fixNum  =
                     case A.fixSpec fix of

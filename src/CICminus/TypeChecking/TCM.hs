@@ -17,7 +17,6 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
-{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -27,7 +26,7 @@
 module CICminus.TypeChecking.TCM where
 
 import           Control.Applicative
-import           Control.Exception
+import           Control.Monad.Catch -- Control.Exception
 import           Control.Monad
 import           Control.Monad.Reader
 import           Control.Monad.State
@@ -48,67 +47,70 @@ import           CICminus.Utils.Sized
 import           CICminus.TypeChecking.Constraints  (CSet)
 import qualified CICminus.TypeChecking.Constraints  as CS
 
+-- | Type-checking monad
+
 -- Type checking errors
 -- We include scope errors, so we have to catch only one type
 data TypeError
-    = NotConvertible (Maybe Range) TCEnv I.Term I.Term
-    | NotFunction (Maybe Range) TCEnv I.Term
-    | NotSort Range TCEnv I.Term
-    | NotArity Range I.Term
-    | NotConstructor TCEnv I.Term
-    | InvalidProductRule (Maybe Range) Sort Sort
-    | IdentifierNotFound (Maybe Range) Name
-    | ConstantError String
-    | CannotInferMeta Range
-    | BranchPatternCannotMatch Range I.Term I.Term
-    | BranchPatternNotConvertible Range I.Context I.Context
-    -- Scope checking
-    | WrongNumberOfArguments Range Name Int Int
-    | WrongFixNumber Range Name Int
-    | UndefinedName Range Name
-    | NotInductive Range Name
-    | ConstructorNotApplied Range Name
-    | InductiveNotApplied Range Name
-    | PatternNotConstructor Name
-    | FixRecursiveArgumentNotPositive Range
-    | AlreadyDefined Name
-    | InvalidStageAnnotation Range
+    = NotConvertible I.Term I.Term
+    | TypeNotConvertible I.Term I.Type I.Type
+    | NotFunction I.Term I.Type
+    | NotSort I.Term I.Type
+    | NotArity I.Term I.Type
+    | NotConstructor I.Term
+    | InvalidProductRule Sort Sort
+    | CannotInferMeta
+    | BranchPatternCannotMatch I.Term I.Term
+    | BranchPatternNotConvertible I.Context I.Context
     -- Unification
-    | NotUnifiable Int
-    | NotImpossibleBranch Range
-    | NotImplemented Range String
+    | NotUnifiable [(I.Term, I.SinglePattern)]
+    | NotImpossibleBranch
+    | NotImplemented String
+    -- Scope checking
+    | WrongNumberOfArguments Name Int Int
+    | WrongFixNumber Name Int
+    | UndefinedName Name
+    | NotInductive Name
+    | ConstructorNotApplied Name
+    | InductiveNotApplied Name
+    | PatternNotConstructor Name
+    | FixRecursiveArgumentNotPositive
+    | AlreadyDefined Name
+    | InvalidStageAnnotation
     deriving(Typeable)
 
+
 instance Show TypeError where
-    show (NotConvertible r e t1 t2) = "NotConvertible " ++ show r
-    show (NotFunction r e t1) = "NotFunction " ++ show r
-    show (NotSort r e t1) = "NotSort " ++ show r
-    show (NotArity r t) = "NotArity " ++ show r
-    show (InvalidProductRule r s1 s2) = "InvalidProductRule " ++ show r
-    show (IdentifierNotFound r x) = "IdentifierNotFound " ++ show x ++ " " ++ show r
-    show (ConstantError s) = "ConstantError " ++ s
-    show (CannotInferMeta r) = "CannotInferMeta " ++ show r
-    show (WrongNumberOfArguments r _ _ _) = "WrongNumberOfArguments " ++ show r
-    show (WrongFixNumber r _ _) = "WrongFixNumber " ++ show r
-    show (UndefinedName r x) = "UndefinedName " ++ show r ++ ": " ++ show x
-    show (NotInductive r n) = "NotInductive " ++ show r ++ " " ++ show n
-    show (ConstructorNotApplied r n) = "ConstructorNotApplied " ++ show r ++ " " ++ show n
-    show (InductiveNotApplied r n) = "InductiveNotApplied " ++ show r ++ " " ++ show n
-    show (PatternNotConstructor n) = "PatternNotConstructor " ++ show n
-    show (FixRecursiveArgumentNotPositive r) = "FixRecursiveArgumentNotPositive " ++ show r
-    show (AlreadyDefined n) = "AlreadyDefined " ++ show n
-    show (NotUnifiable n) = "NotUnifiable " ++ show n
-    show (NotImpossibleBranch r) = "NotImpossibleBranch " ++ show r
-    show (NotImplemented r s) = "Feature not implemented " ++ show r ++ " " ++ s
-    show (BranchPatternCannotMatch r t1 t2) =
-      "Cannot match branch pattern " ++ show r ++ " "
-      ++ show t1 ++ " ~~ " ++ show t2
-    show (BranchPatternNotConvertible r c1 c2) =
-      "Branch pattern not compatible with matching " ++ show r
-      ++ show c1 ++ " ~~ " ++ show c2
+    show (NotConvertible t1 t2) = "NotConvertible"
+    -- show (TypeNotConvertible t u1 u2) = "NotConvertible " ++ show r
+    -- show (NotFunction r e t1) = "NotFunction " ++ show r
+    -- show (NotSort r e t1) = "NotSort " ++ show r
+    -- show (NotArity r t) = "NotArity " ++ show r
+    -- show (InvalidProductRule r s1 s2) = "InvalidProductRule " ++ show r
+    -- show (IdentifierNotFound r x) = "IdentifierNotFound " ++ show x ++ " " ++ show r
+    -- show (ConstantError s) = "ConstantError " ++ s
+    -- show (CannotInferMeta r) = "CannotInferMeta " ++ show r
+    -- show (WrongNumberOfArguments r _ _ _) = "WrongNumberOfArguments " ++ show r
+    -- show (WrongFixNumber r _ _) = "WrongFixNumber " ++ show r
+    -- show (UndefinedName r x) = "UndefinedName " ++ show r ++ ": " ++ show x
+    -- show (NotInductive r n) = "NotInductive " ++ show r ++ " " ++ show n
+    -- show (ConstructorNotApplied r n) = "ConstructorNotApplied " ++ show r ++ " " ++ show n
+    -- show (InductiveNotApplied r n) = "InductiveNotApplied " ++ show r ++ " " ++ show n
+    -- show (PatternNotConstructor n) = "PatternNotConstructor " ++ show n
+    -- show (FixRecursiveArgumentNotPositive r) = "FixRecursiveArgumentNotPositive " ++ show r
+    -- show (AlreadyDefined n) = "AlreadyDefined " ++ show n
+    -- show (NotUnifiable n) = "NotUnifiable " ++ show n
+    -- show (NotImpossibleBranch r) = "NotImpossibleBranch " ++ show r
+    -- show (NotImplemented r s) = "Feature not implemented " ++ show r ++ " " ++ s
+    -- show (BranchPatternCannotMatch r t1 t2) =
+    --   "Cannot match branch pattern " ++ show r ++ " "
+    --   ++ show t1 ++ " ~~ " ++ show t2
+    -- show (BranchPatternNotConvertible r c1 c2) =
+    --   "Branch pattern not compatible with matching " ++ show r
+    --   ++ show c1 ++ " ~~ " ++ show c2
 
 
-instance Exception TypeError
+-- instance Exception TypeError
 
 
 data StageNode
@@ -151,7 +153,7 @@ data TCState =
           , stVerbosityLevel     :: Verbosity
           }
 
-newtype SizeConstraint = SizeConstraint { unSC :: (CSet StageNode Range) }
+newtype SizeConstraint = SizeConstraint { unSC :: CSet StageNode Range }
 
 instance Show SizeConstraint where
   show (SizeConstraint cs) = show nodes ++ " " ++ show constraints
@@ -214,27 +216,69 @@ localGetByName :: (MonadTCM tcm) => Name -> tcm (Int, I.Bind)
 localGetByName x = liftM (envFindi ((==x) . I.bindName)) ask
 
 
-data TCErr = TCErr TypeError
-             deriving(Show,Typeable)
+-- | Errors
+
+data TCErr
+  = TypeError Range TCEnv TypeError
+  | ScopeError Range TypeError -- TODO: split TypeError type
+  deriving(Show,Typeable)
 
 instance Exception TCErr
+
+instance HasRange TCErr where
+  range (TypeError r _ _) = r
+  range (ScopeError r _) = r
+
+typeError :: (MonadTCM tcm) => Range -> TypeError -> tcm a
+typeError r t = do
+  e <- ask
+  throwM $ TypeError r e t
+
+typeError' :: (MonadTCM tcm) => TypeError -> tcm a
+typeError' = typeError noRange
+
+
+notImplemented :: (MonadTCM tcm) => Range -> String -> tcm a
+notImplemented r s = typeError r $ NotImplemented s
+
+wrongArg :: (MonadTCM tcm) => Range -> Name -> Int -> Int -> tcm a
+wrongArg r x m n = typeError r $ WrongNumberOfArguments x m n
+
+inductiveNotApplied :: (MonadTCM tcm) => Range -> Name -> tcm a
+inductiveNotApplied r x = typeError r $ InductiveNotApplied x
+
+failIfDefined :: (MonadTCM tcm) => Name -> tcm ()
+failIfDefined x = isGlobal x >>= flip when (scopeError' (AlreadyDefined x))
+
+scopeError :: (MonadTCM tcm) => Range -> TypeError -> tcm a
+scopeError r t = throwM $ ScopeError r t
+
+scopeError' :: (MonadTCM tcm) => TypeError -> tcm a
+scopeError' t = throwM $ ScopeError noRange t
+
+undefinedName :: (MonadTCM tcm) => Range -> Name -> tcm a
+undefinedName r x = scopeError r $ UndefinedName x
 
 class (Functor tcm,
        Applicative tcm,
        MonadReader TCEnv tcm,
        MonadState TCState tcm,
-       MonadIO tcm) => MonadTCM tcm
+       MonadIO tcm,
+       MonadThrow tcm) => MonadTCM tcm
 
 type TCM = ReaderT TCEnv (StateT TCState IO) -- StateT TCState (ReaderT TCEnv IO)
 
 instance MonadTCM TCM
 
 -- | Running the type checking monad
-runTCM :: TCM a -> IO (Either TCErr a)
-runTCM m = (Right <$> runTCM' m) `catch` (return . Left)
+runTCM :: TCM a -> TCM (Either TCErr a)
+runTCM m = (Right <$> m) `catch` (return . Left)
 
-runTCM' :: TCM a -> IO a
-runTCM' m = liftM fst $ runStateT (runReaderT m initialTCEnv) initialTCState
+runTCMIO :: TCM a -> IO (Either TCErr a)
+runTCMIO m = (Right <$> runTCMIO' m) `catch` (return . Left)
+
+runTCMIO' :: TCM a -> IO a
+runTCMIO' m = liftM fst $ runStateT (runReaderT m initialTCEnv) initialTCState
 
 
 initialTCState :: TCState
@@ -269,12 +313,6 @@ initialFresh = Fresh { freshStageVar = 0 -- 0 is mapped to InftyNode
 initialTCEnv :: TCEnv
 initialTCEnv = EnvEmpty
 
-typeError :: (MonadTCM tcm) => TypeError -> tcm a
-typeError = throw
-
-throwNotFunction :: (MonadTCM tcm) => I.Term -> tcm a
-throwNotFunction t = do e <- ask
-                        typeError $ NotFunction Nothing e t
 
 getSignature :: (MonadTCM tcm) => tcm [Named I.Global]
 getSignature = (reverse . stDefined <$> get) >>= mapM mkGlobal
@@ -545,7 +583,7 @@ traceTCM n t = do k <- getVerbosity
 
 --- For testing
 testTCM_ :: TCM a -> IO (Either TCErr a)
-testTCM_ m = runTCM m'
+testTCM_ m = runTCMIO m'
   where m' = do addGlobal (mkNamed (mkName "nat") natInd)
                 addGlobal (mkNamed (mkName "O")   natO)
                 addGlobal (mkNamed (mkName "S")   natS)

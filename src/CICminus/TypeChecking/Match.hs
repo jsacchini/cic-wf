@@ -69,7 +69,7 @@ matchPos ctx eqs ks =
                              , text "result context:" <+> prettyTCM ctxr
                              , text "for result" <+> prettyTCM ksr ]
           return x
-      Nothing -> typeError $ NotUnifiable 1
+      Nothing -> typeError' $ NotUnifiable eqs
 
 
 -- | matchNeg returns () if the unification succeedes negatively or throws an
@@ -86,7 +86,7 @@ matchNeg ctx eqs ks =
                        , text "FOR" <+> prettyTCM ks ]
     r <- runMT $ match ctx eqs ks
     case r of
-      Just _ -> typeError (NotImpossibleBranch noRange)
+      Just _ -> typeError noRange NotImpossibleBranch
       Nothing -> return ()
 
 
@@ -162,7 +162,7 @@ matchEq ctx (Bound k, t2) js
     R.lift $ traceTCM 35 $ hsep [ text "Applied context"
                                 , prettyTCM (applyCtxDef ctx k (lift0 (-k-1) t2)) ]
     return (revapplyCtxDef ctx k (lift0 (-k-1) t2), js \\ [k])
-  | otherwise   = do (unlessM (R.lift $ pushCtx ctx $ conv (Bound k) t2)) $ R.lift $ typeError $ NotUnifiable 3 -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
+  | otherwise   = do (unlessM (R.lift $ pushCtx ctx $ conv (Bound k) t2)) $ R.lift $ typeError' $ NotUnifiable [(Bound k, PatternDef noName t2)] -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
                      return (ctx, js)
 matchEq ctx (App (Constr x1 cid1 ps1) as1, App (Constr x2 cid2 ps2) as2) js
   | x1 == x2  = match ctx (zip as1 (map (PatternDef noName) as2)) js
@@ -185,5 +185,5 @@ matchEq ctx (t1, t2) js = do
                                    , text (show t1)
                                    , text "and "
                                    , text (show t2) ]
-       R.lift $ typeError $ NotUnifiable 42
+       R.lift $ typeError' $ NotUnifiable [(t1, PatternDef noName t2)]
   return (ctxEmpty, js)

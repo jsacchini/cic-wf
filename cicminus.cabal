@@ -22,7 +22,8 @@ Executable cicminus
                      array -any,
                      filepath -any,
                      fgl -any,
-                     ansi-wl-pprint -any
+                     ansi-wl-pprint -any,
+                     exceptions -any
   build-Tools:       alex -any,
                      happy -any
   ghc-options:       -O2

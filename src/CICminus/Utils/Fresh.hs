@@ -46,6 +46,12 @@ fresh =
         put s
         return i
 
+fresh' :: (HasFresh i s, MonadState s m) => (i -> a -> b) -> a -> m b
+fresh' f x =
+    do  (i,s) <- gets nextFresh
+        put s
+        return (f i x)
+
 withFresh :: (HasFresh i e, MonadReader e m) => (i -> m a) -> m a
 withFresh ret =
     do  (i,e) <- asks nextFresh

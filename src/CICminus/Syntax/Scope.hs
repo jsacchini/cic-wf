@@ -189,7 +189,7 @@ instance Scope C.SizeExpr A.SizeExpr where
     -- liftIO $ print ("scope ident " ++ show x ++ " in " ++ show xs)
     case findIndex (==x) (envToList xs) of
       Just _ -> return $ A.SizeExpr r x n
-      Nothing -> undefinedName r x
+      Nothing -> scopeError r $ UndefinedName x
   scope (C.SizeStar r) = return $ A.SizeStar r
 
 
@@ -222,7 +222,7 @@ instance Scope a b => Scope (Arg a) (Arg b) where
 instance Scope C.FixExpr A.FixExpr where
   scope (C.FixExpr rg ki f spec args tp body) =
     do args' <- specScope $ scope args
-       unless (linearCheck argNames) $ notImplemented rg "non-linear context"
+       unless (linearCheck argNames) $ typeError rg $ NotImplemented "non-linear context"
        tp'   <- specScope
                 $ extendScope (name args) $ scope tp
        -- spec' <- extendScope (name args) $ scope spec
@@ -250,7 +250,7 @@ instance Scope C.FixExpr A.FixExpr where
                              return $ A.FixPosition n
                            Nothing ->
                              case ki of
-                               I -> notImplemented rg "Specify fix spec"
+                               I -> typeError rg $ NotImplemented "Specify fix spec"
                                CoI -> return $ A.FixPosition (-1)
         C.FixStage r x -> case findRecArg (bindings args) 0 of
                            Just n -> do
@@ -266,8 +266,8 @@ instance Scope C.FixExpr A.FixExpr where
         if C.hasStar (unArg t) || C.hasSize (unArg t)
         then Just n
         else findRecArg bs (n + length xs)
-      findRecArg (C.BindName _ _ _:bs) n = findRecArg bs (n+1)
-      findRecArg (C.LetBind _ _ _ _:bs) n = findRecArg bs (n+1)
+      findRecArg (C.BindName {}:bs) n = findRecArg bs (n+1)
+      findRecArg (C.LetBind {}:bs) n = findRecArg bs (n+1)
       -- TODO: check for stars in the LetBind case
 
 
@@ -312,7 +312,7 @@ instance Scope C.IndicesSpec A.IndicesSpec where
              notImplemented r ("wrong number of arguments in indices")
            -- Check that parameters are all '_'
            unless (all parIsNull pars)
-             $ notImplemented r "Error: parameters in case indices must be _"
+             $ typeError r $ NotImplemented "Error: parameters in case indices must be _"
            -- Check that indices are variables or of the form (x := t)
            return $ A.IndicesSpec r nm ctx'
              where
@@ -324,8 +324,8 @@ instance Scope C.IndicesSpec A.IndicesSpec where
                argIsVarOrDef (C.BindName _ _ x) = True
                argIsVarOrDef (C.LetBind _ _ _ e) = isNothing (unArg e)
 
-         Just _                -> throw $ NotInductive r nm
-         Nothing               -> throw $ UndefinedName r nm
+         Just _                -> scopeError r $ NotInductive nm
+         Nothing               -> scopeError r $ UndefinedName nm
 
 
 instance Scope C.SinglePattern A.SinglePattern where
@@ -356,10 +356,10 @@ instance Scope C.Branch A.Branch where
         return $ A.Branch r constr idConstr pattern' body'
           where lenPat  = length pattern
                 lenArgs = size targs
-      Just _  -> throw $ PatternNotConstructor constr
+      Just _  -> scopeError r $ PatternNotConstructor constr
       Nothing -> do
         traceTCM 70 $ text (show constr ++ " not found\n")
-        throw $ UndefinedName r constr
+        typeError r $ UndefinedName constr
 
 
 -- scopeAssign :: (MonadTCM tcm) => Int -> A.Assign -> tcm A.Assign
@@ -478,7 +478,7 @@ instance Scope C.Declaration A.Declaration where
     g <- lookupGlobal x
     case g of
       Just _ -> return $ A.Print rg x
-      Nothing -> throw $ UndefinedName rg x
+      Nothing -> undefinedName rg x
 
   scope (C.Cofixpoint f) = fmap A.Cofixpoint $ scope f
   scope (C.Inductive rg i) = fmap (A.Inductive rg) $ scope i

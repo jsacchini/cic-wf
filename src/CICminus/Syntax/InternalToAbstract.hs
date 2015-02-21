@@ -200,7 +200,7 @@ instance Reify Term C.Expr where
       mkSizeExpr = C.SizeExpr noRange
 
   reify e =
-    throw $ NotImplemented noRange ("TODO reify: " ++ show e)
+    typeError noRange $ NotImplemented ("TODO reify: " ++ show e)
 
 
 instance Reify ConstrType C.ConstrExpr where

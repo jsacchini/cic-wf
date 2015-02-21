@@ -26,7 +26,7 @@ check :: (MonadTCM tcm) => A.Expr -> Type -> tcm Term
 
 checkList :: (MonadTCM tcm) => [A.Expr] -> Context -> tcm [Term]
 
-isSort :: (MonadTCM tcm) => Range -> Term -> tcm Sort
+isSort :: (MonadTCM tcm) => Range -> Term -> Type -> tcm Sort
 
 checkPattern :: (MonadTCM tcm) => A.Pattern -> Context
                 -> tcm (Pattern, Context)

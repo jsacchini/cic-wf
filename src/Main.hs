@@ -19,12 +19,15 @@
 
 module Main where
 
-import           Prelude                   hiding (catch)
+import           Prelude                            hiding (catch)
 
 import           System.Console.GetOpt
 import           System.Environment
+import           System.Exit
+import           System.FilePath
 import           System.IO
 
+import           Control.Monad.Catch
 import           Control.Monad.State
 import           Control.Monad.Trans
 import           Data.Functor
@@ -50,6 +53,7 @@ import           CICminus.Syntax.InternalToAbstract
 import           CICminus.TypeChecking.Declaration
 import           CICminus.TypeChecking.PrettyTCM
 import           CICminus.TypeChecking.TCM
+import           CICminus.TypeChecking.TCMErrors
 
 -- import           CICminus.TopLevel.Monad
 -- import           CICminus.TopLevel.TopLevel
@@ -79,27 +83,38 @@ evalFile =
   do hSetBuffering stdout NoBuffering
      args <- getArgs
      case getOpt RequireOrder options args of
-       (o,n,[])   -> mapM_ (runFile opts) n
-                     where opts = foldl (flip id) defaultOptions o
+       (o,n,[])   -> do mapM_ (runFile opts) n
+                        exitSuccess
+                          where opts = foldl (flip id) defaultOptions o
        (_,_,errs) -> putStrLn $ "Command line error: " ++ concat errs
      -- mapM_ runFile args
     where
       runFile opts f =
         do h <- openFile f ReadMode
            ss <- hGetContents h
-           case parse fileParser ss of
+           case parse fileParser (Just $ snd $ splitFileName f) ss of
              ParseOk ts ->
                do -- putStrLn "OK"
                   -- putStrLn $ show ts
                   -- mapM_ (\x -> putStrLn (show x ++ "\n---------")) ts
                   -- putStrLn "===================\n=================\n\n"
                   -- r <- runTCM $ printAll ts
-                  r <- runTCM $ typeCheckFile (optVerbose opts) ts
-                  case r of
-                    Left err -> putStrLn ("Error!!!! " ++ show err)
-                    Right _ -> putStrLn "OK"
+                   r <- runTCMIO (typeCheckFile (optVerbose opts) ts
+                                  `catch` printError)
+                   case r of
+                     Right _ -> exitSuccess
+                     Left _  -> exitFailure
+                  -- _ <- runTCMIO $ do
+                  --   r <- runTCM $ typeCheckFile (optVerbose opts) ts
+                  --   case r of
+                  --     Left err -> dputStrLn ("Error!!!! " ++ show err)
+                  --     Right _ -> putStrLn "OK"
              ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
            hClose h
+      printError :: (MonadTCM tcm) => TCErr -> tcm ()
+      printError err = do
+        prettyError err
+        throwM err
       printScoped :: C.Declaration -> TCM ()
       printScoped c = do
         a <- withScope EnvEmpty  $ scope c
