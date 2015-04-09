@@ -193,6 +193,7 @@ instance Show WfConstraint where
   show (WfConstraint env a1 a2) = concat [ show env, " ⊢ "
                                          , show a1, " ⊑ ", show a2 ]
   show (WfIndependent v as) = show v ++ " ∉ " ++ show as
+  show (WfCheckpoint env) = "CHECK " ++ show env
 
 instance Pretty WfConstraint where
   pretty = text . show
@@ -270,7 +271,7 @@ wfAddDecl :: (MonadTCM tcm) => I.SizeName -> I.Annot -> tcm ()
 wfAddDecl sv a = do
   con <- stWfConstraints <$> get
   let (before, env, after) = splitCP con []
-      after' = map (ammendConstraint env) after
+      after' = WfConstraint env a I.infty : map (ammendConstraint env) after
   setWfConstraints (reverse after' ++ before)
   where
     splitCP :: [WfConstraint] -> [WfConstraint] -> ([WfConstraint], WfEnv, [WfConstraint])
@@ -281,7 +282,7 @@ wfAddDecl sv a = do
     ammendConstraint _    c@(WfIndependent _ _)    = c
     ammendConstraint env0 (WfConstraint env a1 a2) = WfConstraint env' a1 a2
       where
-        (cs, ds) = envSplitAt (envLen env0) env
+        (cs, ds) = envSplitAt (envLen env - envLen env0) env
         env' = cs :< WfDeclaration sv a `envCat` ds
 
 -- Fresh

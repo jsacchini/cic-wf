@@ -306,6 +306,8 @@ check (A.Meta _ Nothing) u = do
 check t u = do
   traceTCM 35 $ hsep [ text "Checking type of", prettyTCM t
                      , text "against", prettyTCM u]
+  wfSetCheckpoint
+  traceTCM 35 $ text "SET CHECKPOINT"
   (t', r) <- infer t
   traceTCM 35 $ hsep [text "Calling subtype with ", prettyTCM r,
                       text "≤", prettyTCM u]
@@ -314,7 +316,7 @@ check t u = do
   b <- r `subType` u
   -- If conversion fails, try inserting a coercion
   if b
-    then return t'
+    then traceTCM 35 (text "REMOVE CHECKPOINT") >> wfDelCheckpoint >> return t'
     else do
     r1 <- normalForm r
     u1 <- normalForm u
@@ -330,19 +332,28 @@ check t u = do
             b1 <- mkApp (Ind (mkAnnot stage) False x1 ps1) args1
                   `subType` mkApp (Ind a2 False x2 ps2) args2
             unless b1 $ typeError (range t) $ NotConvertible r u
+            traceTCM 35 (text "REMOVE CHECKPOINT")
+            wfDelCheckpoint
             return (I.Intro a1 t')
 
           CoI -> do
             -- TODO: push im <= stage to all constraints generated from t
             im <- freshSizeName (mkName "i")
             stage <- freshStage (range t)
-            addWfConstraint (mkAnnot stage) infty
-            pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot im) a1
-            pushWfDecl im (mkAnnot stage) $ addWfConstraint a1 (mkAnnot im)
-            addWfIndependent im (listAnnot t')
             b1 <- mkApp (Ind (mkAnnot stage) False x1 ps1) args1
                   `subType` mkApp (Ind a2 False x2 ps2) args2
             unless b1 $ typeError (range t) $ NotConvertible r u
+            traceTCM 20 $ text "Ammending constraints:"
+              <+> (getWfConstraints >>= prettyTCM)
+            wfAddDecl im (mkAnnot stage)
+            traceTCM 20 $ text "Fixed constraints:"
+              <+> (getWfConstraints >>= prettyTCM)
+            -- addWfConstraint (mkAnnot stage) infty
+            pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot im) a1
+            pushWfDecl im (mkAnnot stage) $ addWfConstraint a1 (mkAnnot im)
+            addWfIndependent im (listAnnot t')
+            traceTCM 35 (text "REMOVE CHECKPOINT")
+            wfDelCheckpoint
             return (I.CoIntro im t')
 
       _ -> typeError (range t) $ NotConvertible r u
