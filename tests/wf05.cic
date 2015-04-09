@@ -1,0 +1,29 @@
+codata stream (A ++:Type) : Type :=
+   ccons : A -> stream A -> stream A.
+
+fixpoint plus <i> (m: nat<i>) (n:nat) : nat :=
+     < nat > case m of
+             | O => n
+             | S m' => in S (plus m' n)
+             end.
+
+
+cofixpoint sum <i> (x:stream<i> nat) (y:stream<i> nat) : stream<i> nat :=
+  coin <!stream nat> cocase x of
+   | ccons x1 x2 => <!stream nat> cocase y of
+                    | ccons y1 y2 => ccons nat (plus x1 y1) (sum x2 y2)
+                    end
+   end.
+
+cofixpoint fib <i> : stream<i> nat :=
+  ccons nat 0 (ccons nat 1
+      (sum fib (<stream nat> cocase fib of
+                 | ccons _ y => y end))).
+
+-- cofixpoint fib <i> : stream<i> nat :=
+--   coin (ccons nat (in O) (coin (ccons nat (in (S (in O)))
+--       (sum fib (<stream nat> cocase fib of
+--                  | ccons _ y => y end))))).
+
+
+print fib.

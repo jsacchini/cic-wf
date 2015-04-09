@@ -1,0 +1,6 @@
+codata stream (A ++:Type) : Type :=
+   ccons : A -> stream A -> stream A.
+
+cofixpoint zeroes <i> : stream<i> nat := ccons nat 0 zeroes.
+
+print zeroes.

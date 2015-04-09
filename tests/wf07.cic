@@ -1,0 +1,10 @@
+fixpoint f <i> (m: nat<i>) : Type :=
+     < Type > case m of
+             | O => nat
+             | S m' => nat -> f m'
+             end.
+
+
+-- print plus'.
+
+print f.

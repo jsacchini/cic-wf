@@ -1,0 +1,38 @@
+-- define plus' := -- : nat -> nat -> nat :=
+--    fix plus <i> (m: nat<i>) (n:nat) : nat :=
+--                       < nat >
+--                         case m of
+--                         | O => n
+--                         | S m' => in (S (plus m' n))
+--                         end.
+
+fixpoint plus <i> (m: nat<i>) (n:nat) : nat :=
+     < nat > case m of
+             | O => n
+             | S m' => S (plus m' n)
+             end.
+
+fixpoint mult <i> (m : nat<i>) (n:nat) : nat :=
+     < nat > case m of
+             | O => O
+             | S m' => plus (mult m' n) n
+             end.
+
+fixpoint fact <i> (m: nat<i>) : nat :=
+    < nat >
+    case m of
+    | O => S O
+    | S m' => mult (fact m') m
+    end.
+
+
+-- print plus'.
+
+print plus.
+print mult.
+print fact.
+-- eval (plus (in (S (in O))) (in O)).
+
+eval fun x : nat => plus 3 x.
+
+eval fact 4.

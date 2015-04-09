@@ -1,0 +1,15 @@
+define t1 := fun x : nat => <!nat> case x of
+                            | O => O
+                            | S x' => S x'
+                            end.
+
+codata stream (A ++:Type) : Type :=
+   ccons : A -> stream A -> stream A.
+
+define t2 := fun x : stream nat => <nat> cocase x of
+                            | ccons h t => h
+                            end.
+
+print t1.
+
+print t2.

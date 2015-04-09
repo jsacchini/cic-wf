@@ -1,0 +1,3 @@
+fixpoint loop <i> (x:nat<i>) : nat<i> := loop x.
+
+print loop.

@@ -1,0 +1,69 @@
+Name:                cicwf
+Version:             0.1
+Description:
+License:             GPL
+License-file:        LICENSE
+Author:              Jorge Luis Sacchini
+Maintainer:          Jorge Luis Sacchini <sacchini@qatar.cmu.edu>
+Build-Type:          Simple
+Cabal-Version:       >=1.2
+
+extra-source-files:  src/undefined.h
+
+Executable cicwf
+  main-is:           Main.hs
+  hs-source-dirs:    src/
+  include-dirs:      src/
+  build-Depends:     pretty -any,
+                     haskeline -any,
+                     mtl -any,
+                     base -any,
+                     containers -any,
+                     array -any,
+                     filepath -any,
+                     fgl -any,
+                     ansi-wl-pprint -any,
+                     exceptions -any
+  build-Tools:       alex -any,
+                     happy -any
+  ghc-options:       -O2
+                     -threaded
+  other-modules:
+                     CICwf.Syntax.Concrete
+                     CICwf.Syntax.Abstract
+                     CICwf.Syntax.Alex
+                     CICwf.Syntax.Common
+                     CICwf.Syntax.Internal
+                     CICwf.Syntax.InternalToAbstract
+                     CICwf.Syntax.AbstractToConcrete
+                     CICwf.Syntax.Lexer
+                     CICwf.Syntax.ParseMonad
+                     CICwf.Syntax.Parser
+                     CICwf.Syntax.Position
+                     CICwf.Syntax.Scope
+                     CICwf.Syntax.Size
+                     CICwf.Syntax.Tokens
+                     CICwf.Utils.Fresh
+                     CICwf.Utils.Impossible
+                     CICwf.Utils.Maybe
+                     CICwf.Utils.Misc
+                     CICwf.Utils.MonadUndo
+                     CICwf.Utils.Pretty
+                     CICwf.Utils.Sized
+                     CICwf.TypeChecking.Case
+                     CICwf.TypeChecking.Constraints
+                     CICwf.TypeChecking.Conversion
+                     CICwf.TypeChecking.Fix
+                     CICwf.TypeChecking.Inductive
+                     -- CICwf.TypeChecking.Permutation
+                     CICwf.TypeChecking.PrettyTCM
+                     CICwf.TypeChecking.RecCheck
+                     CICwf.TypeChecking.TCM
+                     CICwf.TypeChecking.TCMErrors
+                     CICwf.TypeChecking.TypeChecking
+                     CICwf.TypeChecking.Declaration
+                     CICwf.TypeChecking.Match
+                     -- CICwf.TypeChecking.Unification
+                     CICwf.TypeChecking.Whnf
+                     CICwf.TopLevel.Monad
+                     CICwf.TopLevel.TopLevel

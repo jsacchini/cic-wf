@@ -19,8 +19,6 @@
 
 module Main where
 
-import           Prelude                            hiding (catch)
-
 import           System.Console.GetOpt
 import           System.Environment
 import           System.Exit
@@ -29,34 +27,23 @@ import           System.IO
 
 import           Control.Monad.Catch
 import           Control.Monad.State
-import           Control.Monad.Trans
-import           Data.Functor
-import           Data.List
-import           Data.Maybe
 
 -- import qualified Text.PrettyPrint          as PP
 
-import qualified CICminus.Syntax.Abstract           as A
-import           CICminus.Syntax.AbstractToConcrete
-import           CICminus.Syntax.Common
-import qualified CICminus.Syntax.Concrete           as C
-import qualified CICminus.Syntax.Internal           as I
-import           CICminus.Syntax.ParseMonad
-import           CICminus.Syntax.Parser
-import           CICminus.Syntax.Scope
-import           CICminus.Syntax.ScopeMonad
+import           CICwf.Syntax.AbstractToConcrete
+import qualified CICwf.Syntax.Concrete           as C
+import           CICwf.Syntax.ParseMonad
+import           CICwf.Syntax.Parser
+import           CICwf.Syntax.Scope
 
-import qualified CICminus.Utils.Pretty              as MP
+-- import qualified CICwf.TypeChecking.Constraints  as CS
+import           CICwf.TypeChecking.Declaration
+import           CICwf.TypeChecking.PrettyTCM
+import           CICwf.TypeChecking.TCM
+import           CICwf.TypeChecking.TCMErrors
 
-import           CICminus.Syntax.InternalToAbstract
--- import qualified CICminus.TypeChecking.Constraints  as CS
-import           CICminus.TypeChecking.Declaration
-import           CICminus.TypeChecking.PrettyTCM
-import           CICminus.TypeChecking.TCM
-import           CICminus.TypeChecking.TCMErrors
-
--- import           CICminus.TopLevel.Monad
--- import           CICminus.TopLevel.TopLevel
+-- import           CICwf.TopLevel.Monad
+-- import           CICwf.TopLevel.TopLevel
 
 
 data Options =
@@ -79,6 +66,7 @@ main :: IO ()
 -- main = runTop mainLoop
 main = evalFile
 
+evalFile :: IO ()
 evalFile =
   do hSetBuffering stdout NoBuffering
      args <- getArgs
@@ -115,23 +103,6 @@ evalFile =
       printError err = do
         prettyError err
         throwM err
-      printScoped :: C.Declaration -> TCM ()
-      printScoped c = do
-        a <- withScope EnvEmpty  $ scope c
-        -- prettyTCM a
-        concs <- concretize a
-        traceTCM 0 $ vcat [prettyTCM concs, text "============="]
-
-      printAll :: [C.Declaration] -> TCM ()
-      printAll = mapM_ printScoped
-
-      -- runDecl :: Verbosity -> C.Declaration -> IO ()
-      -- runDecl v d = do
-      --   r <- runTCM $ typeCheckFile (optVerbose opts) [ts]
-      --   case r of
-      --               Left err -> putStrLn $ "Error!!!! " ++ show err
-      --               Right _ -> putStrLn "OK" -- return ()
-      --             putStrLn "OK"
 
 
       typeCheckDecl :: C.Declaration -> TCM ()
@@ -148,7 +119,10 @@ evalFile =
           --                $$ vcat(map (text . show) gs))
           cs <- allConstraints
           -- traceTCM 15 $ prettyTCM (filter (not . I.isConstr . namedValue) gs)
-          traceTCM 15 $ (text $ "Constraints:" ++ show cs)
+          traceTCM 3 $ (text $ "Constraints:" ++ show cs)
+          wfcs <- getWfConstraints
+          -- traceTCM 15 $ prettyTCM (filter (not . I.isConstr . namedValue) gs)
+          traceTCM 3 $ (text "Wf-Constraints:" <+> vcat (map prettyTCM wfcs))
       typeCheckFile :: Verbosity -> [C.Declaration] -> TCM ()
       typeCheckFile verb ds =
         do setVerbosity verb

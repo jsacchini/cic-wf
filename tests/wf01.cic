@@ -1,0 +1,14 @@
+codata stream (A ++:Type) : Type :=
+   ccons : A -> stream A -> stream A.
+
+-- define t1 := in O.
+
+define t2 := in (S (in O)).
+
+define t3 := fun (x: nat) (y : stream nat) => coin (ccons nat x y).
+
+-- print t1.
+
+print t2.
+
+print t3        .

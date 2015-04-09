@@ -1,4 +1,4 @@
-# cicminus
+# cic-wf
 
 Playground implementation of the Calculus of (Co-)Inductive Constructions with
-type-based termination/productivity.
+well-founded sized types for termination/productivity checking.
