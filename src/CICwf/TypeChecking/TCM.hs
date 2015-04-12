@@ -25,8 +25,6 @@
 
 module CICwf.TypeChecking.TCM where
 
-import           CICwf.Utils.Impossible
-
 import           Control.Applicative
 import           Control.Monad.Catch -- Control.Exception
 import           Control.Monad
@@ -155,6 +153,7 @@ data TCState =
           , stConstraints        :: SizeConstraint
           , stVerbosityLevel     :: Verbosity
           -- Well-founded sizes
+          , stWfStages           :: [(I.StageVar, [I.SizeName])]
           , stWfEnv              :: WfEnv
           , stSizeNames          :: [I.SizeName]
           , stWfConstraints      :: [WfConstraint]
@@ -175,6 +174,10 @@ type LocalScope = Env Name
 -- Well-founded sizes
 
 type WfEnv = Env WfDeclaration
+
+wfDom :: WfEnv -> [I.SizeName]
+wfDom EnvEmpty = []
+wfDom (es :< WfDeclaration x _) = x : wfDom es
 
 data WfDeclaration = WfDeclaration I.SizeName I.Annot
 
@@ -219,17 +222,12 @@ addWfConstraint a1 a2 = do
 
 addWfIndependent :: (MonadTCM tcm) => I.SizeName -> [I.Annot] -> tcm ()
 addWfIndependent a1 as =
-  modify $ \st -> st { stWfConstraints = (WfIndependent a1 as)
+  modify $ \st -> st { stWfConstraints = WfIndependent a1 as
                                          : stWfConstraints st }
 
 
 withWfEnv :: (MonadTCM tcm) => WfEnv -> tcm a -> tcm a
-withWfEnv env x = do
-  old <- stWfEnv <$> get
-  modify $ \st -> st { stWfEnv = env }
-  y <- x
-  modify $ \st -> st { stWfEnv = old }
-  return y
+withWfEnv = localWfEnv . const
 
 localWfEnv :: (MonadTCM tcm) => (WfEnv -> WfEnv) -> tcm a -> tcm a
 localWfEnv f x = do
@@ -319,7 +317,9 @@ freshStage rg = do
   stage <- fresh
   modify $ \st -> st { stConstraints =
                           SizeConstraint (CS.addNode (VarNode stage) rg
-                                          (unSC (stConstraints st))) }
+                                          (unSC (stConstraints st)))
+                     , stWfStages = (stage, wfDom (stWfEnv st))
+                                    : stWfStages st }
   return stage
 
 
@@ -416,6 +416,7 @@ initialTCState =
           , stConstraints        = SizeConstraint
                                    $ CS.addNode InftyNode noRange CS.empty
           , stVerbosityLevel     = 30
+          , stWfStages           = []
           , stWfEnv              = EnvEmpty
           , stSizeNames          = []
           , stWfConstraints      = []
@@ -525,8 +526,8 @@ pushBind b = local (:< b)
 -- TODO: it should not be necessary to freshen a context everytime
 -- only freshening during scope checking should be enough
 pushCtx :: (MonadTCM tcm) => I.Context -> tcm a -> tcm a
-pushCtx ctx m = -- do ctx' <- freshenCtx ctx
-                   local (<:> ctx) m
+pushCtx ctx = -- do ctx' <- freshenCtx ctx
+                local (<:> ctx)
 
 
 extendEnv :: (MonadTCM tcm) => I.Environment -> tcm a -> tcm a

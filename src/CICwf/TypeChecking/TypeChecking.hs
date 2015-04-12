@@ -352,8 +352,6 @@ check t u = do
             pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot im) a1
             pushWfDecl im (mkAnnot stage) $ addWfConstraint a1 (mkAnnot im)
             addWfIndependent im (listAnnot t')
-            traceTCM 35 (text "REMOVE CHECKPOINT")
-            wfDelCheckpoint
             return (I.CoIntro im t')
 
       _ -> typeError (range t) $ NotConvertible r u

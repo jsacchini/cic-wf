@@ -27,3 +27,16 @@ cofixpoint fib <i> : stream<i> nat :=
 
 
 print fib.
+
+define head := fun (x:stream nat) => <nat> cocase x of
+                 | ccons x _ => x end.
+
+define tail := fun (x:stream nat) => <stream nat> cocase x of
+                 | ccons _ y => y end.
+
+print head.
+print tail.
+
+define f0 := head fib.
+
+print f0.

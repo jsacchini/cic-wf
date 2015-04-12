@@ -40,6 +40,7 @@ import           CICwf.TypeChecking.TCM
 import           CICwf.TypeChecking.TCMErrors
 import           CICwf.TypeChecking.TypeChecking
 import           CICwf.TypeChecking.Whnf
+import           CICwf.TypeChecking.SolveWf
 
 import           CICwf.Utils.Misc
 
@@ -87,6 +88,7 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
 
   let body0 = body -- toInfty body
       tp0   = tp -- toInftyBut stas tp
+  solveWfConstraints
   mapM_ addGlobal [mkNamed nm Definition { defType = ConstrType stas tp0
                                          , defTerm = body0 }]
 
@@ -123,6 +125,7 @@ inferDecl (A.Definition _ x Nothing e) = do
   (tm, tp) <- infer e
   let tm0 = tm -- toInfty tm
       tp0 = tp -- toInfty tp
+  solveWfConstraints
   mapM_ addGlobal [mkNamed x Definition { defType = ConstrType [] tp0
                                         , defTerm = tm0 }]
 
@@ -195,6 +198,7 @@ inferDecl (A.Cofixpoint fix) = do
   resetConstraints
   (fix', tp, ctype) <- inferFix fix
   let fix0 = fix' -- toInfty fix'
+  solveWfConstraints
   addGlobal $
     mkNamed (A.fixName fix) Cofixpoint { cofixTerm = fix0
                                        , cofixType = ctype}

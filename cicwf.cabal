@@ -65,5 +65,6 @@ Executable cicwf
                      CICwf.TypeChecking.Match
                      -- CICwf.TypeChecking.Unification
                      CICwf.TypeChecking.Whnf
+                     CICwf.TypeChecking.SolveWf
                      CICwf.TopLevel.Monad
                      CICwf.TopLevel.TopLevel
