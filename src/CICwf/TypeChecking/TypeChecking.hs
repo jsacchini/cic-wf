@@ -130,8 +130,8 @@ infer (A.Local rg x) = do
   w <- whnf (I.lift (n + 1) 0 (unArg (bindType b)))
   case w of
     Subset i a t -> do
-      alpha <- freshStage rg
-      addWfConstraint (mkAnnot alpha) infty
+      alpha <- freshConstrainedStage rg a
+      -- addWfConstraint (mkAnnot alpha) infty
       addWfConstraint (hat (mkAnnot alpha)) a
       let t' = substSizeName i (mkAnnot alpha) t
       w' <- whnf t'
@@ -150,6 +150,8 @@ infer (A.Global rg ident) = do
   case tp of
     Subset i a t -> do
       alpha <- freshStage rg
+      traceTCM 10 $ (text "Global constrained type:" <+> prettyTCM tp
+                     $$ text "Adding constraint:" <+> prettyTCM (hat (mkAnnot alpha)) <+> text "<=" <+> prettyTCM a)
       addWfConstraint (hat (mkAnnot alpha)) a
       let t' = substSizeName i (mkAnnot alpha) t
       w' <- whnf t'
@@ -217,14 +219,12 @@ infer i@(A.Ind r b x sexpr pars) = do
 
       inferSizeExpr A.SizeEmpty rg = do
         stage <- freshStage rg
-        addWfConstraint (mkAnnot stage) infty
         traceTCM 40 $ text ("fresh stage " ++ show stage)
         return $ I.Stage (I.StageVar stage 0)
 
 infer (A.Constr rg x pars) = forbidAnnot $ do
   t <- getGlobal x
   stage <- freshStage rg
-  addWfConstraint (mkAnnot stage) infty
   traceTCM 35 $ hsep [ text "fresh stage"
                      , prettyTCM stage
                      , text "at"
@@ -252,7 +252,6 @@ infer (A.Fix f) = forbidAnnot $ do
   case tp of
     Subset i a t -> do
       alpha <- freshStage (range f)
-      addWfConstraint (mkAnnot alpha) infty
       addWfConstraint (hat (mkAnnot alpha)) a
       let t' = substSizeName i (mkAnnot alpha) t
       w' <- whnf t'
@@ -264,19 +263,18 @@ infer (A.Case c) = forbidAnnot $ inferCase c
 -- Well-founded sizes
 infer (A.Intro rg Nothing e) = do
   (t, u) <- infer e
-  stage <- freshStage rg
-  addWfConstraint (mkAnnot stage) infty
+  -- stage <- freshStage rg
+  -- addWfConstraint (mkAnnot stage) infty
   -- TODO: check that it is an inductive type (not coinductive)
   (a, u') <- case u of
-    Ind a True x ps -> return (a, Ind (mkAnnot stage) False x ps)
+    Ind a True x ps -> return (a, Ind (hat a) {- (mkAnnot stage) -} False x ps)
     _ -> typeError rg $ GenericError "in applied to non-inductive type."
-  addWfConstraint (hat a) (mkAnnot stage)
+  -- addWfConstraint (hat a) (mkAnnot stage)
   return (I.Intro a t, u')
 
 infer (A.CoIntro rg Nothing e) = do
   im <- freshSizeName (mkName "i")
   stage <- freshStage rg
-  addWfConstraint (mkAnnot stage) infty
   (t, u) <- pushWfDecl im (mkAnnot stage) $ infer e
   -- TODO: check that it is a coinductive type (not inductive)
   (a, u') <- case u of
@@ -285,7 +283,7 @@ infer (A.CoIntro rg Nothing e) = do
   pushWfDecl im (mkAnnot stage) $ addWfConstraint a (mkAnnot stage)
   pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot stage) a
   addWfIndependent im (listAnnot t)
-  return (I.CoIntro im t, u')
+  return (I.CoIntro im (mkAnnot stage) t, u')
 
 infer _ = __IMPOSSIBLE__
 
@@ -302,6 +300,31 @@ check (A.Meta _ Nothing) u = do
   e <- ask
   addGoal m (mkGoal e u)
   return (Meta m)
+
+check (A.Intro rg Nothing e) (Ind a False x pars) = do
+  a' <- unHat a
+  e' <- check e (Ind a' True x pars)
+  return $ Intro a' e'
+    where
+      unHat (Stage Infty) = return infty
+      unHat (Stage (StageVar k n)) | n > 0 = return (Stage (StageVar k (n-1)))
+      unHat (SizeVar x n) | n > 0 = return (SizeVar x (n-1))
+      unHat a = do
+        stage <- freshStage rg
+        addWfConstraint (hat (mkAnnot stage)) a
+        return (mkAnnot stage)
+
+check e@(A.Constr rg _ _) i@(Ind a False x pars) = do
+  g@(Inductive {}) <- getGlobal x
+  case indKind g of
+    I -> check (A.Intro rg Nothing e) i
+    CoI -> check (A.CoIntro rg Nothing e) i
+
+check (A.CoIntro rg Nothing e) (Ind a False x pars) = do
+  im <- freshSizeName (mkName "i")
+  e' <- pushWfDecl im a $ check e (Ind (mkAnnot im) True x pars)
+  addWfIndependent im (listAnnot e')
+  return (I.CoIntro im a e')
 
 check t u = do
   traceTCM 35 $ hsep [ text "Checking type of", prettyTCM t
@@ -352,7 +375,7 @@ check t u = do
             pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot im) a1
             pushWfDecl im (mkAnnot stage) $ addWfConstraint a1 (mkAnnot im)
             addWfIndependent im (listAnnot t')
-            return (I.CoIntro im t')
+            return (I.CoIntro im a1 t')
 
       _ -> typeError (range t) $ NotConvertible r u
 

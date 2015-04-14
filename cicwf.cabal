@@ -23,7 +23,8 @@ Executable cicwf
                      filepath -any,
                      fgl -any,
                      ansi-wl-pprint -any,
-                     exceptions -any
+                     exceptions -any,
+                     presburger -any
   build-Tools:       alex -any,
                      happy -any
   ghc-options:       -O2

@@ -198,7 +198,9 @@ inferDecl (A.Cofixpoint fix) = do
   resetConstraints
   (fix', tp, ctype) <- inferFix fix
   let fix0 = fix' -- toInfty fix'
-  solveWfConstraints
+  m <- solveWfConstraints
+  let fix1 = substStageVars m fix0
+      ctype1 = substStageVars m ctype
   addGlobal $
-    mkNamed (A.fixName fix) Cofixpoint { cofixTerm = fix0
-                                       , cofixType = ctype}
+    mkNamed (A.fixName fix) Cofixpoint { cofixTerm = fix1
+                                       , cofixType = ctype1 }

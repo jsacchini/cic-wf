@@ -59,7 +59,7 @@ data Expr
                              -- ^ Inductive types are applied to parameters
   -- Well-founded sizes
   | Intro Range (Maybe SizeExpr) Expr
-  | CoIntro Range (Maybe SizeName) Expr
+  | CoIntro Range (Maybe (SizeName, SizeExpr)) Expr
   | SizeApp Range Expr (Maybe SizeExpr)
 
 

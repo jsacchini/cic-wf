@@ -1,14 +1,14 @@
 codata stream (A ++:Type) : Type :=
    ccons : A -> stream A -> stream A.
 
-cofixpoint zeroes <i> : stream<i> nat := ccons nat 0 zeroes.
+cofixpoint zeroes <i> : stream<i> nat := coin (ccons nat 0 zeroes).
 
 print zeroes.
 
-cofixpoint zeroes' <i> : stream<i> nat := coin (ccons nat 0 zeroes').
+-- cofixpoint zeroes' <i> : stream<i> nat := coin (ccons nat 0 zeroes').
 
-print zeroes'.
+-- print zeroes'.
 
-define zeroes'' := cofix z <i> : stream<i> nat := coin (ccons nat 0 z).
+-- define zeroes'' := cofix z <i> : stream<i> nat := coin (ccons nat 0 z).
 
-print zeroes''.
+-- print zeroes''.

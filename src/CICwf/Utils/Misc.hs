@@ -17,6 +17,8 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
+{-# LANGUAGE PatternGuards #-}
+
 -- | Miscellaneous functions.
 
 module CICwf.Utils.Misc where
@@ -57,12 +59,27 @@ infixr 3 ==>
 (==>) b1 b2 = not b1 || b2
 
 
--- | @'unlessM' b x@ executes @x@ if @b@ contains @True@.
+-- | @'unlessM' b x@ executes @x@ if @b@ contains @False@.
 unlessM :: (Monad m) => m Bool -> m () -> m ()
 unlessM c n = do b <- c
                  unless b n
+
+-- | @'whenM' b x@ executes @x@ if @b@ contains @True@.
+whenM :: (Monad m) => m Bool -> m () -> m ()
+whenM c n = do b <- c
+               when b n
+
+ifM :: (Monad m) => m Bool -> m a -> m a -> m a
+ifM c t e = c >>= \b -> if b then t else e
+
+
 -- | @'ifMaybe' x f y@ applies @f@ to @y@ if @x@ is @Just _@,
 --   otherwise returns @y@.
 ifMaybe :: Maybe a -> (b -> b) -> b -> b
 ifMaybe (Just _) f x = f x
 ifMaybe Nothing  _ x = x
+
+findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
+findMaybe _ [] = Nothing
+findMaybe f (x : xs) | Just y <- f x = Just y
+                     | otherwise     = findMaybe f xs

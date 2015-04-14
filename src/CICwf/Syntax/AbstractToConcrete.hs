@@ -96,6 +96,13 @@ instance ToConcrete a b => ToConcrete (Arg a) (Arg b) where
   concretize = Tr.mapM concretize
 
 
+instance (ToConcrete a b, ToConcrete c d) => ToConcrete (a,c) (b,d) where
+  concretize (x, y) = do
+    x' <- concretize x
+    y' <- concretize y
+    return (x', y')
+
+
 instance ToConcrete a b => ToConcrete (Maybe a) (Maybe b) where
   concretize = Tr.mapM concretize
 
@@ -164,7 +171,10 @@ instance ToConcrete A.Expr C.Expr where
     s' <- concretize s
     return $ C.Intro noRange s' e'
 
-  concretize (A.CoIntro _ s e) = C.CoIntro noRange s <$> concretize e
+  concretize (A.CoIntro _ s e) = do
+    e' <- concretize e
+    s' <- concretize s
+    return $ C.CoIntro noRange s' e'
     -- e' <- concretize e
     -- return $ C.CoIntro noRange s e'
 
@@ -182,6 +192,8 @@ instance ToConcrete A.SizeExpr C.SizeExpr where
   concretize A.SizeEmpty = return $ C.SizeExpr noRange (mkName "○") 0
   concretize A.SizeInfty = return $ C.SizeExpr noRange (mkName "∞") 0
 
+instance ToConcrete A.SizeName C.SizeName where
+  concretize = return
 
 -- TODO: print properly the names of CaseIn: do not show variables not used
 instance ToConcrete A.CaseExpr C.CaseExpr where

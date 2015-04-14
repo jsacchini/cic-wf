@@ -1,0 +1,24 @@
+fixpoint div2 <i> (m: nat<i>) : nat<i> :=
+     < nat > case m of
+             | O => O
+             | S m1 => < nat > case m1 of
+                       | O => O
+                       | S m2 => S (div2 m2)
+                       end
+             end.
+
+print div2.
+
+fixpoint log2 <i> (m: nat<i>) : nat<i> :=
+     < nat > case m of
+             | O => O
+             | S m1 => < nat > case m1 of
+                       | O => O
+                       | S m2 => S (log2 (S (div2 m2)))
+                       end
+             end.
+
+print log2.
+
+eval log2 64.
+eval log2 63.

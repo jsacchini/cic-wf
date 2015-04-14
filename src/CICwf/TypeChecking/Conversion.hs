@@ -125,7 +125,7 @@ instance Conversion Type where
           ind <- getGlobal x1
           traceTCM 40 $ text "Adding constraints:"<+> prettyTCM (mkConstraint (indKind ind) a1' a2')
           addStageConstraints (mkConstraint (indKind ind) a1' a2')
-          addWfConstraint a1' a2'
+          mkWfConstraint (indKind ind) addWfConstraint a1' a2'
           case ind of
             Inductive {} -> mAll (zipWith3 (convPars ct) (indPol ind) ps1 ps2)
             _ -> __IMPOSSIBLE__ -- sanity check
@@ -145,6 +145,11 @@ instance Conversion Type where
                          _ -> case ki of
                                 I -> (<<=)
                                 CoI -> flip (<<=)
+      mkWfConstraint ki f = case ct of
+                              Conv -> \x y -> f x y >> f y x
+                              _ -> case ki of
+                                     I -> f
+                                     CoI -> flip f
       convPars Conv _ = convTest Conv
       convPars _    Pos = convTest Leq
       convPars _    Neg = flip (convTest Leq)

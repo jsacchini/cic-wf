@@ -41,6 +41,13 @@ import           CICwf.TypeChecking.TCM
 import           CICwf.Utils.Sized
 
 
+data WValue = WLam
+
+data Stack = WApp [I.Term]
+           | WCase WCaseTerm
+
+data WCaseTerm = WCaseTerm I.Type [I.Branch]
+
 nF :: (MonadTCM tcm) => Term -> tcm Term
 nF = normalForm
 
@@ -122,7 +129,7 @@ instance Whnf Term where
              _ -> return $ Case (c { caseArg = arg' })
 
       wH (Intro s t) = Intro s <$> wH t
-      wH (CoIntro s t) = CoIntro s <$> wH t
+      wH (CoIntro s a t) = CoIntro s a <$> wH t
       wH (SizeApp t s) = flip SizeApp s <$> wH t
       wH t = return t
 
@@ -361,7 +368,7 @@ instance NormalForm Term where
         return $ Fix $ f { fixArgs = ctxn, fixType = tpn, fixBody = bodyn }
 
       nF (Intro s t) = Intro s <$> nF t
-      nF (CoIntro s t) = CoIntro s <$> nF t
+      nF (CoIntro s a t) = CoIntro s a <$> nF t
       nF (SizeApp t s) = flip SizeApp s <$> nF t
 
 instance NormalForm FixTerm where
@@ -457,7 +464,7 @@ extractConstr (Intro im t) =
 extractConstr _ = Nothing
 
 extractCoconstr :: Term -> Maybe (SizeName, Term, [Term])
-extractCoconstr (CoIntro im t) =
+extractCoconstr (CoIntro im a t) =
   case unApp t of
     (c@Constr {}, args) -> Just (im, c, args)
     _ -> Nothing

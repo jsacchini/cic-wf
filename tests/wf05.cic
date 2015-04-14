@@ -7,6 +7,7 @@ fixpoint plus <i> (m: nat<i>) (n:nat) : nat :=
              | S m' => in S (plus m' n)
              end.
 
+print plus.
 
 cofixpoint sum <i> (x:stream<i> nat) (y:stream<i> nat) : stream<i> nat :=
   coin <!stream nat> cocase x of
@@ -15,10 +16,15 @@ cofixpoint sum <i> (x:stream<i> nat) (y:stream<i> nat) : stream<i> nat :=
                     end
    end.
 
+print sum.
+
 cofixpoint fib <i> : stream<i> nat :=
-  ccons nat 0 (ccons nat 1
+  coin (ccons nat 0 (coin (ccons nat 1
       (sum fib (<stream nat> cocase fib of
-                 | ccons _ y => y end))).
+                 | ccons _ y => y end))))).
+
+print fib.
+
 
 -- cofixpoint fib <i> : stream<i> nat :=
 --   coin (ccons nat (in O) (coin (ccons nat (in (S (in O)))
@@ -26,17 +32,17 @@ cofixpoint fib <i> : stream<i> nat :=
 --                  | ccons _ y => y end))))).
 
 
-print fib.
+-- print fib.
 
-define head := fun (x:stream nat) => <nat> cocase x of
-                 | ccons x _ => x end.
+-- define head := fun (x:stream nat) => <nat> cocase x of
+--                  | ccons x _ => x end.
 
-define tail := fun (x:stream nat) => <stream nat> cocase x of
-                 | ccons _ y => y end.
+-- define tail := fun (x:stream nat) => <stream nat> cocase x of
+--                  | ccons _ y => y end.
 
-print head.
-print tail.
+-- print head.
+-- print tail.
 
-define f0 := head fib.
+-- define f0 := head fib.
 
-print f0.
+-- print f0.

@@ -24,6 +24,8 @@ module CICwf.TypeChecking.PrettyTCM where
 import           Control.Applicative       hiding (empty)
 import           Control.Monad.Reader
 
+import qualified Data.Integer.SAT as SAT
+
 import qualified CICwf.Utils.Pretty as PP
 
 import qualified CICwf.Syntax.Abstract           as A
@@ -173,6 +175,9 @@ instance PrettyTCM I.Annot where
 
 instance PrettyTCM Range where
   prettyTCM = return . PP.pretty
+
+instance PrettyTCM SAT.Prop where
+  prettyTCM = return . PP.text . show
 
 instance PrettyTCM a => PrettyTCM (Maybe a) where
   prettyTCM (Just x) = prettyTCM x

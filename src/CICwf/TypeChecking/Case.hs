@@ -63,19 +63,14 @@ inferCase (A.CaseExpr rg caseki arg asNm indspec (Just ret) branches) = do
   traceTCM 30 $ hsep [ text "CASE INDUCTIVE TYPE", prettyTCM nmInd ]
 
   -- Force the stage of the argument to be a successor
-  sta1 <- freshStage (range arg)
-  addWfConstraint (mkAnnot sta1) infty
-  case (kind, caseki) of
-    (I, CaseKind) -> addWfConstraint (mkAnnot sta1) sta
-    (CoI, CocaseKind Nothing) -> do
+  (caseki', sta1) <- case (kind, caseki) of
+    (I, CaseKind)       -> return (CaseKind, sta)
+    (CoI, CocaseKind _) -> do
+      sta1 <- freshStage (range arg)
       addWfConstraint (hat (mkAnnot sta1)) sta
-      addStageConstraints (sta <<= hat (mkAnnot sta1))
+      return (CocaseKind (mkAnnot sta1), mkAnnot sta1)
     (_, _) -> typeError (range arg)
               $ GenericError "Expected (co)inductive type in case argument"
-
-  let caseki' = case caseki of
-        CaseKind     -> CaseKind
-        CocaseKind _ -> CocaseKind (mkAnnot sta1)
 
   -- Check the family specification
   traceTCM 30 $ hsep [ text "CASE IN from", prettyTCM indspec ]
@@ -84,7 +79,7 @@ inferCase (A.CaseExpr rg caseki arg asNm indspec (Just ret) branches) = do
                      , prettyTCM indicesCtx ]
 
   -- Context for the return type
-  returnTypeCtx <- mkCaseBinds asNm nmInd (mkAnnot sta1) pars indicesCtx
+  returnTypeCtx <- mkCaseBinds asNm nmInd sta1 pars indicesCtx
   traceTCM 30 $ vcat [ text "full return context"
                        <+> prettyTCM returnTypeCtx
                      , text "in ctx   " <+> (ask >>= prettyTCM) ]
@@ -106,11 +101,11 @@ inferCase (A.CaseExpr rg caseki arg asNm indspec (Just ret) branches) = do
                      , text "\n_|_ :", prettyTCM negConstrs]
 
   -- Checking possible
-  posBranches <- mapM (checkBranch caseki' (mkAnnot sta1) asNm nmInd pars indicesPat ret') branches
+  posBranches <- mapM (checkBranch caseki' sta1 asNm nmInd pars indicesPat ret') branches
 
   traceTCM 30 $ hsep [ text "IMPOSSIBLE branches", text (show negConstrs) ]
   -- Checking impossible branches
-  _ <- mapM (checkImpossibleBranch (mkAnnot sta1) pars indicesPat) negConstrs
+  _ <- mapM (checkImpossibleBranch sta1 pars indicesPat) negConstrs
 
   let instReturnType = substList0 (inds ++ [arg']) ret'
   traceTCM 50 $ text "checked case " <+> prettyTCM rg

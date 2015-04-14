@@ -22,6 +22,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE PatternGuards          #-}
 
 {-|
   TODO
@@ -215,22 +216,23 @@ instance Reify Term C.Expr where
 
   reify (Intro a t) =
     case t of
-      -- Constr c _ pars ->
-      --   if c == mkName "O" && null pars
-      --   then return $ C.Number noRange 0
-      --   else do
-      --     pars' <- mapM reify pars
-      --     return $ C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False c C.ConstructorIdent) pars'
-      -- App (Constr c1 _ []) [arg]
-      --   | c1 == mkName "S" -> do
-      --     arg' <- reify arg
-      --     return $ case arg' of
-      --       C.Number _ k -> C.Number noRange (k + 1)
-      --       _            -> C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False (mkName "S") C.ConstructorIdent) [arg']
-      --   | otherwise -> C.Intro noRange (reifyAnnot a) <$> C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg <$> reify arg
+      Constr c _ pars ->
+        if c == mkName "O" && null pars
+        then return $ C.Number noRange 0
+        else do
+          pars' <- mapM reify pars
+          return $ C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False c C.ConstructorIdent) pars'
+      App (Constr c1 _ []) [arg]
+        | c1 == mkName "S" -> do
+          arg' <- reify arg
+          return $ case arg' of
+            C.Number _ k -> C.Number noRange (k + 1)
+            _            -> C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False (mkName "S") C.ConstructorIdent) [arg']
+        | otherwise -> C.Intro noRange (reifyAnnot a) <$> C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg <$> reify arg
       _ -> C.Intro noRange (reifyAnnot a) <$> reify t
 
-  reify (CoIntro x t) = C.CoIntro noRange (Just x) <$> reify t
+  reify (CoIntro x a t) | Just a' <- reifyAnnot a = C.CoIntro noRange (Just (x, a')) <$> reify t
+                        | otherwise = C.CoIntro noRange Nothing <$> reify t
   reify (SizeApp t a) = do
     t' <- reify t
     return $ C.SizeApp noRange  t' (reifyAnnot a)

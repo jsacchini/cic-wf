@@ -48,17 +48,22 @@ import           CICwf.TypeChecking.TCMErrors
 
 data Options =
   Options { optVerbose :: Int -- Verbosity
+          , optSolveConstraints :: Bool
           } deriving Show
 
 defaultOptions :: Options
 defaultOptions =
-  Options { optVerbose = 1 }
+  Options { optVerbose = 1
+          , optSolveConstraints = True }
 
 options :: [OptDescr (Options -> Options)]
 options =
-  [ Option ['v'] ["verbose"]
+  [ Option "v" ["verbose"]
     (ReqArg (\n opts -> opts { optVerbose = read n }) "integer")
     "set verbosity level"
+  , Option "c" ["do-not-solve-constraints"]
+    (NoArg (\opts -> opts { optSolveConstraints = False }))
+    "whether to solve constraints"
   ]
 
 
@@ -87,7 +92,7 @@ evalFile =
                   -- mapM_ (\x -> putStrLn (show x ++ "\n---------")) ts
                   -- putStrLn "===================\n=================\n\n"
                   -- r <- runTCM $ printAll ts
-                   r <- runTCMIO (typeCheckFile (optVerbose opts) ts
+                   r <- runTCMIO (typeCheckFile opts ts
                                   `catch` printError)
                    case r of
                      Right _ -> exitSuccess
@@ -119,11 +124,12 @@ evalFile =
           --                $$ vcat(map (text . show) gs))
           cs <- allConstraints
           -- traceTCM 15 $ prettyTCM (filter (not . I.isConstr . namedValue) gs)
-          traceTCM 3 $ (text $ "Constraints:" ++ show cs)
+          traceTCM 15 $ (text $ "Constraints:" ++ show cs)
           wfcs <- getWfConstraints
           -- traceTCM 15 $ prettyTCM (filter (not . I.isConstr . namedValue) gs)
-          traceTCM 3 $ (text "Wf-Constraints:" <+> vcat (map prettyTCM wfcs))
-      typeCheckFile :: Verbosity -> [C.Declaration] -> TCM ()
-      typeCheckFile verb ds =
-        do setVerbosity verb
+          traceTCM 15 $ (text "Wf-Constraints:" <+> vcat (map prettyTCM wfcs))
+      typeCheckFile :: Options -> [C.Declaration] -> TCM ()
+      typeCheckFile opts ds =
+        do setVerbosity (optVerbose opts)
+           setSolveConstraints (optSolveConstraints opts)
            forM_ ds typeCheckDecl

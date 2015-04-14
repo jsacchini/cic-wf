@@ -103,6 +103,12 @@ instance MkAnnot Name where
 infty :: Annot
 infty = Stage Infty
 
+isInfty :: Annot -> Bool
+isInfty (Stage Infty) = True
+isInfty _ = False
+
+
+
 hat :: Annot -> Annot
 hat (Stage (StageVar s n)) = Stage (StageVar s (n+1))
 hat (SizeVar s n) = SizeVar s (n+1)
@@ -157,7 +163,7 @@ data Term
   | Ind Annot Bool Name [Term]  -- Inductive types are applied to parameters
   -- Well-founded sizes
   | Intro Annot Term
-  | CoIntro SizeName Term
+  | CoIntro SizeName Annot Term
   | SizeApp Term Annot
   | Subset SizeName Annot Type -- [ ^ı ⊑ s ] T
   deriving(Show)
@@ -494,6 +500,18 @@ substSizeName i a = modifySize f
     f (SizeVar j n) | i == j = hatn n a
     f s                      = s
 
+substSizeNames :: (HasAnnot a) => [(SizeName, Annot)] -> a -> a
+substSizeNames is = modifySize f
+  where
+    f (SizeVar j n) | Just a <- lookup j is = hatn n a
+    f s                                     = s
+
+substStageVars :: (HasAnnot a) => [(StageVar, Annot)] -> a -> a
+substStageVars is = modifySize f
+  where
+    f (Stage (StageVar x n)) | Just a <- lookup x is = hatn n a
+    f s                                              = s
+
 instance HasAnnot Annot where
   modifySize f = f
   fAnnot x = maybe Set.empty Set.singleton (baseAnnot x)
@@ -525,18 +543,19 @@ instance HasAnnot Term where
       mSize (Pi c t)             = Pi (modifySize f c) (mSize t)
       mSize t@(Bound _)          = t
       mSize t@(Var _)            = t
+      mSize (SIdent x a)         = SIdent x (f a)
       mSize (Lam c t)            = Lam (modifySize f c) (mSize t) -- Lam (modifySize f c) (mSize t)
       mSize (App t ts)           = App (mSize t) (map mSize ts)
       mSize t@(Meta _)           = t
       mSize (Constr nm cid pars) = Constr nm cid (map mSize pars)
       mSize (Fix c)              = Fix (modifySize f c)
       mSize (Case c)             = Case (modifySize f c)
-      mSize (Ind a b x ps)         = Ind (f a) b x (map (modifySize f) ps)
+      mSize (Ind a b x ps)       = Ind (f a) b x (map mSize ps)
       -- Well-founded sizes
       mSize (Intro s t)          = Intro (f s) (mSize t)
-      mSize (CoIntro k t)        = CoIntro k (mSize t)
+      mSize (CoIntro k a t)      = CoIntro k (f a) (mSize t)
       mSize (SizeApp t s)        = SizeApp (mSize t) (f s)
-      mSise (Subset i a t)       = Subset i (f a) t
+      mSize (Subset i a t)       = Subset i (f a) (mSize t)
 
   fAnnot (Sort _)          = Set.empty
   fAnnot (Pi c t)          = fAnnot c `Set.union` fAnnot t
@@ -551,7 +570,7 @@ instance HasAnnot Term where
   fAnnot (Ind a _ _ ts)    = fAnnot a `Set.union` fAnnot ts
   -- Well-founded sizes
   fAnnot (Intro a t)       = {- fAnnot a `Set.union` -} fAnnot t
-  fAnnot (CoIntro k t)     = Set.delete (mkAnnot k) (fAnnot t)
+  fAnnot (CoIntro k a t)   = Set.delete (mkAnnot k) (fAnnot t)
   fAnnot (SizeApp t s)     = fAnnot t -- `Set.union` fAnnot s
   fAnnot (Subset i a t)    = {- fAnnot a `Set.union` -}
                              (Set.delete (mkAnnot i) (fAnnot t))
@@ -566,7 +585,7 @@ instance HasAnnot ConstrType where
 instance HasAnnot FixTerm where
   modifySize f (FixTerm k n x spec c t1 t2) =
     -- FixTerm k n x spec (modifySize f c) (modifySize f t1) (modifySize f t2)
-    FixTerm k n x spec c t1 (modifySize f t2)
+    FixTerm k n x spec (modifySize f c) (modifySize f t1) (modifySize f t2)
 
   fAnnot (FixTerm _ _ _ (FixStage im) args tp body) =
     {- Set.delete (mkAnnot im) (fAnnot args `Set.union` fAnnot tp)
@@ -582,7 +601,7 @@ instance HasAnnot a => HasAnnot (CaseKind a) where
 
 instance HasAnnot CaseTerm where
   modifySize f (CaseTerm kind arg nm asName nmInd pars cin ret bs) =
-    CaseTerm (modifySize f kind) (modifySize f arg) nm asName nmInd (modifySize f pars) (modifySize f cin) ret (map (modifySize f) bs)
+    CaseTerm (modifySize f kind) (modifySize f arg) nm asName nmInd (modifySize f pars) (modifySize f cin) (modifySize f ret) (map (modifySize f) bs)
 
   fAnnot (CaseTerm kind arg _ _ _ pars cin _ bs) =
     -- fAnnot kind `Set.union`
@@ -713,7 +732,7 @@ instance Lift Term where
   lift k n (Case c)            = Case (lift k n c)
   -- Well-founded sizes
   lift k n (Intro a t)         = Intro a (lift k n t)
-  lift k n (CoIntro a t)       = CoIntro a (lift k n t)
+  lift k n (CoIntro x a t)     = CoIntro x a (lift k n t)
   lift k n (SizeApp t a)       = SizeApp (lift k n t) a
   lift k n (Subset i a t)      = Subset i a (lift k n t)
 
@@ -794,7 +813,7 @@ instance SubstTerm Term where
   substN i r (Fix f) = Fix (substN i r f)
   -- Well-founded sizes
   substN i r (Intro a t) = Intro a (substN i r t)
-  substN i r (CoIntro x t) = CoIntro x (substN i r t)
+  substN i r (CoIntro x k t) = CoIntro x k (substN i r t)
   substN i r (SizeApp t s) = SizeApp (substN i r t) s
   substN i r (Subset x s t) = Subset x s (substN i r t)
 
@@ -876,7 +895,7 @@ instance IsFree Term where
   isFree k (Case c) = isFree k c
   -- Well-founded sizes
   isFree k (Intro _ t) = isFree k t
-  isFree k (CoIntro _ t) = isFree k t
+  isFree k (CoIntro _ _ t) = isFree k t
   isFree k (SizeApp t _) = isFree k t
   isFree k (Subset _ _ t) = isFree k t
 
@@ -892,7 +911,7 @@ instance IsFree Term where
   fvN k (Fix f) = fvN k f
   -- Well-founded sizes
   fvN k (Intro _ t) = fvN k t
-  fvN k (CoIntro _ t) = fvN k t
+  fvN k (CoIntro _ _ t) = fvN k t
   fvN k (SizeApp t _) = fvN k t
   fvN k (Subset _ _ t) = fvN k t
 

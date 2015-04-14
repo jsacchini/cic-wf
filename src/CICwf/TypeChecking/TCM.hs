@@ -22,6 +22,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
+{-# LANGUAGE PatternGuards  #-}
 
 module CICwf.TypeChecking.TCM where
 
@@ -152,8 +153,9 @@ data TCState =
           , stActiveGoal         :: Maybe I.MetaVar
           , stConstraints        :: SizeConstraint
           , stVerbosityLevel     :: Verbosity
+          , stSolveConstraints   :: Bool
           -- Well-founded sizes
-          , stWfStages           :: [(I.StageVar, [I.SizeName])]
+          , stWfStages           :: [(I.StageVar, [I.Annot])]
           , stWfEnv              :: WfEnv
           , stSizeNames          :: [I.SizeName]
           , stWfConstraints      :: [WfConstraint]
@@ -175,9 +177,16 @@ type LocalScope = Env Name
 
 type WfEnv = Env WfDeclaration
 
-wfDom :: WfEnv -> [I.SizeName]
-wfDom EnvEmpty = []
-wfDom (es :< WfDeclaration x _) = x : wfDom es
+wfDom :: WfEnv -> [I.Annot]
+wfDom = reverse . wfDom_
+  where
+    wfDom_ EnvEmpty = []
+    wfDom_ (es :< WfDeclaration x _) = I.mkAnnot x : wfDom_ es
+
+wfLookup :: WfEnv -> I.SizeName -> Maybe I.Annot
+wfLookup EnvEmpty _ = Nothing
+wfLookup (env :< WfDeclaration x a) y | x == y = Just a
+                                      | otherwise = wfLookup env y
 
 data WfDeclaration = WfDeclaration I.SizeName I.Annot
 
@@ -186,6 +195,10 @@ instance Show WfDeclaration where
 
 instance Pretty WfDeclaration where
   pretty = text . show
+
+instance I.HasAnnot WfDeclaration where
+  modifySize f (WfDeclaration im a) = WfDeclaration im (I.modifySize f a)
+  fAnnot (WfDeclaration _ a) = I.fAnnot a
 
 data WfConstraint = WfConstraint WfEnv I.Annot I.Annot
                   | WfIndependent I.SizeName [I.Annot]
@@ -215,7 +228,9 @@ freshSizeName x = do
       addSuffix y n = modifyName (++ show n) y
 
 addWfConstraint :: (MonadTCM tcm) => I.Annot -> I.Annot -> tcm ()
-addWfConstraint a1 a2 = do
+addWfConstraint a1 a2 | I.isInfty a2 = return ()
+                      | a1 == a2 = return ()
+                      | otherwise    = do
   wf <- stWfEnv <$> get
   let con = WfConstraint wf a1 a2
   modify $ \st -> st { stWfConstraints = con : stWfConstraints st }
@@ -248,7 +263,7 @@ setWfConstraints :: (MonadTCM tcm) => [WfConstraint] -> tcm ()
 setWfConstraints cons = modify $ \st -> st { stWfConstraints = cons }
 
 clearWfConstraints :: (MonadTCM tcm) => tcm ()
-clearWfConstraints = setWfConstraints []
+clearWfConstraints = setWfConstraints [] >> modify (\st -> st { stWfStages = [], stWfEnv = EnvEmpty })
 
 wfSetCheckpoint :: (MonadTCM tcm) => tcm ()
 wfSetCheckpoint = do
@@ -318,10 +333,26 @@ freshStage rg = do
   modify $ \st -> st { stConstraints =
                           SizeConstraint (CS.addNode (VarNode stage) rg
                                           (unSC (stConstraints st)))
-                     , stWfStages = (stage, wfDom (stWfEnv st))
+                     , stWfStages = (stage, I.infty : wfDom (stWfEnv st))
                                     : stWfStages st }
   return stage
 
+freshConstrainedStage :: MonadTCM tcm => Range -> I.Annot -> tcm I.StageVar
+freshConstrainedStage rg a | Just im <- I.nbase a = do
+  ctxdom <- (wfDom . stWfEnv) <$> get
+  let (_, _ : dom) = splitAtFirst (I.mkAnnot im) ctxdom
+  stage <- fresh
+  modify $ \st -> st { stConstraints =
+                          SizeConstraint (CS.addNode (VarNode stage) rg
+                                          (unSC (stConstraints st)))
+                     , stWfStages = (stage, dom) : stWfStages st }
+  return stage
+  where
+    splitAtFirst :: (Eq a) => a -> [a] -> ([a], [a])
+    splitAtFirst _ [] = ([], [])
+    splitAtFirst x (y:ys) | x == y = ([], y:ys)
+                          | otherwise = (y : ys', ys'')
+      where (ys', ys'') = splitAtFirst x ys
 
 -- Local environment
 type TCEnv = Env I.Bind
@@ -416,6 +447,7 @@ initialTCState =
           , stConstraints        = SizeConstraint
                                    $ CS.addNode InftyNode noRange CS.empty
           , stVerbosityLevel     = 30
+          , stSolveConstraints   = True
           , stWfStages           = []
           , stWfEnv              = EnvEmpty
           , stSizeNames          = []
@@ -700,6 +732,15 @@ getVerbosity = stVerbosityLevel <$> get
 setVerbosity :: (MonadTCM tcm) => Verbosity -> tcm ()
 setVerbosity n = do st <- get
                     put $ st { stVerbosityLevel = n }
+
+getSolveConstraints :: (MonadTCM tcm) => tcm Bool
+getSolveConstraints = stSolveConstraints <$> get
+
+setSolveConstraints :: (MonadTCM tcm) => Bool -> tcm ()
+setSolveConstraints b = do st <- get
+                           put $ st { stSolveConstraints = b }
+
+
 
 traceTCM :: (MonadTCM tcm) => Verbosity -> tcm Doc -> tcm ()
 traceTCM n t = do k <- getVerbosity
