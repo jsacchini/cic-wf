@@ -58,7 +58,7 @@ solveWfConstraints = do
       countOpts = product . map (genericLength . snd)
   traceTCM 10 $ text "Stages: " <+> prettyTCM stages'
   traceTCM 10 $ text "Pruned: " <+> prettyTCM prstages
-  traceTCM 10 $ text "Infty: " <+> prettyTCM (mustBeInfty prstages)
+  traceTCM 10 $ text "Infty: " <+> prettyTCM (mustBeInfty prstages cons)
   traceTCM 10 $ text "upward graph:" <+> text (show (stageAdj (stageGraph cons)))
   traceTCM 10 $ text "upward infty: " <+> prettyTCM upinf
   traceTCM 10 $ text "Pruned infty: " <+> prettyTCM prstages2
@@ -131,8 +131,13 @@ solveWfConstraints = do
                                else (x, bs) ) m
     pruneIndependent _ m = m
 
-    mustBeInfty :: [(StageVar, [Annot])] -> [StageVar]
-    mustBeInfty = map fst . filter (\(_, xs) -> xs == [infty])
+    mustBeInfty :: [(StageVar, [Annot])] -> [WfConstraint] -> [StageVar]
+    mustBeInfty m cons =
+      map fst (filter (\(_, xs) -> xs == [infty]) m) ++
+      mapMaybe inf cons
+      where
+        inf (WfConstraint _ a1 a2) | isInfty a1 = sbase a2
+        inf _ = Nothing
 
     mustBeNonInfty :: [(StageVar, [Annot])] -> [WfConstraint] -> [StageVar]
     mustBeNonInfty m cons =
@@ -166,7 +171,7 @@ solveWfConstraints = do
                                        (Map.findWithDefault [] y gr ++ ys)
 
     upwardInfty :: [WfConstraint] -> [(StageVar, [Annot])] -> [StageVar]
-    upwardInfty cons m = upward (stageAdj (stageGraph cons)) (mustBeInfty m)
+    upwardInfty cons m = upward (stageAdj (stageGraph cons)) (mustBeInfty m cons)
 
     pruneInfty :: [StageVar] -> [(StageVar, [Annot])] -> [(StageVar, [Annot])]
     pruneInfty vs = map remInfty

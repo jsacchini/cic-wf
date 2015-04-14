@@ -21,6 +21,7 @@
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE TypeSynonymInstances   #-}
+{-# LANGUAGE PatternGuards          #-}
 
 module CICwf.TypeChecking.TypeChecking where
 
@@ -291,6 +292,23 @@ infer _ = __IMPOSSIBLE__
 
 
 
+inferConstr stage rg x pars = do
+  t <- getGlobal x
+  let -- Star signals recursive occurrences of the inductive type. See CICwf.TypeChecking.Inductive
+      replStage s = if s == I.Star then stage else s
+      replFunc = modifySize replStage
+  case t of
+    Constructor indName idConstr tpars targs _ indices -> do
+      pars' <- checkList pars (replFunc tpars)
+      let numPars = ctxLen tpars
+          numArgs = ctxLen targs
+          indStage = stage
+          coDom = mkApp (Ind indStage True indName (map Bound (reverse [numArgs..numArgs+numPars-1])))  indices
+          resType = foldr subst (mkPi (replFunc targs) coDom) pars'
+      traceTCM 20 $ vcat [ text "constructor TYPE:" <+> prettyTCM resType ]
+      -- We erase the type annotations of both parameters and arguments
+      return (Constr x (indName, idConstr) pars',
+              resType)
 
 
 
@@ -325,6 +343,21 @@ check (A.CoIntro rg Nothing e) (Ind a False x pars) = do
   e' <- pushWfDecl im a $ check e (Ind (mkAnnot im) True x pars)
   addWfIndependent im (listAnnot e')
   return (I.CoIntro im a e')
+
+check e i@(Ind a True _ _) | (A.Constr rg x pars, args) <- A.unApp e = do
+  (c, t) <- inferConstr a rg x pars
+  (args', t') <- checkArgs args t
+  unlessM (t' `subType` i) $ typeError (range e) $ NotConvertible t' i
+  return (mkApp c args')
+  where
+    checkArgs :: (MonadTCM tcm) => [A.Expr] -> Type -> tcm ([Term], Type)
+    checkArgs [] t = return ([], t)
+    checkArgs (e:es) (Pi ctx u) = do
+      let (ch, ct) = ctxSplit ctx
+      t2 <- forbidAnnot $ check e (unArg (bindType ch))
+      w  <- whnf $ mkPi (subst t2 ct) (substN (ctxLen ct) t2 u)
+      (ts, w') <- checkArgs es w
+      return (t2 : ts, w')
 
 check t u = do
   traceTCM 35 $ hsep [ text "Checking type of", prettyTCM t

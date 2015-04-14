@@ -35,4 +35,4 @@ print fact.
 
 eval fun x : nat => plus 3 x.
 
-eval fact 4.
+eval fact 5.

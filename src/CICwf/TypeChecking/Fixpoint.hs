@@ -218,8 +218,12 @@ inferFix fixexpr@(A.FixExpr rg ki nmf
 
   jm <- freshSizeName (mkName "j")
   let wfret = modifySize (replRecStage jm) (mkPi argCtx tp')
-      recType = subsetType jm (mkAnnot alpha) wfret
+      recType0 = subsetType jm (mkAnnot alpha) wfret
   traceTCM 20 $ hsep [ text "Well-founded return type: "
+                     , prettyTCM recType0 ]
+  -- recType <- applyPartialSol recType0
+  let recType = recType0
+  traceTCM 20 $ hsep [ text "Apply partial solution:"
                      , prettyTCM recType ]
 
   body' <- pushWfDecl alpha infty $ checkCoFixpointBody nmf recType argCtx tp' body

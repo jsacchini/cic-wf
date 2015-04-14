@@ -145,7 +145,8 @@ inferDecl (A.Eval e) = do
   traceTCM 35 $ hsep [text "========= EVAL "]
   resetConstraints
   (e1, _) <- infer e
-  let tm0 = e1 -- toInfty e1
+  m <- solveWfConstraints
+  let tm0 = substStageVars m e1
   traceTCM 35 $ hsep [text "========= EVAL ", prettyTCM e1 PP.<> dot]
   tm1 <- nF tm0
   traceTCM 35 $ vcat [text "Normal form obtained ", prettyTCM tm1]

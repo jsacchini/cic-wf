@@ -35,6 +35,7 @@ import           Control.Monad.State
 import           Data.Map                  (Map)
 import qualified Data.Map                  as Map
 import           Data.Maybe
+import           Data.List
 import           Data.Typeable
 
 import           CICwf.Syntax.Common
@@ -236,9 +237,21 @@ addWfConstraint a1 a2 | I.isInfty a2 = return ()
   modify $ \st -> st { stWfConstraints = con : stWfConstraints st }
 
 addWfIndependent :: (MonadTCM tcm) => I.SizeName -> [I.Annot] -> tcm ()
-addWfIndependent a1 as =
-  modify $ \st -> st { stWfConstraints = WfIndependent a1 as
-                                         : stWfConstraints st }
+addWfIndependent im as =
+  modify $ \st -> st { stWfConstraints = WfIndependent im as
+                                         : stWfConstraints st
+                     , stWfStages = updateStages (stWfStages st) }
+  where
+    updateStages = map (\ (x, bs) -> if I.mkAnnot x `elem` as
+                                     then (x, I.mkAnnot im `delete` bs)
+                                     else (x, bs))
+
+applyPartialSol :: (MonadTCM tcm, I.HasAnnot a) => a -> tcm a
+applyPartialSol t = do
+  m <- stWfStages <$> get
+  return (I.substStageVars (inf m) t)
+  where
+    inf = map (\(x,[y]) -> (x,y)) . filter (\(_, as) -> as == [I.infty])
 
 
 withWfEnv :: (MonadTCM tcm) => WfEnv -> tcm a -> tcm a
