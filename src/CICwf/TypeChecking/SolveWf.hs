@@ -91,8 +91,9 @@ solveWfConstraints = do
         eqs = map (\x -> (x, genEq m1 x)) cons
         notinf = map fst $ filter (\(x,y) -> not (isInfty y)) m1
         nonneg = map (\x -> S.Var (S.toName (fromEnum x)) :>= S.K 0) notinf
-        prob = foldr (S.assert . snd) S.noProps eqs
-        prob1 = foldr S.assert prob nonneg
+        bot = S.assert S.PFalse S.noProps
+        mkProb xs = foldr S.assert S.noProps (xs ++ nonneg)
+        prob1 = maybe bot mkProb (allMaybe (genEq m1) cons)
         res = S.checkSat prob1
         rename :: [(Int, a)] -> [(StageVar, a)]
         rename = map (appFst toEnum)
@@ -106,11 +107,12 @@ solveWfConstraints = do
     solve :: [WfConstraint] -> [(StageVar, Annot)] -> Maybe [(StageVar, Annot)]
     solve cons m1 = res >>= \m -> return (map (subst m) m1)
       where
-        eqs = map (\x -> (x, genEq m1 x)) cons
+        -- eqs = map (\x -> (x, genEq m1 x)) cons
         notinf = map fst $ filter (\(x,y) -> not (isInfty y)) m1
         nonneg = map (\x -> S.Var (S.toName (fromEnum x)) :>= S.K 0) notinf
-        prob = foldr (S.assert . snd) S.noProps eqs
-        prob1 = foldr S.assert prob nonneg
+        bot = S.assert S.PFalse S.noProps
+        mkProb xs = foldr S.assert S.noProps (xs ++ nonneg)
+        prob1 = maybe bot mkProb (allMaybe (genEq m1) cons)
         res = S.checkSat prob1
         subst m (x, a) | isInfty a = (x, a)
                        | otherwise = case lookup (fromEnum x) m of
@@ -207,21 +209,21 @@ solveWfConstraints = do
         Just im1 = nbase a1
         Just b1 = wfLookup env im1
 
-    genEq :: [(StageVar, Annot)] -> WfConstraint -> S.Prop
+    genEq :: [(StageVar, Annot)] -> WfConstraint -> Maybe S.Prop
     genEq m (WfIndependent im as) = if im `elem` as'
-                                    then S.PFalse else S.PTrue
+                                    then Nothing else Just S.PTrue
       where
         as' = mapMaybe (nbase . substStageVars m) as
     genEq m (WfConstraint env a1 a2) =
       case (substStageVars m a1, substStageVars m a2) of
-        (_, a2') | isInfty a2' -> S.PTrue
-        (a1', _) | isInfty a1' -> S.PFalse
+        (_, a2') | isInfty a2' -> Just S.PTrue
+        (a1', _) | isInfty a1' -> Nothing
         (a1', a2') ->
           case findPath env m a1' a2' of
-            Just exps -> foldr (:+) (S.K (- len)) exps
-                         :<= getExp a2 :- getExp a1
+            Just exps -> Just (foldr (:+) (S.K (- len)) exps
+                               :<= getExp a2 :- getExp a1)
                          where len = toInteger (length exps)
-            Nothing -> S.PFalse
+            Nothing -> Nothing
       where
         env' = substStageVars m (envToList env)
         getExp (Stage (StageVar x n)) = S.Var (S.toName (fromEnum x))

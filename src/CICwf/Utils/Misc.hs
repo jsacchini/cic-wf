@@ -83,3 +83,8 @@ findMaybe :: (a -> Maybe b) -> [a] -> Maybe b
 findMaybe _ [] = Nothing
 findMaybe f (x : xs) | Just y <- f x = Just y
                      | otherwise     = findMaybe f xs
+
+allMaybe :: (a -> Maybe b) -> [a] -> Maybe [b]
+allMaybe _ [] = Just []
+allMaybe f (x : xs) | Just y <- f x = allMaybe f xs >>= \ys -> return (y : ys)
+                    | otherwise     = Nothing
