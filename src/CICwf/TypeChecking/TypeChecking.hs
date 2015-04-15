@@ -25,6 +25,7 @@
 
 module CICwf.TypeChecking.TypeChecking where
 
+#include "undefined.h"
 import           CICwf.Utils.Impossible
 
 import           Control.Monad.Reader
@@ -136,7 +137,7 @@ infer (A.Local rg x) = do
       addWfConstraint (hat (mkAnnot alpha)) a
       let t' = substSizeName i (mkAnnot alpha) t
       w' <- whnf t'
-      return (SizeApp (Bound n) (mkAnnot alpha), w')
+      return (CBound n (mkAnnot alpha), w')
     _            -> return (Bound n, w)
   -- traceTCM 35 $ text "inferred Local" <+> prettyTCM n <+> prettyTCM w
   -- return (Bound n, w)
@@ -156,7 +157,7 @@ infer (A.Global rg ident) = do
       addWfConstraint (hat (mkAnnot alpha)) a
       let t' = substSizeName i (mkAnnot alpha) t
       w' <- whnf t'
-      return (SizeApp (Var ident) (mkAnnot alpha), w')
+      return (CVar ident (mkAnnot alpha), w')
     _            -> return (Var ident, tp)
 
 
@@ -248,7 +249,7 @@ infer (A.Constr rg x pars) = forbidAnnot $ do
 
 --     _  -> __IMPOSSIBLE__
 
-infer (A.Fix f) = forbidAnnot $ do
+infer (A.Fix f _) = forbidAnnot $ do
   (f', tp, _) <- inferFix f -- inferNoTerm f
   case tp of
     Subset i a t -> do
@@ -256,7 +257,7 @@ infer (A.Fix f) = forbidAnnot $ do
       addWfConstraint (hat (mkAnnot alpha)) a
       let t' = substSizeName i (mkAnnot alpha) t
       w' <- whnf t'
-      return (SizeApp (Fix f') (mkAnnot alpha), w')
+      return (Fix f' False (mkAnnot alpha), w')
     _            -> __IMPOSSIBLE__
 
 infer (A.Case c) = forbidAnnot $ inferCase c

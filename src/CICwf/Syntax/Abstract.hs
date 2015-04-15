@@ -44,7 +44,7 @@ data Expr
   | Lam Range Context Expr   -- ^ Abstractions, e.g. @ fun (x1 ... xn : A) => B @
   | App Range Expr ArgType Expr  -- ^ Applications
   | Case CaseExpr            -- ^ Case expressions
-  | Fix FixExpr              -- ^ Fixpoints
+  | Fix FixExpr Bool              -- ^ Fixpoints
   | Meta Range (Maybe Int)   -- ^ Unspecified terms
 
   -- The following constructors are filled by the scope checker, but do not
@@ -259,7 +259,7 @@ instance HasRange Expr where
   range (Lam r _ _)      = r
   range (App r _ _ _)    = r
   range (Case c)         = range c
-  range (Fix f)          = range f
+  range (Fix f _)        = range f
   range (Meta r _)       = r
   range (Constr r _ _)   = r
   range (Ind r _ _ _ _)  = r
@@ -291,7 +291,7 @@ instance SetRange Expr where
   setRange r (Lam _ x y)      = Lam r x y
   setRange r (App _ x t y)    = App r x t y
   setRange r (Case c)         = Case $ setRange r c
-  setRange r (Fix f)          = Fix $ setRange r f
+  setRange r (Fix f b)        = Fix (setRange r f) b
   setRange r (Constr _ x y)   = Constr r x y
   setRange r (Ind _ b x y z)  = Ind r b x y z
   setRange r (SApp _ x t y)   = SApp r x t y

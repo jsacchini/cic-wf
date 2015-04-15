@@ -40,6 +40,7 @@
 module CICwf.Syntax.Scope(
   scope) where
 
+#include "undefined.h"
 import           CICwf.Utils.Impossible
 
 import           Control.Exception
@@ -173,7 +174,7 @@ instance Scope C.Expr A.Expr where
   scope (C.Meta r i) = return $ A.Meta r i
   scope e@(C.Ident _ _ _ _) = scopeApp (e, [])
   scope (C.Case c) = fmap A.Case (scope c)
-  scope (C.Fix f) = fmap A.Fix (scope f)
+  scope (C.Fix f b) = flip A.Fix b <$> scope f
   scope (C.Number r n) = return $ mkNat n
     where
       mkNat 0 = A.Constr r (mkName "O") []

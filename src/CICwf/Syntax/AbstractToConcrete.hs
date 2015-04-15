@@ -134,7 +134,7 @@ instance ToConcrete A.Expr C.Expr where
     t'   <- extendScope (name ctx) $ concretize t
     return $ C.Lam noRange ctx' t'
   concretize (A.Case c) = C.Case <$> concretize c
-  concretize (A.Fix f) = C.Fix <$> concretize f
+  concretize (A.Fix f b) = flip C.Fix b <$> concretize f
 --   concretize (Meta k) = do
 --     (Just g) <- getGoal k
 --     case goalTerm g of

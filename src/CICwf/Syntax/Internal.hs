@@ -152,19 +152,21 @@ data Term
   = Sort Sort
   | Pi Context Term
   | Bound Int
+  | CBound Int Annot
   | Var Name
+  | CVar Name Annot
   | SIdent Name Annot  -- Sized identifier, e.g. nat<i>, listnat<i+1>
   | Lam Context Term
   | App Term [Term]
   | Meta MetaVar
   | Constr Name (Name, Int) [Term] -- Constructors are applied to parameters
-  | Fix FixTerm
+  | Fix FixTerm Bool Annot -- whether is blocked or not
   | Case CaseTerm
   | Ind Annot Bool Name [Term]  -- Inductive types are applied to parameters
   -- Well-founded sizes
   | Intro Annot Term
   | CoIntro SizeName Annot Term
-  | SizeApp Term Annot
+  -- | SizeApp Term Annot
   | Subset SizeName Annot Type -- [ ^ı ⊑ s ] T
   deriving(Show)
 
@@ -542,36 +544,47 @@ instance HasAnnot Term where
       mSize t@(Sort _)           = t
       mSize (Pi c t)             = Pi (modifySize f c) (mSize t)
       mSize t@(Bound _)          = t
+      mSize (CBound x a)         = CBound x (f a)
       mSize t@(Var _)            = t
+      mSize (CVar x a)           = CVar x (f a)
       mSize (SIdent x a)         = SIdent x (f a)
       mSize (Lam c t)            = Lam (modifySize f c) (mSize t) -- Lam (modifySize f c) (mSize t)
       mSize (App t ts)           = App (mSize t) (map mSize ts)
       mSize t@(Meta _)           = t
       mSize (Constr nm cid pars) = Constr nm cid (map mSize pars)
-      mSize (Fix c)              = Fix (modifySize f c)
+      mSize (Fix c b a)          = Fix (modifySize f c) b (f a)
+        where f' s | Just x <- nbase s
+                   , FixStage y <- fixSpec c
+                   , x == y      = s
+                   | otherwise   = f s
       mSize (Case c)             = Case (modifySize f c)
       mSize (Ind a b x ps)       = Ind (f a) b x (map mSize ps)
       -- Well-founded sizes
       mSize (Intro s t)          = Intro (f s) (mSize t)
-      mSize (CoIntro k a t)      = CoIntro k (f a) (mSize t)
-      mSize (SizeApp t s)        = SizeApp (mSize t) (f s)
+      -- mSize (CoIntro k a t)      = CoIntro k (f a) (mSize t)
+      mSize (CoIntro k a t)      = CoIntro k (f a) (modifySize f' t)
+        where f' s | Just x <- nbase s, k == x = s
+                   | otherwise = f s
+      -- mSize (SizeApp t s)        = SizeApp (mSize t) (f s)
       mSize (Subset i a t)       = Subset i (f a) (mSize t)
 
   fAnnot (Sort _)          = Set.empty
   fAnnot (Pi c t)          = fAnnot c `Set.union` fAnnot t
   fAnnot (Bound _)         = Set.empty
+  fAnnot (CBound _ _)      = Set.empty
   fAnnot (Var _)           = Set.empty
+  fAnnot (CVar _ _)        = Set.empty
   fAnnot (Lam c t)         = {- fAnnot c `Set.union` -} fAnnot t
   fAnnot (App t ts)        = fAnnot t `Set.union` fAnnot ts
   fAnnot (Meta _)          = Set.empty
   fAnnot (Constr _ _ pars) = fAnnot pars
-  fAnnot (Fix c)           = fAnnot c
+  fAnnot (Fix c _ _)       = fAnnot c
   fAnnot (Case c)          = fAnnot c
   fAnnot (Ind a _ _ ts)    = fAnnot a `Set.union` fAnnot ts
   -- Well-founded sizes
   fAnnot (Intro a t)       = {- fAnnot a `Set.union` -} fAnnot t
   fAnnot (CoIntro k a t)   = Set.delete (mkAnnot k) (fAnnot t)
-  fAnnot (SizeApp t s)     = fAnnot t -- `Set.union` fAnnot s
+  -- fAnnot (SizeApp t s)     = fAnnot t -- `Set.union` fAnnot s
   fAnnot (Subset i a t)    = {- fAnnot a `Set.union` -}
                              (Set.delete (mkAnnot i) (fAnnot t))
 
@@ -625,7 +638,10 @@ instance HasAnnot IndicesSpec where
 
 instance HasAnnot Branch where
   modifySize f (Branch sv nm cid nmArgs body) =
-    Branch sv nm cid nmArgs (modifySize f body)
+    Branch sv nm cid nmArgs (modifySize f' body)
+    where f' s | Just x <- nbase s, Just sv' <- sv, sv' == x = s
+               | otherwise = f s
+
 
   fAnnot (Branch (Just sv) _ _ _ body) = Set.delete (mkAnnot sv) (fAnnot body)
   fAnnot (Branch Nothing _ _ _ body) = fAnnot body
@@ -672,6 +688,72 @@ instance HasAnnot Global where
 ------------------------------------------------------------
 -- * Operations on de Bruijn indices
 ------------------------------------------------------------
+
+-- Unblock fix
+class Unblock a where
+  unblock :: SizeName -> a -> a
+
+instance Unblock Term where
+  unblock _ t@(Sort {}) = t
+  unblock im (Pi ctx t) = Pi (unblock im ctx) (unblock im t)
+  unblock _ t@(Bound {}) = t
+  unblock _ t@(CBound {}) = t
+  unblock _ t@(Var {}) = t
+  unblock _ t@(CVar {}) = t
+  unblock _ t@(SIdent {}) = t
+  unblock im (Lam ctx t) = Lam (unblock im ctx) (unblock im t)
+  unblock im (App t ts) = App (unblock im t) (map (unblock im) ts)
+  unblock _ t@(Meta {}) = t
+  unblock im (Constr nm cid pars) = Constr nm cid (map (unblock im) pars)
+  unblock im t@(Fix f True a) | Just x <- nbase a
+                              , im == x = Fix f False a
+                              | otherwise = t
+  unblock im (Case c) = Case (unblock im c)
+  unblock im (Ind a b x pars) = Ind a b x (map (unblock im) pars)
+  unblock im (Intro a t) = Intro a (unblock im t)
+  unblock im (CoIntro x a t) = CoIntro x a (unblock im t)
+  unblock im (Subset x a t) = Subset x a (unblock im t)
+
+instance Unblock Bind where
+  unblock im (Bind x t u) = Bind x (unblock im t) (unblock im u)
+
+instance Unblock a => Unblock (Ctx a) where
+  unblock _ CtxEmpty  = CtxEmpty
+  unblock im (x :> xs) = unblock im x :> unblock im xs
+
+instance Unblock FixTerm where
+  unblock im (FixTerm a m x stagenm c t e) =
+    FixTerm a m x stagenm (unblock im c) (unblock im t) (unblock im e)
+
+instance Unblock CaseTerm where
+  unblock im (CaseTerm kind arg nm asName nmInd pars cin ret branches) =
+    CaseTerm kind (unblock im arg) nm asName nmInd (map (unblock im) pars) (map (unblock im) cin) (unblock im ret) (map (unblock im) branches)
+
+instance Unblock SinglePattern where
+  unblock im (PatternDef x t) = PatternDef x (unblock im t)
+  unblock _  t = t
+
+instance Unblock IndicesSpec where
+  unblock im (IndicesSpec args) = IndicesSpec (map (unblock im) args)
+
+instance Unblock Branch where
+  unblock im (Branch sv nm cid nmArgs body) =
+    Branch sv nm cid nmArgs (unblock im body)
+
+
+
+instance Unblock a => Unblock (Maybe a) where
+  unblock im = fmap (unblock im)
+
+instance Unblock a => Unblock (Named a) where
+  unblock im = fmap (unblock im)
+
+instance Unblock a => Unblock (Implicit a) where
+  unblock im = fmap (unblock im)
+
+instance Unblock a => Unblock (Arg a) where
+  unblock im = fmap (unblock im)
+
 
 ------------------------------------------------------------
 -- ** Shift
@@ -721,19 +803,21 @@ instance Lift Term where
   lift _ _ t@(Sort _)          = t
   lift k n (Pi c t)            = Pi (lift k n c) (lift k (n + ctxLen c) t)
   lift k n t@(Bound m)         = if m < n then t else Bound (m + k)
+  lift k n t@(CBound m a)      = if m < n then t else CBound (m + k) a
   lift _ _ t@(Var _)           = t
+  lift _ _ t@(CVar _ _)        = t
   lift k n (Lam c u)           = Lam (lift k n c) (lift k (n + ctxLen c) u)
   lift k n (App t1 t2)         = App (lift k n t1) $ map (lift k n) t2
   lift _ _ t@(Meta _)          = t
   lift k n (Ind a b x ps)      = Ind a b x (map (lift k n) ps)
   lift k n (Constr x indId ps) = Constr x indId ps'
     where ps' = map (lift k n) ps
-  lift k n (Fix f)             = Fix (lift k n f)
+  lift k n (Fix f b a)         = Fix (lift k n f) b a
   lift k n (Case c)            = Case (lift k n c)
   -- Well-founded sizes
   lift k n (Intro a t)         = Intro a (lift k n t)
   lift k n (CoIntro x a t)     = CoIntro x a (lift k n t)
-  lift k n (SizeApp t a)       = SizeApp (lift k n t) a
+  -- lift k n (SizeApp t a)       = SizeApp (lift k n t) a
   lift k n (Subset i a t)      = Subset i a (lift k n t)
 
 
@@ -802,7 +886,13 @@ instance SubstTerm Term where
   substN i r t@(Bound n) | n < i = t
                          | n == i = lift i 0 r
                          | otherwise = Bound (n - 1)
+  substN i (Fix f b _) t@(CBound n a) | n < i = t
+                                      | n == i = lift i 0 (Fix f b a)
+                                      | otherwise = CBound (n - 1) a
+  substN i r t@(CBound n a) | n < i = t
+                            | n > i = CBound (n - 1) a
   substN _ _ t@(Var _) = t
+  substN _ _ t@(CVar _ _) = t
   substN i r (Lam c t) = Lam (substN i (eraseSize r) c) (substN (i + ctxLen c) r t)
   substN i r (App t ts) = App (substN i r t) (map (substN i r) ts)
   substN _ _ t@(Meta _) = t
@@ -810,11 +900,11 @@ instance SubstTerm Term where
   substN i r (Constr x ind ps) = Constr x ind ps'
     where ps' = map (substN i (eraseSize r)) ps
   substN i r (Case c) = Case (substN i r c)
-  substN i r (Fix f) = Fix (substN i r f)
+  substN i r (Fix f b a) = Fix (substN i r f) b a
   -- Well-founded sizes
   substN i r (Intro a t) = Intro a (substN i r t)
   substN i r (CoIntro x k t) = CoIntro x k (substN i r t)
-  substN i r (SizeApp t s) = SizeApp (substN i r t) s
+  -- substN i r (SizeApp t s) = SizeApp (substN i r t) s
   substN i r (Subset x s t) = Subset x s (substN i r t)
 
 instance SubstTerm FixTerm where
@@ -885,34 +975,38 @@ instance IsFree Term where
   isFree _ (Sort _) = False
   isFree k (Pi c t) = isFree k c || isFree (k + ctxLen c) t
   isFree k (Bound n) = k == n
+  isFree k (CBound n _) = k == n
   isFree _ (Var _) = False
+  isFree _ (CVar _ _) = False
   isFree k (Lam c t) = isFree k c || isFree (k + ctxLen c) t
   isFree k (App f ts) = isFree k f || any (isFree k) ts
   isFree _ (Meta _) = False
   isFree k (Ind _ _ _ ps) = any (isFree k) ps
   isFree k (Constr _ _ ps) = any (isFree k) ps
-  isFree k (Fix f) = isFree k f
+  isFree k (Fix f _ _) = isFree k f
   isFree k (Case c) = isFree k c
   -- Well-founded sizes
   isFree k (Intro _ t) = isFree k t
   isFree k (CoIntro _ _ t) = isFree k t
-  isFree k (SizeApp t _) = isFree k t
+  -- isFree k (SizeApp t _) = isFree k t
   isFree k (Subset _ _ t) = isFree k t
 
   fvN _ (Sort _) = []
   fvN k (Pi c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
   fvN k (Bound n) = if n < k then [] else [n]
+  fvN k (CBound n _) = if n < k then [] else [n]
   fvN _ (Var _) = []
+  fvN _ (CVar _ _) = []
   fvN k (Lam c t) = fvN k c ++ shiftFV (ctxLen c) (fvN k t)
   fvN k (App f ts) = fvN k f ++ concatMap (fvN k) ts
   fvN _ (Meta _) = []
   fvN k (Ind _ _ _ ps) = concatMap (fvN k) ps
   fvN k (Constr _ _ ps) = concatMap (fvN k) ps
-  fvN k (Fix f) = fvN k f
+  fvN k (Fix f _ _) = fvN k f
   -- Well-founded sizes
   fvN k (Intro _ t) = fvN k t
   fvN k (CoIntro _ _ t) = fvN k t
-  fvN k (SizeApp t _) = fvN k t
+  -- fvN k (SizeApp t _) = fvN k t
   fvN k (Subset _ _ t) = fvN k t
 
 instance IsFree FixTerm where

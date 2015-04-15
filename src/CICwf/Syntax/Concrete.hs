@@ -64,7 +64,7 @@ data GExpr a
   | Lam Range (GContext a) (GExpr a)  -- ^ Abstractions, e.g. @fun (x1 ... xn : A) => B@
   | App Range (GExpr a) ArgType (GExpr a)     -- ^ Applications
   | Case (GCaseExpr a)           -- ^ Case expressions
-  | Fix (GFixExpr a)             -- ^ (Co)fixpoints
+  | Fix (GFixExpr a) Bool            -- ^ (Co)fixpoints
   | Meta Range (Maybe Int)  -- ^ Unspecified terms
   | Number Range Int        -- ^ built-in numbers
   -- Well-founded sizes
@@ -324,7 +324,7 @@ instance HasRange Expr where
   range (Lam r _ _) = r
   range (App r _ _ _) = r
   range (Case c) = range c
-  range (Fix f) = range f
+  range (Fix f _) = range f
   range (Meta r _) = r
   range (Number r _) = r
   -- Well-founded sizes
@@ -363,7 +363,7 @@ instance SetRange Expr where
   setRange r (Lam _ x y) = Lam r x y
   setRange r (App _ x t y) = App r x t y
   setRange r (Case c) = Case $ setRange r c
-  setRange r (Fix f) = Fix $ setRange r f
+  setRange r (Fix f b) = Fix (setRange r f) b
   -- Well-founded sizes
   setRange r (Intro _ x y) = Intro r x y
   setRange r (CoIntro _ x y) = CoIntro r x y
@@ -504,10 +504,10 @@ instance Pretty Expr where
                                , prettyDec n e ]
       pp n (App _ e1 _ e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       pp n (Case c) = parensIf (n > 0) $ pretty c
-      pp n (Fix f) = parensIf (n > 0) $ ppKind (fixKind f) <+> pretty f
+      pp n (Fix f b) = parensIf (n > 0) $ ppKind (fixKind f) <+> pretty f
         where
-          ppKind I   = prettyKeyword "fix"
-          ppKind CoI = prettyKeyword "cofix"
+          ppKind I   = prettyKeyword (if b then "!fix" else "fix")
+          ppKind CoI = prettyKeyword (if b then "!cofix" else "cofix")
 
       pp _ (Number _ n) = text $ show n
       pp _ (SApp _ b x k s) = (if b then text "!" else empty)
@@ -648,7 +648,7 @@ instance Pretty Branch where
       ppSize Nothing   = empty
 
 instance Pretty FixExpr where
-  pretty (FixExpr _ _ f spec args tp body) =
+  pretty (FixExpr _ _ f spec args tp body) = -- pretty f <+> text "..."
     hsep [pretty f <> prettyStage spec,
           prettyCtx args <> prettySpec spec, colon, pretty tp, defEq]
     $$ (pretty body)

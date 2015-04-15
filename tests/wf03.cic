@@ -31,3 +31,9 @@ fixpoint plus2 <i> (m: nat<i>) (n:nat) : nat :=
 -- print plus'.
 
 print plus2.
+
+eval plus.
+
+eval plus 1.
+
+eval plus 2.

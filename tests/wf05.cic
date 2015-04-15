@@ -34,11 +34,45 @@ print fib.
 
 -- print fib.
 
--- define head := fun (x:stream nat) => <nat> cocase x of
---                  | ccons x _ => x end.
+define head := fun (x:stream nat) => <nat> cocase x of
+                 | ccons x _ => x end.
 
--- define tail := fun (x:stream nat) => <stream nat> cocase x of
---                  | ccons _ y => y end.
+define tail := fun (x:stream nat) => <stream nat> cocase x of
+                 | ccons _ y => y end.
+
+-- print head.
+-- print tail.
+
+fixpoint nth <i> (n: nat<i>) (xs : stream nat) : nat :=
+  <nat>
+  case n of
+  | O => head xs
+  | S n' => nth n' (tail xs)
+  end.
+
+-- print nth.
+
+eval head fib.
+
+eval tail fib.
+
+eval nth 0 fib.
+eval nth 1 fib.
+eval nth 2 fib.
+eval nth 3 fib.
+eval nth 4 fib.
+eval nth 5 fib.
+eval nth 6 fib.
+eval nth 7 fib.
+eval nth 8 fib.
+
+-- print fib.
+
+-- print sum.
+
+eval (head (tail (tail fib))).
+
+-- eval (head (tail fib)).
 
 -- print head.
 -- print tail.

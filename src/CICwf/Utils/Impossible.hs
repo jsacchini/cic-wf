@@ -58,5 +58,5 @@ throwImpossible = E.throw
 catchImpossible :: IO a -> (Impossible -> IO a) -> IO a
 catchImpossible = E.catch
 
-__IMPOSSIBLE__ :: a
-__IMPOSSIBLE__ = E.assert False undefined
+-- __IMPOSSIBLE__ :: a
+-- __IMPOSSIBLE__ = E.assert False undefined

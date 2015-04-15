@@ -174,7 +174,7 @@ Exp : 'forall' Binding '.' Exp   { C.Pi (fuseRange $1 $4) (ctxFromList $2) $4 }
     -- | Exp1 '->' Exp               { mkArrow (fuseRange $1 $3) explicitArg $1 $3 }
     -- | Exps1                      { mkApp $1 }
     | Case                       { C.Case $1 }
-    | Fix                        { C.Fix $1 }
+    | Fix                        { C.Fix $1 False }
     | 'in' Exp                   { C.Intro (fuseRange $1 $2) Nothing $2 }
     | 'coin' Exp                 { C.CoIntro (fuseRange $1 $2) Nothing $2 }
 

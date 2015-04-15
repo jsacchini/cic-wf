@@ -39,6 +39,7 @@
 
 module CICwf.Syntax.InternalToAbstract where
 
+#include "undefined.h"
 import           CICwf.Utils.Impossible
 
 import           Control.Exception
@@ -155,6 +156,11 @@ instance Reify Term C.Expr where
                                              ++ "["
                                              ++ show n ++ "]")) C.LocalIdent
         else return $ C.Ident noRange False (mkName (show (xs !! n))) C.LocalIdent
+
+  reify (CBound n a) = do
+    c <- reify (Bound n)
+    return (C.SizeApp noRange c (reifyAnnot a))
+
   -- reify (Meta k) = do (Just g) <- getGoal k
   --                     case goalTerm g of
   --                       Nothing -> return $ C.Meta noRange (Just (fromEnum k))
@@ -164,7 +170,11 @@ instance Reify Term C.Expr where
     ctx' <- reify fctx
     t' <- pushCtx fctx $ reify t
     return $ C.Lam noRange ctx' t'
-  reify (Fix f) = C.Fix <$> reify f
+
+  reify (Fix f b a) = do -- TODO: ignoring blocking for now
+    f' <- reify f
+    return $ C.SizeApp noRange (C.Fix f' b) (reifyAnnot a)
+
   reify (Case c) = C.Case <$> reify c
 
   reify (Constr c _ pars) =
@@ -196,6 +206,9 @@ instance Reify Term C.Expr where
         return $ C.mkApp e es
 
   reify (Var x) = return $ C.Ident noRange False x C.GlobalIdent
+  reify (CVar x a) = do
+    c <- reify (Var x)
+    return $ C.SizeApp noRange c (reifyAnnot a)
 
   reify (Ind annot b ind pars) =
     liftM (C.mkApp ident) (mapM reify pars)
@@ -233,9 +246,9 @@ instance Reify Term C.Expr where
 
   reify (CoIntro x a t) | Just a' <- reifyAnnot a = C.CoIntro noRange (Just (x, a')) <$> reify t
                         | otherwise = C.CoIntro noRange Nothing <$> reify t
-  reify (SizeApp t a) = do
-    t' <- reify t
-    return $ C.SizeApp noRange  t' (reifyAnnot a)
+  -- reify (SizeApp t a) = do
+  --   t' <- reify t
+  --   return $ C.SizeApp noRange  t' (reifyAnnot a)
 
   reify (Subset i s t) = do
     let Just i' = reifyAnnot (hat (mkAnnot i))

@@ -23,6 +23,7 @@
 
 module CICwf.TypeChecking.Conversion where
 
+#include "undefined.h"
 import CICwf.Utils.Impossible
 
 import Control.Applicative
@@ -183,6 +184,7 @@ instance Conversion Type where
       convPars _    Neut = convTest Conv
 
   convTest _ (Bound k1) (Bound k2) = return $ k1 == k2
+  convTest _ (CBound k1 _) (CBound k2 _) = return $ k1 == k2
   convTest _ (Var x1) (Var x2) = return $ x1 == x2
   convTest _ t@(Lam _ _) u@(Lam _ _) =
     convTest Conv uctx tctx `mAnd` pushCtx tctx (convTest Conv t' u')
@@ -194,7 +196,8 @@ instance Conversion Type where
   convTest _ (Constr c1 _ ps1) (Constr c2 _ ps2) =
     return (c1 == c2) `mAnd`
     mAll (zipWith (convTest Conv) ps1 ps2)
-  convTest _ (Fix f1) (Fix f2) = convTest Conv f1 f2
+  convTest _ (Fix f1 b1 _) (Fix f2 b2 _) = return (b1 == b2) `mAnd`
+                                           convTest Conv f1 f2
   convTest _ (Case c1) (Case c2) =
     convTest Conv (caseArg c1) (caseArg c2) `mAnd`
     convTest Conv (caseIndices c1) (caseIndices c2) `mAnd`

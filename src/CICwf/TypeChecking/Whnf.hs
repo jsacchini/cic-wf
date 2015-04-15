@@ -17,11 +17,13 @@
  - cicminus. If not, see <http://www.gnu.org/licenses/>.
  -}
 
+{-# LANGUAGE CPP    #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
 module CICwf.TypeChecking.Whnf where
 
+#include "undefined.h"
 import           CICwf.Utils.Impossible
 
 import           Control.Monad.Reader
@@ -33,118 +35,162 @@ import qualified Data.Traversable       as Tr
 
 import           CICwf.Syntax.Common
 import           CICwf.Syntax.Internal        as I
+import           CICwf.Syntax.Position
 
 import           CICwf.TypeChecking.PrettyTCM hiding ((<>))
-import qualified CICwf.TypeChecking.PrettyTCM as PP ((<>))
+-- import qualified CICwf.TypeChecking.PrettyTCM as PP ((<>))
 import           CICwf.TypeChecking.TCM
 
 import           CICwf.Utils.Sized
 
 
-data WValue = WLam
+data WValue = WLam Context Term
+            | WPi Context Term
+            | WSort Sort
+            | WBound Int
+            | WCBound Int Annot
+            | WVar Name
+            | WCVar Name Annot
+            | WSIdent Name Annot
+            | WConstr Name (Name, Int) [Term] [Term]
+            | WBlockedFix FixTerm Annot
+            | WInd Annot Bool Name [Term]
+            | WSubset SizeName Annot Type
+            | WIntro Annot Term
+            | WCoIntro SizeName Annot Term
+            deriving(Show)
 
-data Stack = WApp [I.Term]
-           | WCase WCaseTerm
+data Frame = FApp [I.Term]
+           | FCase CaseTerm -- arg is Prop
+           | FIntro Annot
+           | FCoIntro SizeName Annot
+           deriving(Show)
+
+instance PrettyTCM Frame where
+  prettyTCM (FApp ts) = text "FApp" <+> prettyTCM ts
+  prettyTCM (FCase c) = text "FCase" <+> prettyTCM (Case c)
+  prettyTCM (FIntro a) = text "FIntro" <+> prettyTCM a
+  prettyTCM (FCoIntro im a) = text "FCoIntro" <+> prettyTCM im <+> text "⊑" <+> prettyTCM a
+
+instance PrettyTCM Stack where
+  prettyTCM EnvEmpty = empty
+  prettyTCM (s :< f) = prettyTCM s $$ text "⊳" <+> prettyTCM f
+
+type Stack = Env Frame
 
 data WCaseTerm = WCaseTerm I.Type [I.Branch]
+               deriving(Show)
+
+stackToTerm :: Stack -> WValue -> Term
+stackToTerm s w = unravel s (wvalueToTerm w)
+  where
+    unravel EnvEmpty t = t
+    unravel (s :< f) t = unravel s (frameToTerm f t)
+
+
+wvalueToTerm :: WValue -> Term
+wvalueToTerm (WLam ctx t) = mkLam ctx t
+wvalueToTerm (WPi ctx t) = mkPi ctx t
+wvalueToTerm (WSort s) = Sort s
+wvalueToTerm (WBound n) = Bound n
+wvalueToTerm (WCBound n a) = CBound n a
+wvalueToTerm (WVar x) = Var x
+wvalueToTerm (WSIdent x a) = SIdent x a
+wvalueToTerm (WConstr nm cid pars args) = mkApp (Constr nm cid pars) args
+wvalueToTerm (WBlockedFix f a) = Fix f True a
+wvalueToTerm (WInd a b x ps) = Ind a b x ps
+wvalueToTerm (WSubset im a t) = Subset im a t
+wvalueToTerm (WIntro a t) = Intro a t
+wvalueToTerm (WCoIntro im a t) = CoIntro im a t
+
+frameToTerm :: Frame -> Term -> Term
+frameToTerm (FApp args) t = mkApp t args
+frameToTerm (FCase c) t = Case (c { caseArg = t })
+frameToTerm (FIntro a) t = Intro a t
+frameToTerm (FCoIntro im a) t = CoIntro im a t
+
+scat :: Stack -> Stack -> Stack
+scat s1 EnvEmpty = s1
+scat (s1 :< FApp ts) (EnvEmpty :< FApp ts') = s1 :< FApp (ts ++ ts')
+scat s1 (s2 :< f) = scat s1 s2 :< f
+
+
+-- Call-by-name
+wHnf :: (MonadTCM tcm) => Stack -> Term -> tcm (Stack, WValue)
+wHnf s t = do
+  traceTCM 35 $ text "-------" $$ text "whnf" <+> prettyTCM s $$ nest 2 (text ">>" <+> prettyTCM t)
+  wH s t
+
+wH :: (MonadTCM tcm) => Stack -> Term -> tcm (Stack, WValue)
+wH k (Sort s) = return (k, WSort s)
+wH k (Pi ctx t) = return (k, WPi ctx t)
+wH k (Bound n) = return (k, WBound n)
+wH k (CBound n a) = return (k, WCBound n a)
+wH k (Var x) = do
+  d <- getGlobal x
+  case d of
+    Definition {} -> wHnf k (defTerm d)
+    Assumption {} -> return (k, WVar x)
+    _ -> __IMPOSSIBLE__
+wH k (CVar x a) = do
+  d <- getGlobal x
+  case d of
+    Cofixpoint {} -> wHnf k (Fix (cofixTerm d) False a)
+    Assumption {} -> return (k, WCVar x a)
+    _ -> __IMPOSSIBLE__
+wH k (SIdent x a) = return (k, WSIdent x a)
+wH k (Lam ctx t) = hReduce k (WLam ctx t)
+wH k (App t ts) = wHnf (k :< FApp ts) t
+-- wH k (Meta _) =
+wH k (Constr nm cid ps) = hReduce k (WConstr nm cid ps [])
+wH k t@(Fix f blocked a)
+  | blocked && isInfty a = wHnf k (subst (Fix f True Empty) (mkLam (fixArgs f) (fixBody f))) -- TODO: this is a bug; this case should not happen
+  | blocked = return (k, WBlockedFix f a)
+  | otherwise = wHnf k (subst (Fix f True Empty) (mkLam (fixArgs f) (fixBody f)))
+wH k (Case c) = wHnf (k :< FCase (c { caseArg = (Sort Prop) })) (caseArg c)
+wH k (Ind a b x pars) = return (k, WInd a b x pars)
+wH k (Intro a t) = wHnf (k :< FIntro a) t
+wH k (CoIntro im a t) = wHnf (k :< FCoIntro im a) t
+wH k (Subset im a t) = return (k, WSubset im a t)
+
+hReduce :: (MonadTCM tcm) => Stack -> WValue -> tcm (Stack, WValue)
+hReduce s w = do
+  traceTCM 35 $ text "=====" $$ text "hReduce" <+> prettyTCM s $$ nest 2 (text "<<" <+> text (show w))
+  headRed s w
+
+headRed :: (MonadTCM tcm) => Stack -> WValue -> tcm (Stack, WValue)
+headRed (st :< FApp ts) (WLam ctx b) = wHnf st (betaRed ctx b ts)
+headRed (st :< FApp ts2) (WConstr nm cid ps ts1) =
+  headRed st (WConstr nm cid ps (ts1 ++ ts2))
+headRed (st :< FIntro a) t@(WConstr {}) =
+  headRed st (WIntro a (wvalueToTerm t))
+headRed (st :< FCoIntro im a) t@(WConstr {}) =
+  headRed st (WCoIntro im a (wvalueToTerm t))
+headRed (st :< FCase c) (WIntro a (Constr nm cid ps)) =
+  wHnf st (iotaRed a (snd cid) [] (caseBranches c))
+headRed (st :< FCase c) (WIntro a (App (Constr nm cid ps) args)) =
+  wHnf st (iotaRed a (snd cid) args (caseBranches c))
+headRed (st :< FCase c) (WCoIntro im a (Constr nm cid ps)) =
+  wHnf st (coiotaRed (snd cid) [] (caseBranches c))
+headRed (st :< FCase c) (WCoIntro im a (App (Constr nm cid ps) args)) =
+  wHnf st (coiotaRed (snd cid) (substSizeName im (getCocaseSize c) args) (caseBranches c))
+headRed EnvEmpty w = return (EnvEmpty, w)
+headRed st w = traceTCM 1 (text "headRed" <+> text (show st) $$ text (show w)) >> typeError noRange (GenericError "HEADRED")
+
+whnf :: (MonadTCM tcm) => Term -> tcm Term
+whnf t = do
+  (s, w) <- wHnf EnvEmpty t
+  return (stackToTerm s w)
 
 nF :: (MonadTCM tcm) => Term -> tcm Term
 nF = normalForm
 
-class Whnf a where
-  whnf :: (MonadTCM tcm) => a -> tcm a
-
-instance Whnf a => Whnf (Implicit a) where
-  whnf x = do y <- whnf $ implicitValue x
-              return $ y <$ x
-
-instance Whnf Term where
-  whnf = wH -- metaexp t >>= wH
-    where
-      wH (App f ts) = do
-        w <- wH f
-        case w of
-          Lam ctx u -> wH $ betaRed ctx u ts
-          SizeApp (Fix f) s
-            | length ts <= n -> return $ mkApp w ts
-            | otherwise -> do
-              recArg' <- normalForm recArg
-              case recArg' of
-                Constr {} -> do
-                  traceTCM 70 $ vcat [ text "Mu Reduction"
-                                     , prettyTCM w
-                                     , text "on"
-                                     , prettyTCM (fs ++ recArg' : ls)
-                                     , text "RESULT"
-                                     , prettyTCM (muRed f s (fs ++ recArg' : ls)) ]
-                  wH (muRed f s (fs ++ recArg' : ls))
-                App (Constr {}) _ -> do
-                  traceTCM 70 $ vcat [ text "Mu Reduction"
-                                     , prettyTCM w
-                                     , text "on"
-                                     , prettyTCM (fs ++ recArg' : ls)
-                                     , text "RESULT"
-                                     , prettyTCM (muRed f s (fs ++ recArg' : ls)) ]
-                  wH (muRed f s (fs ++ recArg' : ls))
-                _ -> return $ App w ts
-            where
-              n = fixNum f
-              (fs, recArg : ls) = splitAt n ts
-              -- (first, recArg, last) = splitRecArg [] n ts
-              -- splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
-              -- splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
-          _         -> return $ App w ts
-      wH t@(Bound k) = do
-        len <- localLength
-        e <- ask
-        when (k >= len) $ traceTCM 1 $ hsep [text "BUG: wH bound ",
-                                             int k,
-                                             text "in",
-                                             prettyTCM e]
-        b <- localGet k
-        case bindDef b of
-          Nothing -> return t
-          Just t' -> wH (I.lift (k+1) 0 t')
-      wH t@(Var x) =
-        do d <- getGlobal x
-           case d of
-             Definition {} -> whnf (defTerm d)
-             Assumption {} -> return t
-             Cofixpoint {} -> whnf (Fix (cofixTerm d))
-             _             -> __IMPOSSIBLE__
-      wH t@(Case c) | isCocase c =
-        do arg' <- wH $ caseArg c
-           case extractCoconstr arg' of
-             Just (im, Constr _ (_,cid) _, cArgs) ->
-               wH $ coiotaRed cid (substSizeName im (getCocaseSize c) cArgs)
-                              (caseBranches c)
-             _ -> case isCofix arg' of
-                    Just (cofix, args, s) -> wH $ Case (c { caseArg = muRed cofix s args })
-                    Nothing -> return $ Case (c { caseArg = arg' })
-                    | otherwise =
-        do arg' <- wH $ caseArg c
-           case extractConstr arg' of
-             Just (s, Constr _ (_,cid) _, cArgs) ->
-               wH $ iotaRed s cid cArgs (caseBranches c)
-             _ -> return $ Case (c { caseArg = arg' })
-
-      wH (Intro s t) = Intro s <$> wH t
-      wH (CoIntro s a t) = CoIntro s a <$> wH t
-      wH (SizeApp t s) = flip SizeApp s <$> wH t
-      wH t = return t
-
--- instance Whnf Bind where
---   whnf (Bind x t) = do w <- whnf t
---                        return $ Bind x w
---   whnf (LocalDef x t u) = do w <- whnf u  -- we only normalize the type
---                              return $ LocalDef x t w
-
 
 -- isCofix (App (Fix f...) ts) | fixKind f == CoI = Just (Fix f..., ts)
-isCofix :: Term -> Maybe (FixTerm, [Term], Annot)
-isCofix (SizeApp (Fix f) s)          | fixKind f == CoI = Just (f, [], s)
-isCofix (SizeApp (App (Fix f) ts) s) | fixKind f == CoI = Just (f, ts, s)
-isCofix _                                   = Nothing
+-- isCofix :: Term -> Maybe (FixTerm, [Term], Annot)
+-- isCofix (SizeApp (Fix f) s)          | fixKind f == CoI = Just (f, [], s)
+-- isCofix (SizeApp (App (Fix f) ts) s) | fixKind f == CoI = Just (f, ts, s)
+-- isCofix _                                   = Nothing
 
 -- -- isCofix (App (cofix f:T := M) ts) = Just (f, T, M, cofix f := M, ts)
 -- isCofix :: Term -> Maybe (Bind, Term, Term, [Term])
@@ -206,170 +252,59 @@ instance NormalForm Context where
                             return $ x' :> xs'
 
 
+instance NormalForm WValue where
+  normalForm (WLam ctx t) = do
+    ctx' <- normalForm ctx
+    t' <- pushCtx ctx' $ normalForm t
+    return $ WLam ctx' t'
+  normalForm (WPi ctx t) = do
+    ctx' <- normalForm ctx
+    t' <- pushCtx ctx' $ normalForm t
+    return $ WPi ctx' t'
+  normalForm w@(WSort {}) = return w
+  normalForm w@(WBound {}) = return w
+  normalForm w@(WCBound {}) = return w
+  normalForm w@(WVar {}) = return w
+  normalForm w@(WCVar {}) = return w
+  normalForm w@(WSIdent {}) = return w
+  normalForm (WConstr nm cid pars args) = do
+    pars' <- normalForm pars
+    args' <- normalForm args
+    return (WConstr nm cid pars' args')
+  normalForm (WBlockedFix f a) = do
+    f' <- normalForm f
+    return (WBlockedFix f' a)
+  normalForm (WInd a b x pars) = WInd a b x <$> normalForm pars
+  normalForm (WSubset im a t) = WSubset im a <$> normalForm t
+  normalForm (WIntro a t) = WIntro a <$> normalForm t
+  normalForm (WCoIntro im a t) = WCoIntro im a <$> normalForm t
+
+
 instance NormalForm Term where
-  normalForm = nF -- metaexp x >>= nF
+  normalForm t = do
+    traceTCM 30 $ text "*******" $$ text "Normalform:" <+> prettyTCM t
+    (s, w) <- wHnf EnvEmpty t
+    traceTCM 30 $ text "*******" $$ text "Got:" <+> prettyTCM (stackToTerm s w)
+    w' <- normalForm w
+    nF s (wvalueToTerm w')
     where
-      nF :: (MonadTCM tcm) => Term -> tcm Term
-      nF t@(Sort s) = return t
-      nF (Pi c t) = liftM2 Pi (normalForm c) (pushCtx c $ nF t)
-      nF t@(Bound k) = do
-        e <- ask
-        traceTCM 70 $ hsep [ text "normal form bound"
-                           , prettyTCM k
-                           , text "in ctx"
-                           , ask >>= prettyTCM ]
-        when (k >= envLen e) $ error $ "normalform out of bound: " ++ show k -- ++ "  " ++ show e
-        case bindDef (envGet e k) of
-          Nothing -> return t
-          Just t' -> nF (I.lift (k+1) 0 t')
-      nF t@(Meta k) = do
-        (Just g) <- getGoal k
-        case goalTerm g of
-          Nothing -> return t
-          Just x  -> nF x
-      nF t@(Var x) = do
-        traceTCM 70 $ hsep [text "Normalizing Var ", prettyTCM x]
-        u <- getGlobal x
-        case u of
-          Definition {} -> do
-            traceTCM 70 $ hsep [text "global", prettyTCM (defTerm u)]
-            nF (defTerm u)
-          Assumption _    -> return t
-          Cofixpoint {} -> do
-            traceTCM 70 $ hsep [text "NF cofixpoint", prettyTCM (Fix (cofixTerm u))]
-            nF (Fix (cofixTerm u))
-          _               -> __IMPOSSIBLE__
-      nF (Lam c t) = liftM2 Lam (normalForm c) (pushCtx c $ nF t)
-      nF t@(App _ _) = do
-        let (t1, ts) = unApp t
-        traceTCM 70 $ vcat [ text "Normalizing in ", ask >>= prettyTCM
-                           , text "APP :" <+> prettyTCM t]
-        t1' <- whnf t1
-        case t1' of
-          Lam ctx u  ->
-            do traceTCM 70 $ (hsep [text "Beta Reduction on ",
-                                    prettyTCM t1',
-                                    text " and ",
-                                    prettyTCM ts]
-                              $$ hsep [text "reduces to ", prettyTCM (betaRed ctx u ts)])
-               nF $ betaRed ctx u ts
-          App u1 us -> do ts' <- mapM nF ts
-                          us' <- mapM nF us
-                          return $ mkApp u1 (us' ++ ts')
-          SizeApp (Fix (f@(FixTerm I n _ _ _ _ _))) s
-            | length ts <= n -> do -- traceTCM_ ["Fix without enough args ", show (length ts), " < ", show n]
-                                  ts' <- mapM nF ts
-                                  return $ App t1' ts'
-            | otherwise -> do
-                 let (_, recArg : _) = splitAt n ts
-                 traceTCM 70 $ vcat [ text "Fix enough args. rec arg "
-                                    , prettyTCM recArg ]
-                 recArg' <- nF recArg
-                 case recArg' of
-                   (Intro _ (Constr {})) -> do
-                     traceTCM 70 $ vcat [ text "Mu Reduction"
-                                        , prettyTCM t1'
-                                        , text "on"
-                                        , prettyTCM (fs ++ recArg' : ls)
-                                        , text "RESULT"
-                                        , prettyTCM (muRed f s (fs ++ recArg' : ls)) ]
-                     nF (muRed f s (fs ++ recArg' : ls))
-                   (Intro _ (App (Constr {}) _)) -> do
-                     traceTCM 70 $ vcat [ text "Mu Reduction"
-                                        , prettyTCM t1'
-                                        , text "on"
-                                        , prettyTCM (fs ++ recArg' : ls)
-                                        , text "RESULT"
-                                        , prettyTCM (muRed f s (fs ++ recArg' : ls)) ]
-                     nF (muRed f s (fs ++ recArg' : ls))
-                   _    -> do
-                     traceTCM 70 $ hsep [text "No recursion arg = ", text (show recArg')]
-                     fs' <- mapM nF fs
-                     ls'  <- mapM nF ls
-                     return $ mkApp t1' (fs' ++ recArg' : ls')
-            where (fs, recArg : ls) = splitAt n ts
-                  -- splitRecArg xs 0 (r : rs) = (reverse xs, r, rs)
-                  -- splitRecArg xs k (r : rs) = splitRecArg (r : xs) (k-1) rs
-          _         -> do traceTCM 80 $ hsep [ text "Not handled application", prettyTCM t1']
-                          ts' <- mapM nF ts
-                          return $ mkApp t1' ts'
-      nF t@(Ind a b x ps) =
-        do
-          traceTCM 80 $ hsep [text "Normalizing Ind ", prettyTCM t]
-          liftM (Ind a b x) (mapM nF ps)
-      nF t@(Case c) | isCocase c =
-        do traceTCM 70 $ (hsep [text "Normalizing Case in ", prettyTCM t]
-                          $$ hsep [text "arg ", prettyTCM (caseArg c)])
-           arg' <- nF $ caseArg c
-           case extractCoconstr arg' of
-             Just (im, Constr _ (_,cid) cPars, cArgs) -> do
-                   traceTCM 70 $ vcat [ text "Iota Reduction "
-                                      , prettyTCM cid
-                                      , prettyTCM cArgs
-                                      , text "RESULT"
-                                      , prettyTCM (coiotaRed cid (substSizeName im (getCocaseSize c) cArgs) (caseBranches c))
-                                      ]
-                   nF $ coiotaRed cid (substSizeName im (getCocaseSize c) cArgs)
-                                  (caseBranches c)
-             Nothing ->
-                  case isCofix arg' of
-                    Just (cofix, args, s) -> do
-                      traceTCM 70 $ vcat [text "normal form case " PP.<> prettyTCM t,
-                                          text "cofix " PP.<> prettyTCM cofix,
-                                          text "args " PP.<> prettyTCM args]
-                      nF $ Case (c { caseArg = muRed cofix s args })
-                    Nothing -> do
-                      traceTCM 70 $ text "Case in normal form " <+> prettyTCM t
-                      traceTCM 70 $ text "Normalizing RET " <+> prettyTCM (caseTpRet c)
-                      ret' <- nF (caseTpRet c)
-                      traceTCM 70 $ text "Normalizing branches "
-                      branches' <- mapM normalForm (caseBranches c)
-                      in' <- normalForm (caseIndices c)
-                      return $ Case (c { caseArg      = arg'
-                                       , caseTpRet    = ret'
-                                       , caseIndices  = in'
-                                       , caseBranches = branches'
-                                       })
-                    | otherwise =
-        do traceTCM 70 $ (hsep [text "Normalizing Case in ", prettyTCM t]
-                          $$ hsep [text "arg ", prettyTCM (caseArg c)])
-           arg' <- nF $ caseArg c
-           case extractConstr arg' of
-             Just (s, Constr _ (_,cid) cPars, cArgs) -> do
-               traceTCM 70 $ vcat [ text "Iota Reduction "
-                                  , prettyTCM cid
-                                  , prettyTCM cArgs
-                                  , text "RESULT"
-                                  , prettyTCM (iotaRed s cid cArgs (caseBranches c))
-                                  ]
-               nF $ iotaRed s cid cArgs (caseBranches c)
-             Nothing -> do
-               traceTCM 70 $ text "Case in normal form " <+> prettyTCM t
-               traceTCM 70 $ text "Normalizing RET " <+> prettyTCM (caseTpRet c)
-               ret' <- nF (caseTpRet c)
-               traceTCM 70 $ text "Normalizing branches "
-               branches' <- mapM normalForm (caseBranches c)
-               in' <- normalForm (caseIndices c)
-               return $ Case (c { caseArg      = arg'
-                                , caseTpRet    = ret'
-                                , caseIndices  = in'
-                                , caseBranches = branches'
-                                })
+      nF :: (MonadTCM tcm) => Stack -> Term -> tcm Term
+      nF EnvEmpty t = return t
+      nF (s :< FApp args) t = do
+        args' <- normalForm args
+        nF s (mkApp t args')
+      nF (s :< FCase c) t = do
+        ret' <- normalForm (caseTpRet c)
+        branches' <- mapM normalForm (caseBranches c)
+        in' <- normalForm (caseIndices c)
+        nF s (Case (c { caseArg      = t
+                      , caseTpRet    = ret'
+                      , caseIndices  = in'
+                      , caseBranches = branches'
+                      }))
+      nF (s :< FIntro a) t = nF s (Intro a t)
+      nF (s :< FCoIntro im a) t = nF s (CoIntro im a t)
 
-      nF t@(Constr x i ps) =
-        do -- traceTCM_ ["Normalizing constr ", show t]
-           ps' <- mapM nF ps
-           return $ Constr x i ps'
-      nF t@(Fix f) = do
-        ctxn <- normalForm $ fixArgs f
-        tpn  <- pushCtx ctxn $ normalForm (fixType f)
-        let recf = mkBind (fixName f) (mkPi ctxn tpn)
-        bodyn <- pushBind recf $ pushCtx ctxn $ normalForm (fixBody f)
-        return $ Fix $ f { fixArgs = ctxn, fixType = tpn, fixBody = bodyn }
-
-      nF (Intro s t) = Intro s <$> nF t
-      nF (CoIntro s a t) = CoIntro s a <$> nF t
-      nF (SizeApp t s) = flip SizeApp s <$> nF t
 
 instance NormalForm FixTerm where
   normalForm (FixTerm a k nm stage c tp body) =
@@ -400,7 +335,7 @@ instance NormalForm Branch where
       where
         fakeTypedPattern (PatternVar x)   = mkBind x (Sort Prop)
         fakeTypedPattern (PatternDef x t) = mkBindDef x (Sort Prop) t
-        patternCtx = foldr (:>) CtxEmpty . map fakeTypedPattern
+        patternCtx = foldr ((:>) . fakeTypedPattern) CtxEmpty
 
 
 -- | 'betaRed' ctx body args  performs several beta reductions on the term
@@ -430,7 +365,7 @@ iotaRed annot cid args branches =
   case find ( (==cid) . brConstrId ) branches of
     Just br ->
       case brSize br of
-        Just km -> substList0 args (substSizeName km annot (brBody br))
+        Just km -> substList0 args (substSizeName km annot (unblock km (brBody br)))
         Nothing -> __IMPOSSIBLE__
     Nothing -> __IMPOSSIBLE__ -- branch
 
@@ -439,8 +374,8 @@ coiotaRed cid args branches =
   case find ( (==cid) . brConstrId ) branches of
     Just br ->
       case brSize br of
-        Just km -> substList0 args (brBody br)
-        Nothing -> __IMPOSSIBLE__
+        Just km -> __IMPOSSIBLE__
+        Nothing -> substList0 args (brBody br)
     Nothing -> __IMPOSSIBLE__ -- branch
 
 -- | 'muRed' @fix@ @args@ unfolds the fixpoint and applies it to the arguments
@@ -451,9 +386,9 @@ coiotaRed cid args branches =
 -- muRed f args = mkApp (subst (Fix f) (mkLam (fixArgs f) (fixBody f))) args
 -- -- muRed _ _ = __IMPOSSIBLE__
 
-muRed :: FixTerm -> Annot -> [Term] -> Term
-muRed f s args =
-  betaRed (mkBind (fixName f) (Sort Prop) :> fixArgs f) (substSizeName (getFixStage f) s (fixBody f)) (Fix f : args)
+-- muRed :: FixTerm -> Annot -> [Term] -> Term
+-- muRed f s args =
+--   betaRed (mkBind (fixName f) (Sort Prop) :> fixArgs f) (substSizeName (getFixStage f) s (fixBody f)) (Fix f : args)
 
 
 extractConstr :: Term -> Maybe (Annot, Term, [Term])

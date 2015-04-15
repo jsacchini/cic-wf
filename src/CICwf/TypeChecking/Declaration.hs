@@ -123,9 +123,9 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
 inferDecl (A.Definition _ x Nothing e) = do
   resetConstraints
   (tm, tp) <- infer e
-  let tm0 = tm -- toInfty tm
-      tp0 = tp -- toInfty tp
-  solveWfConstraints
+  m <- solveWfConstraints
+  let tm0 = substStageVars m tm
+      tp0 = substStageVars m tp
   mapM_ addGlobal [mkNamed x Definition { defType = ConstrType [] tp0
                                         , defTerm = tm0 }]
 

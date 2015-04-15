@@ -23,6 +23,9 @@
 
 module CICwf.TypeChecking.Inductive where
 
+#include "undefined.h"
+import           CICwf.Utils.Impossible
+
 import           Control.Monad.Reader
 
 import           Data.Monoid
@@ -39,7 +42,6 @@ import           CICwf.TypeChecking.TCM
 import           CICwf.TypeChecking.TypeChecking
 import           CICwf.TypeChecking.Whnf
 
-import           CICwf.Utils.Impossible
 import           CICwf.Utils.Misc
 import           CICwf.Utils.Sized
 
