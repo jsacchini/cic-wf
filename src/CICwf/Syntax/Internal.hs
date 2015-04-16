@@ -619,8 +619,8 @@ instance HasAnnot CaseTerm where
   fAnnot (CaseTerm kind arg _ _ _ pars cin _ bs) =
     -- fAnnot kind `Set.union`
     fAnnot arg `Set.union`
-    fAnnot pars `Set.union`
-    fAnnot cin `Set.union`
+    -- fAnnot pars `Set.union`
+    -- fAnnot cin `Set.union`
     fAnnot bs
 
 instance HasAnnot SinglePattern where
@@ -708,6 +708,7 @@ instance Unblock Term where
   unblock im t@(Fix f True a) | Just x <- nbase a
                               , im == x = Fix f False a
                               | otherwise = t
+  unblock _ t@(Fix {}) = t
   unblock im (Case c) = Case (unblock im c)
   unblock im (Ind a b x pars) = Ind a b x (map (unblock im) pars)
   unblock im (Intro a t) = Intro a (unblock im t)
