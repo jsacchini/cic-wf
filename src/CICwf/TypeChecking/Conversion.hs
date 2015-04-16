@@ -202,6 +202,7 @@ instance Conversion Type where
     convTest Conv (caseArg c1) (caseArg c2) `mAnd`
     convTest Conv (caseIndices c1) (caseIndices c2) `mAnd`
     mAll (zipWith (convTest Conv) (caseBranches c1) (caseBranches c2))
+  convTest Conv (Intro _ t1) (Intro _ t2) = convTest Conv t1 t2
   convTest _ _ _ = return False
 
 

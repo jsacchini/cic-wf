@@ -44,8 +44,8 @@ import           CICwf.TypeChecking.TCM
 import           CICwf.Utils.Misc
 
 
-solveWfConstraints :: MonadTCM tcm => tcm [(StageVar, Annot)]
-solveWfConstraints = do
+solveWfConstraints :: MonadTCM tcm => Range -> tcm [(StageVar, Annot)]
+solveWfConstraints rg = do
   stages <- stWfStages <$> get
   cons <- getWfConstraints
   let stages' = stages -- map (appSnd (infty:)) stages
@@ -73,10 +73,11 @@ solveWfConstraints = do
   --   Just r -> traceTCM 10 (text "SOLVED: " <+> prettyTCM r) >> return r
   --   Nothing -> traceTCM 10 (text "NOSAT") >> typeError noRange (GenericError "NOSAT")
   ifM getSolveConstraints
-    (do r0 <- findTCM (length prstages3) (solve cons) (maps prstages3)
+    (do r0 <- if null prstages3 then return (Just [])
+              else findTCM (length prstages3) (solve cons) (maps prstages3)
         case r0 of
           Just r -> traceTCM 10 (text "SOLVED: " <+> prettyTCM r) >> return r
-          Nothing -> traceTCM 10 (text "NOSAT") >> typeError noRange (GenericError "NOSAT"))
+          Nothing -> traceTCM 10 (text "NOSAT") >> typeError rg (GenericError "NOSAT"))
     (return [])
   where
     test :: MonadTCM tcm => [(StageVar, Annot)] -> [WfConstraint] -> tcm ()

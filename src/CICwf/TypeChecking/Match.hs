@@ -164,13 +164,13 @@ matchEq ctx (Bound k, t2) js
     return (revapplyCtxDef ctx k (lift0 (-k-1) t2), js \\ [k])
   | otherwise   = do (unlessM (R.lift $ pushCtx ctx $ conv (Bound k) t2)) $ R.lift $ typeError' $ NotUnifiable [(Bound k, PatternDef noName t2)] -- TODO: revise this line, as it should not be used. The pattern (Bound, Bound) is covered by the first case
                      return (ctx, js)
-matchEq ctx (App (Constr x1 cid1 ps1) as1, App (Constr x2 cid2 ps2) as2) js
+matchEq ctx (Intro _ (App (Constr x1 cid1 ps1) as1), Intro _ (App (Constr x2 cid2 ps2) as2)) js
   | x1 == x2  = match ctx (zip as1 (map (PatternDef noName) as2)) js
   | otherwise = fail "Negative sucess"
-matchEq ctx (Constr x1 cid1 ps1, App (Constr x2 cid2 ps2) as2) js
+matchEq ctx (Intro _ (Constr x1 cid1 ps1), Intro _ (App (Constr x2 cid2 ps2) as2)) js
   | x1 == x2  = match ctx (zip [] (map (PatternDef noName) as2)) js
   | otherwise = fail "Negative sucess"
-matchEq ctx (App (Constr x1 cid1 ps1) as1, Constr x2 cid2 ps2) js
+matchEq ctx (Intro _ (App (Constr x1 cid1 ps1) as1), Intro _ (Constr x2 cid2 ps2)) js
   | x1 == x2  = match ctx (zip as1 []) js
   | otherwise = fail "Negative sucess"
 -- Otherwise, we have to check that both terms are convertible. If they are not

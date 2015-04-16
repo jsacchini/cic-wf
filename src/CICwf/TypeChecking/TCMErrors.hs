@@ -75,11 +75,11 @@ import CICwf.TypeChecking.PrettyTCM
 
 prettyError :: (MonadTCM tcm) => TCErr -> tcm ()
 prettyError (TypeError rg env err) = do
-  d <- vcat [ prettyTCM rg <> text ":"
-            , text "in context"
-            , prettyTCM env
-            , text "------"
-            , prettyTCM err ]
+  d <- withEnv env $ vcat [ prettyTCM rg <> text ":"
+                          , text "in context"
+                          , prettyTCM env
+                          , text "------"
+                          , prettyTCM err ]
   liftIO $ print d
 prettyError (ScopeError rg err) = do
   d <- hsep [ prettyTCM rg <> text ":"

@@ -284,6 +284,7 @@ infer (A.CoIntro rg Nothing e) = do
     _ -> typeError rg $ GenericError "in applied to non-inductive type."
   pushWfDecl im (mkAnnot stage) $ addWfConstraint a (mkAnnot stage)
   pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot stage) a
+  traceTCM 30 $ text "Adding independent" <+> prettyTCM im <+> text "∉" <+> prettyTCM (listAnnot t) $$ text "FROM:" <+> prettyTCM t
   addWfIndependent im (listAnnot t)
   return (I.CoIntro im (mkAnnot stage) t, u')
 
@@ -342,6 +343,7 @@ check e@(A.Constr rg _ _) i@(Ind a False x pars) = do
 check (A.CoIntro rg Nothing e) (Ind a False x pars) = do
   im <- freshSizeName (mkName "i")
   e' <- pushWfDecl im a $ check e (Ind (mkAnnot im) True x pars)
+  traceTCM 30 $ text "Adding independent" <+> prettyTCM im <+> text "_|_" <+> prettyTCM (listAnnot e') $$ text "FROM:" <+> prettyTCM e' $$ text "RAW:" <+> text (show e')
   addWfIndependent im (listAnnot e')
   return (I.CoIntro im a e')
 

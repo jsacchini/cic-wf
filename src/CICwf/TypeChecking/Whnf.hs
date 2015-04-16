@@ -124,7 +124,11 @@ wHnf s t = do
 wH :: (MonadTCM tcm) => Stack -> Term -> tcm (Stack, WValue)
 wH k (Sort s) = return (k, WSort s)
 wH k (Pi ctx t) = return (k, WPi ctx t)
-wH k (Bound n) = return (k, WBound n)
+wH k (Bound n) = do-- return (k, WBound n)
+  b <- localGet n
+  case bindDef b of
+    Nothing -> return (k, WBound n)
+    Just t' -> wH k (I.lift (n+1) 0 t')
 wH k (CBound n a) = return (k, WCBound n a)
 wH k (Var x) = do
   d <- getGlobal x
@@ -282,9 +286,9 @@ instance NormalForm WValue where
 
 instance NormalForm Term where
   normalForm t = do
-    traceTCM 30 $ text "*******" $$ text "Normalform:" <+> prettyTCM t
+    traceTCM 40 $ text "*******" $$ text "Normalform:" <+> prettyTCM t
     (s, w) <- wHnf EnvEmpty t
-    traceTCM 30 $ text "*******" $$ text "Got:" <+> prettyTCM (stackToTerm s w)
+    traceTCM 40 $ text "*******" $$ text "Got:" <+> prettyTCM (stackToTerm s w)
     w' <- normalForm w
     nF s (wvalueToTerm w')
     where

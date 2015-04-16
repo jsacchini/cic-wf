@@ -62,7 +62,7 @@ outputTopLevel d = printTCMLn (d PP.<> line)
 
 
 inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm ()
-inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
+inferDecl (A.Definition rg0 nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
 
   -- Reset constraint-related state
   resetConstraints
@@ -88,7 +88,7 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
 
   let body0 = body -- toInfty body
       tp0   = tp -- toInftyBut stas tp
-  solveWfConstraints
+  solveWfConstraints rg0
   mapM_ addGlobal [mkNamed nm Definition { defType = ConstrType stas tp0
                                          , defTerm = body0 }]
 
@@ -120,10 +120,10 @@ inferDecl (A.Definition _ nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
           $ notImplemented rg ("Size constraint not satisfied "
                                ++ show nmsize)
 
-inferDecl (A.Definition _ x Nothing e) = do
+inferDecl (A.Definition rg x Nothing e) = do
   resetConstraints
   (tm, tp) <- infer e
-  m <- solveWfConstraints
+  m <- solveWfConstraints rg
   let tm0 = substStageVars m tm
       tp0 = substStageVars m tp
   mapM_ addGlobal [mkNamed x Definition { defType = ConstrType [] tp0
@@ -145,7 +145,7 @@ inferDecl (A.Eval e) = do
   traceTCM 35 $ hsep [text "========= EVAL "]
   resetConstraints
   (e1, _) <- infer e
-  m <- solveWfConstraints
+  m <- solveWfConstraints (range e)
   let tm0 = substStageVars m e1
   traceTCM 35 $ hsep [text "========= EVAL ", prettyTCM e1 PP.<> dot]
   tm1 <- nF tm0
@@ -158,8 +158,9 @@ inferDecl (A.Check e1 (Just e2)) = do
   resetConstraints
   (tp, s) <- inferType e2
   tm <- check e1 tp
-  let tm0 = tm -- toInfty tm
-      tp0 = tp -- toInfty tp
+  m <- solveWfConstraints (range e1)
+  let tm0 = substStageVars m tm -- toInfty tm
+      tp0 = substStageVars m tp -- toInfty tp
   outputTopLevel $ vcat [ prettyKeyword "check" <+>
                           prettyTCM tm0
                         , text " : " PP.<> align (prettyTCM tp0) ]
@@ -167,8 +168,9 @@ inferDecl (A.Check e1 (Just e2)) = do
 inferDecl (A.Check e1 Nothing) = do
   resetConstraints
   (tm, tp) <- infer e1
-  let tm0 = tm -- toInfty tm
-      tp0 = tp -- toInfty tp
+  m <- solveWfConstraints (range e1)
+  let tm0 = substStageVars m tm -- toInfty tm
+      tp0 = substStageVars m tp -- toInfty tp
   outputTopLevel $ vcat [ prettyKeyword "check" <+>
                           prettyTCM tm0
                         , text " : " PP.<> align (prettyTCM tp0) ]
@@ -199,7 +201,7 @@ inferDecl (A.Cofixpoint fix) = do
   resetConstraints
   (fix', tp, ctype) <- inferFix fix
   let fix0 = fix' -- toInfty fix'
-  m <- solveWfConstraints
+  m <- solveWfConstraints (range fix)
   let fix1 = substStageVars m fix0
       ctype1 = substStageVars m ctype
   addGlobal $
