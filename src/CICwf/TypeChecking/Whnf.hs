@@ -118,7 +118,7 @@ scat s1 (s2 :< f) = scat s1 s2 :< f
 -- Call-by-name
 wHnf :: (MonadTCM tcm) => Stack -> Term -> tcm (Stack, WValue)
 wHnf s t = do
-  traceTCM 35 $ text "-------" $$ text "whnf" <+> prettyTCM s $$ nest 2 (text ">>" <+> prettyTCM t)
+  traceTCM 45 $ text "-------" $$ text "whnf" <+> prettyTCM s $$ nest 2 (text ">>" <+> prettyTCM t)
   wH s t
 
 wH :: (MonadTCM tcm) => Stack -> Term -> tcm (Stack, WValue)
@@ -159,7 +159,7 @@ wH k (Subset im a t) = return (k, WSubset im a t)
 
 hReduce :: (MonadTCM tcm) => Stack -> WValue -> tcm (Stack, WValue)
 hReduce s w = do
-  traceTCM 35 $ text "=====" $$ text "hReduce" <+> prettyTCM s $$ nest 2 (text "<<" <+> text (show w))
+  traceTCM 45 $ text "=====" $$ text "hReduce" <+> prettyTCM s $$ nest 2 (text "<<" <+> text (show w))
   headRed s w
 
 headRed :: (MonadTCM tcm) => Stack -> WValue -> tcm (Stack, WValue)
@@ -179,7 +179,8 @@ headRed (st :< FCase c) (WCoIntro im a (Constr nm cid ps)) =
 headRed (st :< FCase c) (WCoIntro im a (App (Constr nm cid ps) args)) =
   wHnf st (coiotaRed (snd cid) (substSizeName im (getCocaseSize c) args) (caseBranches c))
 headRed EnvEmpty w = return (EnvEmpty, w)
-headRed st w = traceTCM 1 (text "headRed" <+> text (show st) $$ text (show w)) >> typeError noRange (GenericError "HEADRED")
+headRed st w = traceTCM 1 (text "=====" $$ text "hReduce" <+> prettyTCM st $$ nest 2 (text "<<" <+> text (show w))) >> typeError noRange (GenericError "HEADRED")
+
 
 whnf :: (MonadTCM tcm) => Term -> tcm Term
 whnf t = do
@@ -287,27 +288,34 @@ instance NormalForm WValue where
 instance NormalForm Term where
   normalForm t = do
     traceTCM 40 $ text "*******" $$ text "Normalform:" <+> prettyTCM t
-    (s, w) <- wHnf EnvEmpty t
-    traceTCM 40 $ text "*******" $$ text "Got:" <+> prettyTCM (stackToTerm s w)
-    w' <- normalForm w
-    nF s (wvalueToTerm w')
+    t' <- normalForm' t
+    traceTCM 40 $ text "*******" $$ text "Got:" <+> prettyTCM t'
+    return t'
     where
-      nF :: (MonadTCM tcm) => Stack -> Term -> tcm Term
-      nF EnvEmpty t = return t
-      nF (s :< FApp args) t = do
-        args' <- normalForm args
-        nF s (mkApp t args')
-      nF (s :< FCase c) t = do
-        ret' <- normalForm (caseTpRet c)
-        branches' <- mapM normalForm (caseBranches c)
-        in' <- normalForm (caseIndices c)
-        nF s (Case (c { caseArg      = t
-                      , caseTpRet    = ret'
-                      , caseIndices  = in'
-                      , caseBranches = branches'
-                      }))
-      nF (s :< FIntro a) t = nF s (Intro a t)
-      nF (s :< FCoIntro im a) t = nF s (CoIntro im a t)
+      normalForm' :: (MonadTCM tcm) => Term -> tcm Term
+      normalForm' t = do
+        -- traceTCM 40 $ text "*******" $$ text "Normalform:" <+> prettyTCM t
+        (s, w) <- wHnf EnvEmpty t
+        -- traceTCM 40 $ text "*******" $$ text "Got:" <+> prettyTCM (stackToTerm s w)
+        w' <- normalForm w
+        nF s (wvalueToTerm w')
+        where
+          nF :: (MonadTCM tcm) => Stack -> Term -> tcm Term
+          nF EnvEmpty t = return t
+          nF (s :< FApp args) t = do
+            args' <- mapM normalForm' args
+            nF s (mkApp t args')
+          nF (s :< FCase c) t = do
+            ret' <- normalForm' (caseTpRet c)
+            branches' <- mapM normalForm (caseBranches c)
+            in' <- normalForm (caseIndices c)
+            nF s (Case (c { caseArg      = t
+                          , caseTpRet    = ret'
+                          , caseIndices  = in'
+                          , caseBranches = branches'
+                          }))
+          nF (s :< FIntro a) t = nF s (Intro a t)
+          nF (s :< FCoIntro im a) t = nF s (CoIntro im a t)
 
 
 instance NormalForm FixTerm where

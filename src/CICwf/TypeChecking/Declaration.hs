@@ -86,9 +86,10 @@ inferDecl (A.Definition rg0 nm (Just (A.ConstrExpr rg stas expType)) expBody) = 
   -- Step 2: check that there is no path between any pair of size variables
   forM_ (pairs sizeMap) checkIndependence
 
-  let body0 = body -- toInfty body
-      tp0   = tp -- toInftyBut stas tp
-  solveWfConstraints rg0
+  m <- solveWfConstraints rg0
+  let body0 = substStageVars m body -- toInfty body
+      tp0   = substStageVars m tp -- toInftyBut stas tp
+  traceTCM 30 $ text "GLOBAL DEF" <+> text (show body0)
   mapM_ addGlobal [mkNamed nm Definition { defType = ConstrType stas tp0
                                          , defTerm = body0 }]
 

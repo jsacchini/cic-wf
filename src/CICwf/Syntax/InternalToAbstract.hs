@@ -178,9 +178,10 @@ instance Reify Term C.Expr where
   reify (Case c) = C.Case <$> reify c
 
   reify (Constr c _ pars) =
-    if c == mkName "O" && null pars
-    then return $ C.Number noRange 0
-    else do
+    -- if c == mkName "O" && null pars
+    -- then return $ C.Number noRange 0
+    -- else
+      do
       pars' <- mapM reify pars
       return $ C.mkApp (C.Ident noRange False c C.ConstructorIdent) pars'
 
@@ -189,17 +190,17 @@ instance Reify Term C.Expr where
     -- Special case for reification of natural numbers
     -- case O
     case (t, ts) of
-      (Constr c0 _ [], [])
-        | c0 == mkName "O" -> return $ C.Number noRange 0
-        | otherwise        -> return $ C.Ident noRange False c0 C.ConstructorIdent
+      -- (Constr c0 _ [], [])
+      --   | c0 == mkName "O" -> return $ C.Number noRange 0
+      --   | otherwise        -> return $ C.Ident noRange False c0 C.ConstructorIdent
 
-      (Constr c1 _ [], [t])
-        | c1 == mkName "S" -> do
-          t' <- reify t
-          return $ case t' of
-            C.Number _ k -> C.Number noRange (k + 1)
-            _            -> C.mkApp (C.Ident noRange False (mkName "S") C.ConstructorIdent) [t']
-        | otherwise -> fmap (C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg) (reify t)
+      -- (Constr c1 _ [], [t])
+      --   | c1 == mkName "S" -> do
+      --     t' <- reify t
+      --     return $ case t' of
+      --       C.Number _ k -> C.Number noRange (k + 1)
+      --       _            -> C.mkApp (C.Ident noRange False (mkName "S") C.ConstructorIdent) [t']
+      --   | otherwise -> fmap (C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg) (reify t)
       _ -> do
         e <- reify t
         es <- mapM reify ts
@@ -229,19 +230,19 @@ instance Reify Term C.Expr where
 
   reify (Intro a t) =
     case t of
-      Constr c _ pars ->
-        if c == mkName "O" && null pars
-        then return $ C.Number noRange 0
-        else do
-          pars' <- mapM reify pars
-          return $ C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False c C.ConstructorIdent) pars'
-      App (Constr c1 _ []) [arg]
-        | c1 == mkName "S" -> do
-          arg' <- reify arg
-          return $ case arg' of
-            C.Number _ k -> C.Number noRange (k + 1)
-            _            -> C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False (mkName "S") C.ConstructorIdent) [arg']
-        | otherwise -> C.Intro noRange (reifyAnnot a) <$> C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg <$> reify arg
+      -- Constr c _ pars ->
+      --   if c == mkName "O" && null pars
+      --   then return $ C.Number noRange 0
+      --   else do
+      --     pars' <- mapM reify pars
+      --     return $ C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False c C.ConstructorIdent) pars'
+      -- App (Constr c1 _ []) [arg]
+      --   | c1 == mkName "S" -> do
+      --     arg' <- reify arg
+      --     return $ case arg' of
+      --       C.Number _ k -> C.Number noRange (k + 1)
+      --       _            -> C.Intro noRange (reifyAnnot a) $ C.mkApp (C.Ident noRange False (mkName "S") C.ConstructorIdent) [arg']
+      --   | otherwise -> C.Intro noRange (reifyAnnot a) <$> C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg <$> reify arg
       _ -> C.Intro noRange (reifyAnnot a) <$> reify t
 
   reify (CoIntro x a t) | Just a' <- reifyAnnot a = C.CoIntro noRange (Just (x, a')) <$> reify t

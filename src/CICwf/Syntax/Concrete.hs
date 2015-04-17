@@ -504,7 +504,9 @@ instance Pretty Expr where
                                , prettyDec n e ]
       pp n (App _ e1 _ e2) = parensIf (n > 2) $ hsep [pp 2 e1, pp 3 e2]
       pp n (Case c) = parensIf (n > 0) $ pretty c
-      pp n (Fix f b) = parensIf (n > 0) $ ppKind (fixKind f) <+> pretty f
+      pp n (Fix f b) = parensIf (n > 0) $ ppKind (fixKind f) <+>
+                       (if b then pretty (fixName f) <+> text "..."
+                        else pretty f)
         where
           ppKind I   = prettyKeyword (if b then "!fix" else "fix")
           ppKind CoI = prettyKeyword (if b then "!cofix" else "cofix")

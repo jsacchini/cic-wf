@@ -226,10 +226,11 @@ checkBranch caseki costa asNm nmInd pars indicesPat returnType
   traceTCM 30 $ text "Indices for branch: " <+> prettyTCM constrIndices
   traceTCM 30 $ text "Return type: " <+> prettyTCM (I.lift (size branchPat) (size indicesPat + 1) returnType)
   traceTCM 30 $ text "in ctx: " <+> (ask >>= prettyTCM)
-  let instReturnType =
+  let numArgs = size (constrArgs constr)
+      constrArg = Intro sta (mkApp (Constr nmConstr (nmInd, idConstr) pars) (localDom numArgs))
+      instReturnType =
         substList0
-        (constrIndices ++ [(Constr nmConstr
-                           (nmInd, idConstr) pars)]) (I.lift (size branchPat) (size indicesPat + 1) returnType)
+        (constrIndices ++ [constrArg]) (I.lift (size branchPat) (size indicesPat + 1) returnType)
 
   pushCtx branchCtx $ traceTCM 30 $ vcat [ hsep [ text "Return type for branch", prettyTCM nmConstr
                             , text ":", prettyTCM instReturnType ]
@@ -240,6 +241,12 @@ checkBranch caseki costa asNm nmInd pars indicesPat returnType
     Just km -> addWfIndependent km (Set.elems (fAnnot body'))
     Nothing -> return ()
   return $ Branch brsize nmConstr idConstr branchPat' body'
+
+
+localDom :: Int -> [Term]
+localDom 0 = []
+localDom k = Bound (k-1) : localDom (k-1)
+
 
 -- | checkImpossBranch nmConstr pars caseIn
 --   Does not return any value, but throws an exception if unification fails

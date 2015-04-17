@@ -118,14 +118,16 @@ instance Conversion Type where
                        Conv -> (Conv, Conv)
                        Leq -> (Leq, Leq)
                        LeqSort -> (Leq, LeqSort)
-  convTest ct (Ind a1 b1 x1 ps1) (Ind a2 b2 x2 ps2)
+  convTest ct t1@(Ind a1 b1 x1 ps1) t2@(Ind a2 b2 x2 ps2)
     | x1 == x2 && b1 == b2 =
         do
+          traceTCM 40 $ (text "convtest" <+> prettyTCM t1 <+> text "~~~"
+                         <+> prettyTCM t2)
           a1' <- getStage a1
           a2' <- getStage a2
           ind <- getGlobal x1
           traceTCM 40 $ text "Adding constraints:"<+> prettyTCM (mkConstraint (indKind ind) a1' a2')
-          addStageConstraints (mkConstraint (indKind ind) a1' a2')
+          -- addStageConstraints (mkConstraint (indKind ind) a1' a2')
           mkWfConstraint (indKind ind) addWfConstraint a1' a2'
           case ind of
             Inductive {} -> mAll (zipWith3 (convPars ct) (indPol ind) ps1 ps2)
@@ -140,7 +142,7 @@ instance Conversion Type where
           Just sv -> return $ hatn k sv
           Nothing -> return s
       getStage s@(Stage _) = return s
-      getStage _ = __IMPOSSIBLE__
+      getStage s = traceTCM 1 (text "getStage" <+> prettyTCM s) >> __IMPOSSIBLE__
       mkConstraint ki = case ct of
                          Conv -> (<<>>)
                          _ -> case ki of
@@ -211,8 +213,8 @@ instance Conversion FixTerm where
     return (k1 == k2) `mAnd`
     return (f1 == f2) `mAnd`
     return (n1 == n2) `mAnd`
-    convTest Conv (eraseSize ctx1) (eraseSize ctx2) `mAnd`
-    convTest Conv (eraseSize tp1) (eraseSize tp2) `mAnd`
+    convTest Conv ctx1 ctx2 `mAnd`
+    convTest Conv tp1 tp2 `mAnd`
     -- convTest Conv (eraseSizeCtx ctx1) (eraseSizeCtx ctx2) `mAnd`
     -- convTest Conv (eraseSize tp1) (eraseSize tp2) `mAnd`
     pushBind (mkBind f1 (mkPi ctx1 tp1)) (convTest Conv body1 body2)
