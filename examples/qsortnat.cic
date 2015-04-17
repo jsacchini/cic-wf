@@ -4,58 +4,63 @@ data list (A : Type) : Type :=
 
 data bool : Type := true : bool | false : bool.
 
-fixpoint filter <i> (A : Type) (f : A -> bool) (l : list<i> A) : list<i> A :=
-                 < list A > case l of
-                            | nil => nil A
-                            | cons h t => < list A > case f h of
-                                          | true => cons A h (filter A f t)
-                                          | false => filter A f t
-                                          end
-                            end.
+fixpoint filter <i> (A:Type) (f : A -> bool) (l : list<i> A) : list<i> A :=
+  < list A >
+  case l of
+  | nil => nil A
+  | cons h t =>
+     < list A >
+     case f h of
+     | true => cons A h (filter A f t)
+     | false => filter A f t
+     end
+  end.
 
--- assume filter : {i} => forall (A:Type) (f:A -> bool). list<i> A -> list<i> A.
+print filter.
 
 fixpoint append <i> (A : Type) (l1 : list<i> A) (l2 : list A) : list A :=
-                 < list A > case l1 of
-                            | nil => l2
-                            | cons h t => cons A h (append A t l2)
-                            end.
+   < list A >
+   case l1 of
+   | nil => l2
+   | cons h t => cons A h (append A t l2)
+   end.
 
+print append.
 
 fixpoint leq <i> (m : nat<i>) (n:nat) : bool :=
-  <bool> case m of
-         | O => true
-         | S m' => <bool>
-                   case n of
-                   | S n' => leq m' n'
-                   | O => false
-                   end
-         end.
+  <bool>
+  case m of
+  | O => true
+  | S m' =>
+    <bool>
+    case n of
+    | S n' => leq m' n'
+    | O => false
+    end
+  end.
+
+print leq.
 
 define not := fun b : bool => < bool > case b of true => false | false => true end.
 
 define gt := fun (x : nat) (y : nat) => not (leq x y).
 
-fixpoint quicksort <i> (l : list nat<i>) : list nat :=
-         < list nat > case l of
-                     | nil => nil nat
-                     | cons h t =>
-                               append nat (quicksort (filter nat (gt h) t))
-                               (cons nat h (quicksort (filter nat (leq h) t)))
-                               end.
+print not.
+print gt.
 
--- print filter.
--- check quicksort.
+fixpoint quicksort <i> (l : list<i> nat) : list nat :=
+  < list nat >
+  case l of
+  | nil => nil nat
+  | cons h t =>
+     append nat (quicksort (filter nat (gt h) t))
+     (cons nat h (quicksort (filter nat (leq h) t)))
+  end.
 
--- eval quicksort (nil nat).
--- eval quicksort (cons nat 1 (nil nat)).
+print quicksort.
+
 
 define cn := cons nat.
 define nn := nil nat.
 
 eval quicksort (cn 8 (cn 4 (cn 10 (cn 1 (cn 2 nn))))).
--- print filter.
-
-print quicksort.
-
--- print filter.

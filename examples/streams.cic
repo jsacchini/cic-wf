@@ -5,30 +5,39 @@ codata stream (A ++:Type) : Type :=
 
 define head : forall (A:Type). stream A -> A :=
    λ (A:Type) (xs:stream A) =>
-      <A> case xs of
+      <A> cocase xs of
         ccons y _ => y
       end.
 
+print head.
+
 define tail : forall (A:Type). stream A -> stream A :=
    λ (A:Type) (xs:stream A) =>
-      <stream A> case xs of
+      <stream A> cocase xs of
         ccons _ ys => ys
       end.
 
-define ones :=
-  cofix ones : stream* nat := ccons nat O ones.
+print tail.
 
-cofixpoint map (A B : Type) (f : A -> B) (xs : stream* A) : stream* B :=
-  <stream B>
-  case xs of
-  | ccons y ys => ccons B (f y) (map A B f ys)
-  end.
+cofixpoint zeroes <i> : stream<i> nat :=
+     coin (ccons nat O (coin (ccons nat O (<stream nat>
+                              cocase zeroes of
+                              | ccons _ ys => ys
+                              end)))).
 
-check head.
-check ones.
-print ccons.
+print zeroes.
 
-eval (head nat ones).
-eval (tail nat ones).
+-- cofixpoint map (A B : Type) (f : A -> B) (xs : stream* A) : stream* B :=
+--   <stream B>
+--   cocase xs of
+--   | ccons y ys => ccons B (f y) (map A B f ys)
+--   end.
 
-eval (head nat (tail nat (map nat nat (fun x : nat => S x) ones))).
+-- check head.
+-- check ones.
+-- print ccons.
+
+-- eval (head nat ones).
+-- eval (tail nat ones).
+
+-- eval (head nat (tail nat (map nat nat (fun x : nat => S x) ones))).

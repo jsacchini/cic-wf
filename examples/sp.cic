@@ -13,30 +13,13 @@ codata SPc (A : Type) (B : Type) : Type :=
 -- check fun (A B C : Type) (f : A -> SPi C A B) => get C A B f.
 
 
-define runc :=
-  fun A B : Type =>
-  cofix runc (sp : SPc* A B) (xs: stream A) : stream* B :=
-      < stream B > case sp of
-      | out spi =>
-      ( fix run (sp : SPi* (SPc A B) A B) (zs: stream A) : stream B :=
-        < stream B >
-        case sp of
-        | get f => < stream B > case xs of
-                   | ccons y ys => run (f y) ys
-                   end
-        | put w sp' => ccons B w (runc sp' zs)
-        end
-       ) spi xs
-       end.
-
-
-cofixpoint runc2 (A : Type) (B:Type) (sp : SPc* A B) (xs: stream A) : stream* B :=
-  < stream B > case sp of
+cofixpoint runc2 <i> (A : Type) (B:Type) (sp : SPc<i> A B) (xs: stream A) : stream <i> B :=
+  coin < !stream B > cocase sp of
   | out spi =>
-  ( fix run (sp : SPi* (SPc A B) A B) (zs: stream A) : stream B :=
-    < stream B >
-    case sp of
-    | get f => < stream B > case xs of
+  ( fix run <j> (sp0 : SPi<j> (SPc A B) A B) (zs: stream A) : !stream B :=
+    < !stream B >
+    case sp0 of
+    | get f => < !stream B > cocase xs of
                | ccons y ys => run (f y) ys
                end
     | put w sp' => ccons B w (runc2 A B sp' zs)
@@ -45,6 +28,4 @@ cofixpoint runc2 (A : Type) (B:Type) (sp : SPc* A B) (xs: stream A) : stream* B 
   end.
 
 
-check runc.
-
-check runc2.
+print runc2.

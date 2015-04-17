@@ -1,0 +1,49 @@
+-- Natural numbers are predefined.
+-- data nat : Type := O : nat | S : nat -> nat.
+
+fixpoint plus <i> (m: nat<i>) (n:nat) : nat :=
+     < nat > case m of
+             | O => n
+             | S m' => S (plus m' n)
+             end.
+
+print plus.
+
+fixpoint minus <i> (m: nat<i>) (n:nat) : nat<i> :=
+                      < nat >
+                        case m of
+                        | O => O
+                        | S m' => < nat > case n of
+                                  | O => m
+                                  | S n' => minus m' n'
+                                  end
+                        end.
+
+print minus.
+
+fixpoint mult <i> (m: nat<i>) (n:nat) : nat :=
+                      < nat >
+                        case m of
+                        | O => O
+                        | S m' => plus n (mult m' n)
+                        end.
+
+fixpoint div <i> (m: nat<i>) (n: nat) : nat<i> :=
+     < nat >
+     case m of
+     | O => O
+     | S m' => S (div (minus m' n) n)
+     end.
+
+
+fixpoint fact <i> (m: nat<i>) : nat :=
+    < nat >
+    case m of
+    | O => S O
+    | S m' => mult (fact m') m
+    end.
+
+
+eval fact 4.
+
+eval div 13 11.

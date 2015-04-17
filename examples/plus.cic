@@ -1,0 +1,28 @@
+fixpoint plus <i> (m: nat<i>) (n:nat) : nat :=
+     < nat > case m of
+             | O => n
+             | S m' => S (plus m' n)
+             end.
+
+print plus.
+
+
+data eqn : nat -> nat -> Type0 :=
+  refl : forall n:nat. eqn n n.
+
+print eqn.
+check refl.
+
+assume eqn_SS : forall m n : nat. eqn m n -> eqn (S m) (S n).
+print eqn_SS.
+
+
+define plus_n_0 : forall n : nat. eqn (plus n 0) n :=
+  fix plus_n_0 <i> (n : nat<i>) : eqn (plus n 0) n :=
+    <eqn (plus n1 0) n1>
+    case n1 := n of
+    | O => refl (in O)
+    | S n' => eqn_SS (plus n' 0) n' (plus_n_0 n')
+    end.
+
+print plus_n_0.
