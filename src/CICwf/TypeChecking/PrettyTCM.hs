@@ -31,7 +31,7 @@ import qualified CICwf.Utils.Pretty as PP
 import qualified CICwf.Syntax.Abstract           as A
 import qualified CICwf.Syntax.Concrete           as C
 import           CICwf.Syntax.Internal           as I
-import           CICwf.Syntax.InternalToAbstract
+import           CICwf.Syntax.InternalToConcrete
 import qualified CICwf.Syntax.AbstractToConcrete as AC
 import           CICwf.Syntax.Common
 import           CICwf.Syntax.Position
@@ -231,15 +231,6 @@ instance PrettyTCM WfEnv where
 instance PrettyTCM WfConstraint where
   prettyTCM = return . PP.pretty
 
--- instance PrettyTCM (Named (Maybe I.Term)) where
---   prettyTCM x = hsep [ prettyTCM (nameTag x)
---                      , defEq
---                      , prettyTCM (namedValue x) ]
-
-
--- instance (AC.ToConcrete a b, PP.Pretty b) => PrettyTCM a where
---   prettyTCM e = AC.concretize e >>= return . PP.pretty
-
 
 instance PrettyTCM C.Expr where
   prettyTCM = return . PP.pretty
@@ -249,12 +240,6 @@ instance PrettyTCM Sort where
 
 instance PrettyTCM C.Declaration where
   prettyTCM = return . PP.pretty
-
--- instance PrettyTCM I.Goal where
---   prettyTCM g =
---     vcat [ prettyTCM (goalEnv g)
---          , text "-------------------------"
---          , local (const (goalEnv g)) $ prettyTCM (goalType g)]
 
 instance PrettyTCM InductiveKind where
   prettyTCM = text . show

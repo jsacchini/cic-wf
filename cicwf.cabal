@@ -35,14 +35,13 @@ Executable cicwf
                      CICwf.Syntax.Alex
                      CICwf.Syntax.Common
                      CICwf.Syntax.Internal
-                     CICwf.Syntax.InternalToAbstract
+                     CICwf.Syntax.InternalToConcrete
                      CICwf.Syntax.AbstractToConcrete
                      CICwf.Syntax.Lexer
                      CICwf.Syntax.ParseMonad
                      CICwf.Syntax.Parser
                      CICwf.Syntax.Position
                      CICwf.Syntax.Scope
-                     CICwf.Syntax.Size
                      CICwf.Syntax.Tokens
                      CICwf.Utils.Fresh
                      CICwf.Utils.Impossible
@@ -54,9 +53,8 @@ Executable cicwf
                      CICwf.TypeChecking.Case
                      CICwf.TypeChecking.Constraints
                      CICwf.TypeChecking.Conversion
-                     CICwf.TypeChecking.Fix
+                     CICwf.TypeChecking.Fixpoint
                      CICwf.TypeChecking.Inductive
-                     -- CICwf.TypeChecking.Permutation
                      CICwf.TypeChecking.PrettyTCM
                      CICwf.TypeChecking.RecCheck
                      CICwf.TypeChecking.TCM
@@ -64,8 +62,5 @@ Executable cicwf
                      CICwf.TypeChecking.TypeChecking
                      CICwf.TypeChecking.Declaration
                      CICwf.TypeChecking.Match
-                     -- CICwf.TypeChecking.Unification
                      CICwf.TypeChecking.Whnf
                      CICwf.TypeChecking.SolveWf
-                     CICwf.TopLevel.Monad
-                     CICwf.TopLevel.TopLevel

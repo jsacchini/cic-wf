@@ -37,7 +37,7 @@
     * for functions, replace name by "_"
 -}
 
-module CICwf.Syntax.InternalToAbstract where
+module CICwf.Syntax.InternalToConcrete where
 
 #include "undefined.h"
 import           CICwf.Utils.Impossible
@@ -53,22 +53,7 @@ import           CICwf.Syntax.Common
 import           CICwf.Syntax.Internal      as I
 import           CICwf.Syntax.Position
 import           CICwf.TypeChecking.TCM
--- import {-# SOURCE #-} CICwf.TypeChecking.PrettyTCM
 
-
--- -- We don't need the real type of the binds for scope checking, just the names
--- -- Maybe should be moved to another place
--- fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
--- fakeBinds b = pushCtx (mkFakeCtx b)
---   where
---     mkFakeCtx = ctxFromList . map mkFakeBind . name
---     mkFakeBind x = I.mkBind x (I.Sort Prop)
-
--- freshNameList :: (MonadTCM tcm) => [Name] -> tcm [Name]
--- freshNameList []     = return []
--- freshNameList (x:xs) = do x' <- freshenName x
---                           xs' <- fakeBinds x' $ freshNameList xs
---                           return $ x' : xs'
 
 reifyAnnot :: Annot -> Maybe C.SizeExpr
 reifyAnnot annot =
@@ -88,22 +73,6 @@ class Reify a b | a -> b where
   reify :: (MonadTCM tcm) => a -> tcm b
 
 
--- reifyCtx :: (MonadTCM tcm) => Context -> tcm C.Context
--- reifyCtx ctx = do xs <- reifyBinds (bindings ctx)
---                   return $ ctxFromList xs
---    where
---      reifyBinds [] = return []
---      reifyBinds (b:bs) =
---        do t' <- reify (bindType b)
---           bs' <- pushBind b $ reifyBinds bs
---           return $ C.Bind noRange [bindName b] (mkImplicit (isImplicit b) (Just t')) : bs'
-
--- instance Reify a b => Reify (Arg a) (Arg b) where
---   reify = Tr.mapM reify
-
--- instance Reify a b => Reify [a] [b] where
---   reify = Tr.mapM reify
-
 instance Reify Bind C.Bind where
   reify b = do
     let nm = bindName b
@@ -121,21 +90,6 @@ instance Reify (Ctx Bind) (Ctx C.Bind) where
     ctx' <- pushBind b $ reify ctx
     return $ b' :> ctx'
 
---                   do xs <- reifyBinds (bindings ctx)
-   --               return $ ctxFromList xs
-   -- where
-   --   reifyBinds [] = return []
-   --   reifyBinds (b:bs) =
-   --     do t' <- reify (bindType b)
-   --        bs' <- pushBind b $ reifyBinds bs
-   --        return $ C.Bind noRange [bindName b] (mkImplicit (isImplicit b) (Just t')) : bs'
-
--- instance Reify a b => Reify (Implicit a) (Implicit b) where
---   reify x = do
---     y <- reify (implicitValue x)
---     return $ y <$ x
-
--- TODO: add option to print universes. If set, reify should return (Type (Just n))
 
 instance Reify Term C.Expr where
   reify (Sort s) = return $ C.Sort noRange s
@@ -161,11 +115,7 @@ instance Reify Term C.Expr where
     c <- reify (Bound n)
     return (C.SizeApp noRange c (reifyAnnot a))
 
-  -- reify (Meta k) = do (Just g) <- getGoal k
-  --                     case goalTerm g of
-  --                       Nothing -> return $ C.Meta noRange (Just (fromEnum k))
-  --                       Just t  -> reify t
-  reify (Lam ctx t) = do -- reifyLamBinds (Fold.toList ctx) t
+  reify (Lam ctx t) = do
     fctx <- freshenCtx ctx t
     ctx' <- reify fctx
     t' <- pushCtx fctx $ reify t
@@ -177,34 +127,15 @@ instance Reify Term C.Expr where
 
   reify (Case c) = C.Case <$> reify c
 
-  reify (Constr c _ pars) =
-    -- if c == mkName "O" && null pars
-    -- then return $ C.Number noRange 0
-    -- else
-      do
-      pars' <- mapM reify pars
-      return $ C.mkApp (C.Ident noRange False c C.ConstructorIdent) pars'
+  reify (Constr c _ pars) = do
+    pars' <- mapM reify pars
+    return $ C.mkApp (C.Ident noRange False c C.ConstructorIdent) pars'
 
 
-  reify (App t ts) =
-    -- Special case for reification of natural numbers
-    -- case O
-    case (t, ts) of
-      -- (Constr c0 _ [], [])
-      --   | c0 == mkName "O" -> return $ C.Number noRange 0
-      --   | otherwise        -> return $ C.Ident noRange False c0 C.ConstructorIdent
-
-      -- (Constr c1 _ [], [t])
-      --   | c1 == mkName "S" -> do
-      --     t' <- reify t
-      --     return $ case t' of
-      --       C.Number _ k -> C.Number noRange (k + 1)
-      --       _            -> C.mkApp (C.Ident noRange False (mkName "S") C.ConstructorIdent) [t']
-      --   | otherwise -> fmap (C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg) (reify t)
-      _ -> do
-        e <- reify t
-        es <- mapM reify ts
-        return $ C.mkApp e es
+  reify (App t ts) = do
+    e <- reify t
+    es <- mapM reify ts
+    return $ C.mkApp e es
 
   reify (Var x) = return $ C.Ident noRange False x C.GlobalIdent
   reify (CVar x a) = do
@@ -247,9 +178,6 @@ instance Reify Term C.Expr where
 
   reify (CoIntro x a t) | Just a' <- reifyAnnot a = C.CoIntro noRange (Just (x, a')) <$> reify t
                         | otherwise = C.CoIntro noRange Nothing <$> reify t
-  -- reify (SizeApp t a) = do
-  --   t' <- reify t
-  --   return $ C.SizeApp noRange  t' (reifyAnnot a)
 
   reify (Subset i s t) = do
     let Just i' = reifyAnnot (hat (mkAnnot i))
@@ -264,8 +192,6 @@ instance Reify Term C.Expr where
 
 instance Reify ConstrType C.ConstrExpr where
   reify (ConstrType xs t) =
-    -- traceTCM 40 $ text "Reifying constrained type" <+> prettyTCM xs
-    --   <+> text "=>" <+> prettyTCM t
     C.ConstrExpr noRange xs <$> reify t
 
 instance Reify (CaseKind Annot) (CaseKind (Maybe C.SizeExpr)) where
@@ -290,10 +216,6 @@ instance Reify CaseTerm C.CaseExpr where
     arg' <- reify arg
     cin' <- mapM reify cin
     let cin'' = replicate (length pars) $ C.PatternVar noRange noName
-    -- traceTCM 40 $ pushCtx (renameCtx (getIndIndices indType pars) cin)
-    --         $ pushBind (mkBind asName (Sort Prop))
-    --         $ (text ("reifying tpret " ++ show tpRet)
-    --            $$ text "in ctx" <+> (ask >>= prettyTCM))
     ret' <- pushCtx (renameCtx (getIndIndices indType pars) cin)
             $ pushBind (mkBind asName (Sort Prop)) $ reify tpRet
     branches' <- mapM reify branches
@@ -301,10 +223,6 @@ instance Reify CaseTerm C.CaseExpr where
       C.CaseExpr noRange kind' arg' asName
       (Just (C.IndicesSpec noRange nmInd (cin''++cin'))) (Just ret') branches'
 
--- -- instance Reify CaseIn C.CaseIn where
--- --   reify cin = traverse reify cin
--- instance Reify a b => Reify (Maybe a) (Maybe b) where
---   reify = Tr.mapM reify
 
 instance Reify FixTerm C.FixExpr where
   reify (FixTerm k num f spec args tp body) = do
@@ -331,18 +249,6 @@ instance Reify Branch C.Branch where
              $ reify body
     return $ C.Branch noRange sv nmConstr patt' body'
 
--- instance Reify Subst C.Subst where
---   reify (Subst sg) =
---     do sg' <- mapM reifyAssign sg
---        return $ C.Subst sg'
---       where reifyAssign (k, t) = do xs <- getLocalNames
---                                     e <- reify t
---                                     return $ C.Assign noRange (xs !! k) k e
-
--- instance Reify I.Bind C.Bind where
---   reify b = liftM mkB (reify (I.bindType b))
---     where
---       mkB e = C.mkBind noRange (I.bindName b) (isImplicit b) e
 
 instance Reify SinglePattern C.SinglePattern where
   reify (PatternVar x) = return $ C.PatternVar noRange x
@@ -390,31 +296,3 @@ instance Reify (Named I.Global) C.Declaration where
         let eraseStar s = s
         e <- pushCtx ctx $ reify (modifySize eraseStar tp)
         return $ C.Constructor noRange x e
-
-
---   -- Special case for reification of natural numbers
---   -- case O
---   concretize (Constr (Id (Just "O")) cid []) = return $ C.Number noRange 0
---   concretize (Var (Id (Just "O"))) = return $ C.Number noRange 0
---   -- concretize (Ind _ (Id (Just "O"))) = return $ C.Number noRange 0
---   -- case S
---   concretize (Constr (Id (Just "S")) cid [t]) = do
---     t' <- concretize t
---     return $ case t' of
---       C.Number noRange k -> C.Number noRange (k + 1)
---       _                  -> C.Constr noRange (mkName "S") cid [t']
---   concretize (App (Constr (Id (Just "S")) cid []) [t]) = do
---     t' <- concretize t
---     return $ case t' of
---       C.Number noRange k -> C.Number noRange (k + 1)
---       _                  -> C.mkApp (C.Constr noRange (mkName "S") cid []) [t']
---   concretize (App (Var (Id (Just "S"))) [t]) = do
---     t' <- concretize t
---     return $ case t' of
---       C.Number noRange k -> C.Number noRange (k + 1)
---       _                  -> C.App noRange (C.Ident noRange (mkName "S")) t'
--- -- concretize (App (Ind a (Id (Just "S"))) [t]) =
--- --   do t' <- concretize t
--- --      return $ case t' of
--- --        C.Number noRange k -> C.Number noRange (k + 1)
--- --        _                  -> C.App noRange (C.Ind noRange a (mkName "S") []) t'

@@ -20,7 +20,6 @@ import CICwf.Syntax.Tokens
 import CICwf.Syntax.Lexer
 import CICwf.Syntax.ParseMonad
 import CICwf.Syntax.Position
-import CICwf.Syntax.Size
 import CICwf.Syntax.Common
 import CICwf.Syntax.Alex
 import qualified CICwf.Syntax.Concrete as C

@@ -38,7 +38,6 @@ import           CICwf.Syntax.Internal        as I
 import           CICwf.Syntax.Position
 
 import           CICwf.TypeChecking.PrettyTCM hiding ((<>))
--- import qualified CICwf.TypeChecking.PrettyTCM as PP ((<>))
 import           CICwf.TypeChecking.TCM
 
 import           CICwf.Utils.Sized
@@ -191,18 +190,6 @@ nF :: (MonadTCM tcm) => Term -> tcm Term
 nF = normalForm
 
 
--- isCofix (App (Fix f...) ts) | fixKind f == CoI = Just (Fix f..., ts)
--- isCofix :: Term -> Maybe (FixTerm, [Term], Annot)
--- isCofix (SizeApp (Fix f) s)          | fixKind f == CoI = Just (f, [], s)
--- isCofix (SizeApp (App (Fix f) ts) s) | fixKind f == CoI = Just (f, ts, s)
--- isCofix _                                   = Nothing
-
--- -- isCofix (App (cofix f:T := M) ts) = Just (f, T, M, cofix f := M, ts)
--- isCofix :: Term -> Maybe (Bind, Term, Term, [Term])
--- isCofix t@(Fix (FixTerm CoI _ f stage ctx tp body))    = Just (mkBind f (mkPi ctx tp), body, t, [])
--- isCofix (App t@(Fix (FixTerm CoI _ f stage ctx tp body)) ts) = Just (mkBind f (mkPi ctx tp), body, t, ts)
--- isCofix _                                    = Nothing
-
 unfoldPi :: (MonadTCM tcm) => Type -> tcm (Context, Type)
 unfoldPi t =
   do t' <- whnf t
@@ -294,9 +281,7 @@ instance NormalForm Term where
     where
       normalForm' :: (MonadTCM tcm) => Term -> tcm Term
       normalForm' t = do
-        -- traceTCM 40 $ text "*******" $$ text "Normalform:" <+> prettyTCM t
         (s, w) <- wHnf EnvEmpty t
-        -- traceTCM 40 $ text "*******" $$ text "Got:" <+> prettyTCM (stackToTerm s w)
         w' <- normalForm w
         nF s (wvalueToTerm w')
         where
@@ -355,11 +340,6 @@ instance NormalForm Branch where
 --   App (Lam ctx body) args.
 --
 --   The number of beta reductions applied is min (length ctx, length args)
--- betaRed :: Context -> Term -> [Term] -> Term
--- betaRed CtxEmpty body args = mkApp body args
--- betaRed ctx body [] = mkLam ctx body
--- betaRed (b :> bs) body (a:as) =
---   betaRed (subst a bs) (substN (ctxLen bs) a body) as
 betaRed :: Context -> Term -> [Term] -> Term
 betaRed ctx body args = mkApp (substList0 args0 (mkLam ctx1 body)) args1
   where
@@ -390,19 +370,6 @@ coiotaRed cid args branches =
         Just km -> __IMPOSSIBLE__
         Nothing -> substList0 args (brBody br)
     Nothing -> __IMPOSSIBLE__ -- branch
-
--- | 'muRed' @fix@ @args@ unfolds the fixpoint and applies it to the arguments
---   @args@ shoudl have a length greater or equal than the recursive argument of
---   fix and the recursive argument should be in constructor form
--- muRed :: FixTerm -> [Term] -> Term
--- -- muRed t@(Fix CoI _ _ _ _ body) args = error "Implement nu-red"
--- muRed f args = mkApp (subst (Fix f) (mkLam (fixArgs f) (fixBody f))) args
--- -- muRed _ _ = __IMPOSSIBLE__
-
--- muRed :: FixTerm -> Annot -> [Term] -> Term
--- muRed f s args =
---   betaRed (mkBind (fixName f) (Sort Prop) :> fixArgs f) (substSizeName (getFixStage f) s (fixBody f)) (Fix f : args)
-
 
 extractConstr :: Term -> Maybe (Annot, Term, [Term])
 extractConstr (Intro im t) =

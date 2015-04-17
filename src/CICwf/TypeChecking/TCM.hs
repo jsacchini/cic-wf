@@ -83,36 +83,6 @@ data TypeError
     deriving(Show,Typeable)
 
 
--- instance Show TypeError where
---     show (NotConvertible t1 t2) = "NotConvertible"
-    -- show (TypeNotConvertible t u1 u2) = "NotConvertible " ++ show r
-    -- show (NotFunction r e t1) = "NotFunction " ++ show r
-    -- show (NotSort r e t1) = "NotSort " ++ show r
-    -- show (NotArity r t) = "NotArity " ++ show r
-    -- show (InvalidProductRule r s1 s2) = "InvalidProductRule " ++ show r
-    -- show (IdentifierNotFound r x) = "IdentifierNotFound " ++ show x ++ " " ++ show r
-    -- show (ConstantError s) = "ConstantError " ++ s
-    -- show (CannotInferMeta r) = "CannotInferMeta " ++ show r
-    -- show (WrongNumberOfArguments r _ _ _) = "WrongNumberOfArguments " ++ show r
-    -- show (WrongFixNumber r _ _) = "WrongFixNumber " ++ show r
-    -- show (UndefinedName r x) = "UndefinedName " ++ show r ++ ": " ++ show x
-    -- show (NotInductive r n) = "NotInductive " ++ show r ++ " " ++ show n
-    -- show (ConstructorNotApplied r n) = "ConstructorNotApplied " ++ show r ++ " " ++ show n
-    -- show (InductiveNotApplied r n) = "InductiveNotApplied " ++ show r ++ " " ++ show n
-    -- show (PatternNotConstructor n) = "PatternNotConstructor " ++ show n
-    -- show (FixRecursiveArgumentNotPositive r) = "FixRecursiveArgumentNotPositive " ++ show r
-    -- show (AlreadyDefined n) = "AlreadyDefined " ++ show n
-    -- show (NotUnifiable n) = "NotUnifiable " ++ show n
-    -- show (NotImpossibleBranch r) = "NotImpossibleBranch " ++ show r
-    -- show (NotImplemented r s) = "Feature not implemented " ++ show r ++ " " ++ s
-    -- show (BranchPatternCannotMatch r t1 t2) =
-    --   "Cannot match branch pattern " ++ show r ++ " "
-    --   ++ show t1 ++ " ~~ " ++ show t2
-    -- show (BranchPatternNotConvertible r c1 c2) =
-    --   "Branch pattern not compatible with matching " ++ show r
-    --   ++ show c1 ++ " ~~ " ++ show c2
-
-
 -- instance Exception TypeError
 
 
@@ -644,46 +614,16 @@ numParam x = (size . I.indPars) <$> getGlobal x
 getLocalNames :: (MonadTCM tcm) => tcm [Name]
 getLocalNames = ask >>= return . name
 
--- -- We don't need the real type of the binds for scope checking, just the names
--- -- Maybe should be moved to another place
--- fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
--- fakeBinds b = pushCtx (mkFakeCtx b)
---   where
---     mkFakeCtx = ctxFromList . map mkFakeBind . name
---     mkFakeBind x = I.mkBind x (I.Sort I.Prop)
 
 fakeNames :: (MonadTCM tcm) => Name -> tcm a -> tcm a
 fakeNames x = pushCtx $ ctxSingle (I.mkBind x (I.Sort Prop))
 
 -- Constraints
 
--- class HasConstraints s a where
---   getCSet    :: s -> CSet a
---   modifyCSet :: (CSet a -> CSet a) -> s -> s
-
--- instance HasConstraints TCState StageVar where
---   getCSet        = stConstraints
---   modifyCSet f s = s { stConstraints = f (stConstraints s) }
-
--- instance HasConstraints TCState I.SortVar where
---   getCSet        = stTypeConstraints
---   modifyCSet f s = s { stTypeConstraints = f (stTypeConstraints s) }
-
--- addConstraints :: (Enum a, MonadState s m, HasConstraints s a) => [CS.Constraint a] -> m ()
--- addConstraints cts = do
---   st <- get
---   put (modifyCSet (CS.addConstraints cts) st)
 
 
 addStageConstraints :: (MonadTCM tcm) => [CS.Constraint StageNode] -> tcm ()
 addStageConstraints cts = return ()
-  --                         do
-  -- -- traceTCM 70 $ return $ text "*** Adding constraints:" <+> text (show cts)
-  -- st <- get
-  -- -- traceTCM 70 $ return $ text "*** to:" <+> text (show (stConstraints sssst))
-  -- modify $
-  --   \st -> st { stConstraints =
-  --                  SizeConstraint (CS.addConstraints cts (unSC (stConstraints st))) }
 
 
 removeStages :: (MonadTCM tcm) => [StageNode] -> tcm ()

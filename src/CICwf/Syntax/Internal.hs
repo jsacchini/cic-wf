@@ -43,11 +43,6 @@ import           CICwf.Utils.Sized
 -- * Size annotations for (co-)inductive types
 ------------------------------------------------------------
 
--- data Annot
---   = Empty             -- ^ No annotation (for bare terms);
---   | SBound Int        -- ^ For position types (in definition of (co-)fixpoints;
---   | Size Size         -- ^ An actual size annotation.
-
 -- | Meta variables
 
 type SizeName = Name
@@ -131,17 +126,6 @@ baseAnnot :: Annot -> Maybe Annot
 baseAnnot (SizeVar x _) = Just $ SizeVar x 0
 baseAnnot (Stage (StageVar s _)) = Just $ Stage (StageVar s 0)
 baseAnnot _ = Nothing
-
--- instance Eq Annot where
---   Empty     == Empty     = True
---   SBound n1 == SBound n2 = True
---   Size s1   == Size s2   = s1 == s2
---   _         == _         = False
-
--- instance Show Annot where
---   show Empty =  ""
---   show (SBound n)  = show n
---   show (Size s) = show s
 
 
 ------------------------------------------------------------
@@ -548,7 +532,7 @@ instance HasAnnot Term where
       mSize t@(Var _)            = t
       mSize (CVar x a)           = CVar x (f a)
       mSize (SIdent x a)         = SIdent x (f a)
-      mSize (Lam c t)            = Lam (modifySize f c) (mSize t) -- Lam (modifySize f c) (mSize t)
+      mSize (Lam c t)            = Lam (modifySize f c) (mSize t)
       mSize (App t ts)           = App (mSize t) (map mSize ts)
       mSize t@(Meta _)           = t
       mSize (Constr nm cid pars) = Constr nm cid (map mSize pars)
@@ -561,11 +545,9 @@ instance HasAnnot Term where
       mSize (Ind a b x ps)       = Ind (f a) b x (map mSize ps)
       -- Well-founded sizes
       mSize (Intro s t)          = Intro (f s) (mSize t)
-      -- mSize (CoIntro k a t)      = CoIntro k (f a) (mSize t)
       mSize (CoIntro k a t)      = CoIntro k (f a) (modifySize f' t)
         where f' s | Just x <- nbase s, k == x = s
                    | otherwise = f s
-      -- mSize (SizeApp t s)        = SizeApp (mSize t) (f s)
       mSize (Subset i a t)       = Subset i (f a) (mSize t)
 
   fAnnot (Sort _)          = Set.empty
@@ -584,7 +566,6 @@ instance HasAnnot Term where
   -- Well-founded sizes
   fAnnot (Intro a t)       = {- fAnnot a `Set.union` -} fAnnot t
   fAnnot (CoIntro k a t)   = Set.delete (mkAnnot k) (fAnnot t)
-  -- fAnnot (SizeApp t s)     = fAnnot t -- `Set.union` fAnnot s
   fAnnot (Subset i a t)    = {- fAnnot a `Set.union` -}
                              (Set.delete (mkAnnot i) (fAnnot t))
 
@@ -597,13 +578,11 @@ instance HasAnnot ConstrType where
 
 instance HasAnnot FixTerm where
   modifySize f (FixTerm k n x spec c t1 t2) =
-    -- FixTerm k n x spec (modifySize f c) (modifySize f t1) (modifySize f t2)
     FixTerm k n x spec (modifySize f c) (modifySize f t1) (modifySize f t2)
 
-  fAnnot (FixTerm _ _ _ (FixStage im) args tp body) =
+  fAnnot (FixTerm _ _ _ (FixStage _) _ _ body) =
     {- Set.delete (mkAnnot im) (fAnnot args `Set.union` fAnnot tp)
     `Set.union` -} fAnnot body
-  -- fAnnot _ = __IMPOSSIBLE__
 
 instance HasAnnot a => HasAnnot (CaseKind a) where
   modifySize _ CaseKind = CaseKind
@@ -905,7 +884,6 @@ instance SubstTerm Term where
   -- Well-founded sizes
   substN i r (Intro a t) = Intro a (substN i r t)
   substN i r (CoIntro x k t) = CoIntro x k (substN i r t)
-  -- substN i r (SizeApp t s) = SizeApp (substN i r t) s
   substN i r (Subset x s t) = Subset x s (substN i r t)
 
 instance SubstTerm FixTerm where
@@ -989,7 +967,6 @@ instance IsFree Term where
   -- Well-founded sizes
   isFree k (Intro _ t) = isFree k t
   isFree k (CoIntro _ _ t) = isFree k t
-  -- isFree k (SizeApp t _) = isFree k t
   isFree k (Subset _ _ t) = isFree k t
 
   fvN _ (Sort _) = []
@@ -1007,7 +984,6 @@ instance IsFree Term where
   -- Well-founded sizes
   fvN k (Intro _ t) = fvN k t
   fvN k (CoIntro _ _ t) = fvN k t
-  -- fvN k (SizeApp t _) = fvN k t
   fvN k (Subset _ _ t) = fvN k t
 
 instance IsFree FixTerm where

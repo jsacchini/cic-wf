@@ -25,10 +25,9 @@ import           System.Exit
 import           System.FilePath
 import           System.IO
 
+import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.State
-
--- import qualified Text.PrettyPrint          as PP
 
 import           CICwf.Syntax.AbstractToConcrete
 import qualified CICwf.Syntax.Concrete           as C
@@ -36,14 +35,10 @@ import           CICwf.Syntax.ParseMonad
 import           CICwf.Syntax.Parser
 import           CICwf.Syntax.Scope
 
--- import qualified CICwf.TypeChecking.Constraints  as CS
 import           CICwf.TypeChecking.Declaration
 import           CICwf.TypeChecking.PrettyTCM
 import           CICwf.TypeChecking.TCM
 import           CICwf.TypeChecking.TCMErrors
-
--- import           CICwf.TopLevel.Monad
--- import           CICwf.TopLevel.TopLevel
 
 
 data Options =
@@ -87,21 +82,11 @@ evalFile =
            ss <- hGetContents h
            case parse fileParser (Just $ snd $ splitFileName f) ss of
              ParseOk ts ->
-               do -- putStrLn "OK"
-                  -- putStrLn $ show ts
-                  -- mapM_ (\x -> putStrLn (show x ++ "\n---------")) ts
-                  -- putStrLn "===================\n=================\n\n"
-                  -- r <- runTCM $ printAll ts
-                   r <- runTCMIO (typeCheckFile opts ts
+               do  r <- runTCMIO (typeCheckFile opts ts
                                   `catch` printError)
                    case r of
                      Right _ -> exitSuccess
                      Left _  -> exitFailure
-                  -- _ <- runTCMIO $ do
-                  --   r <- runTCM $ typeCheckFile (optVerbose opts) ts
-                  --   case r of
-                  --     Left err -> dputStrLn ("Error!!!! " ++ show err)
-                  --     Right _ -> putStrLn "OK"
              ParseFail err -> putStrLn $ "Error (Main.hs): " ++ show err
            hClose h
       printError :: (MonadTCM tcm) => TCErr -> tcm ()
@@ -109,27 +94,8 @@ evalFile =
         prettyError err
         throwM err
 
-
-      typeCheckDecl :: C.Declaration -> TCM ()
-      typeCheckDecl d =
-        do
-          traceTCM 50 $ hsep [ text "  SCOPE GLOBAL DECL: "
-                             , prettyTCM d ]
-          d' <- scope d
-          consc <- concretize d'
-          traceTCM 50 $ hsep [ text "  INFER GLOBAL DECL: "
-                             , prettyTCM consc ]
-          inferDecl d'
-          -- traceTCM 30 $ (text "  INFERRED GLOBAL DECL: (SHOW)"
-          --                $$ vcat(map (text . show) gs))
-          cs <- allConstraints
-          -- traceTCM 15 $ prettyTCM (filter (not . I.isConstr . namedValue) gs)
-          traceTCM 15 $ (text $ "Constraints:" ++ show cs)
-          wfcs <- getWfConstraints
-          -- traceTCM 15 $ prettyTCM (filter (not . I.isConstr . namedValue) gs)
-          traceTCM 15 $ (text "Wf-Constraints:" <+> vcat (map prettyTCM wfcs))
       typeCheckFile :: Options -> [C.Declaration] -> TCM ()
       typeCheckFile opts ds =
         do setVerbosity (optVerbose opts)
            setSolveConstraints (optSolveConstraints opts)
-           forM_ ds typeCheckDecl
+           forM_ ds (scope >=> inferDecl)

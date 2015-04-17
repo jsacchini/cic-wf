@@ -67,63 +67,6 @@ import           CICwf.Utils.Sized
 
 
 -- | We reuse the type-checking monad for scope checking
---   TODO: maybe move these function somewhere else
--- class Scope a b | a -> b where
---   scope :: MonadTCM m => a -> m b
-
-
--- getScope :: MonadTCM tcm => tcm LocalScope
--- getScope = stScope <$> get
-
-
--- setScope :: MonadTCM tcm => LocalScope -> tcm ()
--- setScope s = do
---   st <- get
---   put $ st { stScope = s }
-
-
--- withScope :: MonadTCM tcm => LocalScope -> tcm a -> tcm a
--- withScope s = localScope (const s)
-
-
--- localScope :: MonadTCM tcm => (LocalScope -> LocalScope) -> tcm a -> tcm a
--- localScope f m = do
---   s <- getScope
---   setScope (f s)
---   x <- m
---   setScope s
---   return x
-
-
--- extendScope :: MonadTCM tcm => [Name] -> tcm a -> tcm a
--- extendScope s = localScope (\s' -> s' <:> ctxFromList s)
-
-
--- getSizeScope :: MonadTCM tcm => tcm LocalScope
--- getSizeScope = stSizeScope <$> get
-
-
--- setSizeScope :: MonadTCM tcm => LocalScope -> tcm ()
--- setSizeScope s = do
---   st <- get
---   put $ st { stSizeScope = s }
-
-
--- withSizeScope :: MonadTCM tcm => LocalScope -> tcm a -> tcm a
--- withSizeScope s = localSizeScope (const s)
-
-
--- localSizeScope :: MonadTCM tcm => (LocalScope -> LocalScope) -> tcm a -> tcm a
--- localSizeScope f m = do
---   s <- getSizeScope
---   setSizeScope (f s)
---   x <- m
---   setSizeScope s
---   return x
-
-
--- extendSizeScope :: MonadTCM tcm => [Name] -> tcm a -> tcm a
--- extendSizeScope s = localSizeScope (\s' -> s' <:> ctxFromList s)
 
 
 ------------------------------------------------------------
@@ -163,13 +106,9 @@ instance Scope C.Expr A.Expr where
     return $ A.Pi r ctx' e'
   scope (C.Lam r bs e) = do
     bs' <- scope bs
-    -- liftIO $ print ("scope lam " ++ show bs)
     e' <- extendScope (name bs) $ scope e
     return $ A.Lam r bs' e'
   scope e@(C.App r e1 t e2) = scopeApp (C.unApp e)
-    -- e1' <- scope e1
-    -- e2' <- scope e2
-    -- return $ A.App r e1' t e2'
   scope e@(C.SApp _ _ _ _ _) = scopeApp (e, [])
   scope (C.Meta r i) = return $ A.Meta r i
   scope e@(C.Ident _ _ _ _) = scopeApp (e, [])
@@ -229,7 +168,6 @@ instance Scope C.FixExpr A.FixExpr where
        unless (linearCheck argNames) $ typeError rg $ NotImplemented "non-linear context"
        tp'   <- specScope
                 $ extendScope (name args) $ scope tp
-       -- spec' <- extendScope (name args) $ scope spec
        spec' <- scopeSpec spec
        traceTCM 70 $ (text "Scoping fix body" <+> prettyTCM body
                      $$ text "adding names" <+> prettyTCM (name f ++name args))
@@ -273,17 +211,6 @@ instance Scope C.FixExpr A.FixExpr where
       findRecArg (C.BindName {}:bs) n = findRecArg bs (n+1)
       findRecArg (C.LetBind {}:bs) n = findRecArg bs (n+1)
       -- TODO: check for stars in the LetBind case
-
-
--- instance Scope C.FixSpec A.FixSpec where
---   scope (C.FixStruct r x) = do
---     xs <- getScope
---     -- liftIO $ print ("scope ident " ++ show x ++ " in " ++ show xs)
---     case findIndex (==x) (envToList xs) of
---       Just _  -> return $ A.FixStruct r x
---       Nothing -> undefinedName r x
---   scope C.FixPosition = return A.FixPosition
---   scope (C.FixStage r x) = return $ A.FixStage r x
 
 
 instance Scope C.CaseExpr A.CaseExpr where
@@ -368,20 +295,6 @@ instance Scope C.Branch A.Branch where
       Nothing -> do
         traceTCM 70 $ text (show constr ++ " not found\n")
         typeError r $ UndefinedName constr
-
-
--- scopeAssign :: (MonadTCM tcm) => Int -> A.Assign -> tcm A.Assign
--- scopeAssign k an = do xs <- getLocalNames
---                       case findIndex (==A.assgnName an) xs of
---                         Just n | n < k -> do e' <- scope (A.assgnExpr an)
---                                              return $ an { A.assgnBound = n,
---                                                            A.assgnExpr = e' }
---                                | otherwise -> error "scope: assign var out of bound"
---                         Nothing -> error "scope: var not found"
-
-
--- scopeSubst :: (MonadTCM tcm) => Int -> A.Subst -> tcm A.Subst
--- scopeSubst k (A.Subst sg) = mapM (scopeAssign k) sg >>= return . A.Subst
 
 
 scopeApp :: (MonadTCM tcm) => (C.Expr, [(ArgType, C.Expr)]) -> tcm A.Expr

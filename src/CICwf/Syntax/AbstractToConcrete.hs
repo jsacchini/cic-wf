@@ -54,20 +54,6 @@ import           CICwf.Syntax.Position
 import           CICwf.Syntax.ScopeMonad
 import           CICwf.TypeChecking.TCM
 
--- -- We don't need the real type of the binds for scope checking, just the names
--- -- Maybe should be moved to another place
--- fakeBinds :: (MonadTCM tcm, HasNames a) => a -> tcm b -> tcm b
--- fakeBinds b = pushCtx (mkFakeCtx b)
---   where
---     mkFakeCtx = ctxFromList . map mkFakeBind . name
---     mkFakeBind x = I.mkBind x (I.Sort I.Prop)
-
--- freshNameList :: (MonadTCM tcm) => [Name] -> tcm [Name]
--- freshNameList []     = return []
--- freshNameList (x:xs) = do x' <- freshenName x
---                           xs' <- fakeBinds x' $ freshNameList xs
---                           return $ x' : xs'
-
 
 class ToConcrete a b | a -> b where
   concretize :: (MonadTCM tcm) => a -> tcm b
@@ -118,11 +104,8 @@ instance ToConcrete A.Expr C.Expr where
     return $ C.Ann noRange e1' e2'
   concretize (A.Sort _ s) = return $ C.Sort noRange s
   concretize (A.Pi _ ctx t) = do
-    -- traceTCM $ "printing " ++ show (Pi bs t)
-    -- traceTCM $ "concretizeBinds " ++ show bs
     ctx' <- concretize ctx
     t'   <- extendScope (name ctx) $ concretize t
-    -- concretizePiBinds (Fold.toList ctx) t
     return $ C.Pi noRange ctx' t'
   concretize (A.Local _ x) = return $ C.Ident noRange False x C.LocalIdent
   concretize (A.Global _ x) = return $ C.Ident noRange False x C.GlobalIdent
@@ -135,12 +118,6 @@ instance ToConcrete A.Expr C.Expr where
     return $ C.Lam noRange ctx' t'
   concretize (A.Case c) = C.Case <$> concretize c
   concretize (A.Fix f b) = flip C.Fix b <$> concretize f
---   concretize (Meta k) = do
---     (Just g) <- getGoal k
---     case goalTerm g of
---       Nothing -> return $ A.Meta noRange (Just (fromEnum k))
---       Just t  -> concretize t
--- General case for Var, App, Ind, and Constr
   concretize (A.Ind _ b ind annot pars) = do
     pars' <- mapM concretize pars
     annot' <- concretize annot
@@ -175,8 +152,6 @@ instance ToConcrete A.Expr C.Expr where
     e' <- concretize e
     s' <- concretize s
     return $ C.CoIntro noRange s' e'
-    -- e' <- concretize e
-    -- return $ C.CoIntro noRange s e'
 
 -- -- Well-founded sizes
 --   | Intro Range (Maybe SizeExpr) Expr
@@ -239,11 +214,6 @@ instance ToConcrete A.FixExpr C.FixExpr where
         A.FixStruct _ i -> return $ C.FixStruct noRange (argNames !! i)
         A.FixPosition _ -> return C.FixPosition
         A.FixStage _ x _ -> return $ C.FixStage noRange x
-
--- instance ToConcrete A.FixSpec C.FixSpec where
---   concretize (A.FixStruct _ x) = return $ C.FixStruct noRange x
---   concretize A.FixPosition = return C.FixPosition
---   concretize (A.FixStage _ x) = return $ C.FixStage noRange x
 
 
 instance ToConcrete A.Branch C.Branch where

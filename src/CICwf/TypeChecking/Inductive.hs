@@ -51,13 +51,10 @@ import           CICwf.Utils.Sized
 --   for the inductive type and the constructors
 inferInd :: (MonadTCM tcm) => A.InductiveDef -> tcm [Named Global]
 inferInd i@(A.InductiveDef {}) =
-    do -- traceTCM $ "Checking inductive definition\n" ++ show ind
-       (pars', _) <- inferBinds (A.indPars i)
+    do (pars', _) <- inferBinds (A.indPars i)
        (tp', s2)  <- pushCtx pars' $ inferType (A.indType i)
-       -- traceTCM $ "Type\n" ++ show tp'
        (args, s3) <- isArity (range (A.indType i)) tp'
        cs         <- mapM (pushCtx pars' . flip checkConstr (A.indName i, pars', args, s3)) (A.indConstr i)
-       -- traceTCM 30 $ text ("Constructors\n" ++ show cs)
 
        -- Preparing the constructors
        -- We replace all occurrences of other inductive types with infty
@@ -101,13 +98,6 @@ substInd nmInd numPars var tp =
     (Pi ctx tp', []) ->
       mkPi (substIndCtx nmInd numPars var ctx)
       (substInd nmInd numPars (var + size ctx) tp')
-    -- (Bound k, []) ->
-    --   if k == var
-    --   then if numPars == 0 then Ind Star nmInd []
-    --        else __IMPOSSIBLE__
-    --   else if k > var
-    --        then Bound (k - 1)
-    --        else Bound k
     (Ind a b x pars, []) -> Ind a b x (map (substInd nmInd numPars var) pars)
     (func, args) ->
       case func of

@@ -93,10 +93,6 @@ instance Conversion a => Conversion [a] where
   convTest ct (t1:ts1) (t2:ts2) = convTest ct t1 t2 `mAnd` convTest ct ts1 ts2
   convTest ct _ _ = return False
 
---   (~~) [] [] = return True
---   (~~) (t1:ts1) (t2:ts2) = t1 ~~ t2 `mAnd` ts1 ~~ ts2
---   (~~) _ _ = return False
-
 instance Conversion Sort where
   convTest _ Prop     Prop      = return True
   convTest ct (Type m) (Type n) =

@@ -69,9 +69,6 @@ solveWfConstraints rg = do
   traceTCM 10 $ text "Options: " <+> prettyTCM (countOpts stages') <+> prettyTCM (countOpts prstages) <+> prettyTCM (countOpts prstages2) <+> prettyTCM (countOpts prstages3)
   traceTCM 10 $ text "Constraints: " <+> vcat (map prettyTCM cons)
   -- mapM_ (`test` cons) (maps stages')
-  -- case findMaybe (solve cons) (maps prstages3) of
-  --   Just r -> traceTCM 10 (text "SOLVED: " <+> prettyTCM r) >> return r
-  --   Nothing -> traceTCM 10 (text "NOSAT") >> typeError noRange (GenericError "NOSAT")
   ifM getSolveConstraints
     (do r0 <- if null prstages3 then return (Just [])
               else findTCM (length prstages3) (solve cons) (maps prstages3)

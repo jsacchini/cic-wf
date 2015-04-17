@@ -527,60 +527,13 @@ instance Pretty Expr where
           ppSize Nothing = empty
 
       pp n (SizeApp _ e Nothing) = pp n e
-      pp n (SizeApp _ e (Just s)) = pp 2 e <> brackets (prettySize s)
+      pp _ (SizeApp _ e (Just s)) = pp 2 e <> brackets (prettySize s)
       pp n (Subset _ i s e) = sizeColor (brackets (pretty i <+> text "⊑" <+> pretty s)) <+> pp n e
-
-  -- = Bind Range [Name] (Arg (GExpr a))
-
---                    -- ^ e.g. @(x y : A)@. Name list must be non-empty.
-  -- | LetBind Range Name (GExpr a) (Arg (Maybe (GExpr a)))
-  --                    -- ^ @x := e2 : e1@
-  -- | BindName Range ArgType Name
-
-
-
-      -- groupBinds :: [Bind] -> [[Bind]]
-      -- groupBinds = groupBy nameEq
-      --   where
-      --     nameEq (Bind _ xs e1) (Bind _ ys e2) =
-      --       all (not . isNull) (xs ++ ys) && show e1 == show e2
-      -- squashBinds :: [Bind] -> Bind
-      -- squashBinds = foldr1 (\(Bind _ xs _) (Bind rg ys e) -> Bind rg (xs++ys) e)
-
-      -- prettyPi :: [Bind] -> Expr -> Doc
-      -- prettyPi [] e = pretty e
-      -- prettyPi (Bind _ [x] e1:bs) e2 | isNull x = prettyPi e1 <+> arrow <+> prettyPi e2
-      -- prettyPi (b:bs) e2
-
-      nestedPi :: Int -> [Bind] -> Expr -> Doc
-      nestedPi _ [] e = pretty e
-      nestedPi n (b@(Bind _ xs e1) : ctx) e2
-        | [x] <- xs, isNull x =
-          prettyDec n (unArg e1) <+> arrow <+> nestedPi n ctx e2
-        | otherwise = hsep [prettyKeyword "Π" <+> pretty b <> dot
-                          , nestedPi n ctx e2 ]
-        where
-          -- TODO: remove unnecessary parenthesis and Π
-
-      explodeCtx :: Context -> [Bind]
-      explodeCtx CtxEmpty = []
-      explodeCtx (Bind _ [] _ :> ctx) = explodeCtx ctx
-      explodeCtx (Bind r (x:xs) e :> ctx) =
-        Bind r [x] e : explodeCtx (Bind r xs e :> ctx)
-
-      joinPiBind :: [Bind] -> [Bind]
-      joinPiBind [] = []
-      joinPiBind [b] = [b]
-      joinPiBind (b@(Bind _ xs e1) : ctx0@(Bind _ ys e2 : ctx))
-        | show e1 == show e2
-          && all (not . isNull) xs
-          && all (not . isNull) ys = joinPiBind (Bind noRange (xs++ys) e1 : ctx)
-        | otherwise = b : joinPiBind ctx0
 
 
       joinLamBind :: Context -> Context
       joinLamBind CtxEmpty = CtxEmpty
-      joinLamBind ctx@(Bind _ _ _ :> CtxEmpty) = ctx
+      joinLamBind ctx@(Bind {} :> CtxEmpty) = ctx
       joinLamBind (Bind r1 xs e1 :> Bind r2 ys e2 :> ctx)
         | show e1 == show e2 = joinLamBind (Bind r1 (xs++ys) e1 :> ctx)
         | otherwise = Bind r1 xs e1 :> joinLamBind (Bind r2 ys e2 :> ctx)

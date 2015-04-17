@@ -107,15 +107,6 @@ instance Enum a => ConstraintSet CSet a b where
   addConstraints cts (CSet g) = CSet $ GI.insEdges labCts g
     where
       labCts = map (\ (x, y, k) -> (fromEnum x, fromEnum y, k)) cts
-    -- where
-    --   ctsEdges = map toEdge cts
-    --   -- addCts :: (Enum a, ConstraintSet c a b) => GI.Gr b EdgeLabel -> GI.Gr b EdgeLabel
-    --   addCts g = GI.insEdges ctsEdges (GI.insNodes (newNodes g) g)
-    --   getNodes = foldr (\(n1,n2,_) r -> n1:n2:r) [] ctsEdges
-    --   -- newNodes :: (Enum a, ConstraintSet c a b) => GI.Gr b EdgeLabel -> [(Int, b)]
-    --   newNodes g = map (\n -> (n, defaultLabel))
-    --                $ filter (not . flip GI.gelem g) getNodes
-    --   toEdge (x, y, k) = (fromEnum x, fromEnum y, k)
 
   upward (CSet gr) = map toEnum . upF [] . map fromEnum
     where upF vs [] = vs
@@ -148,19 +139,6 @@ instance Enum a => ConstraintSet CSet a b where
       (_, DistInfty) -> Nothing
     where
       bfmap = bellmanFord n1 g
-    -- case GR.getLPathNodes (fromEnum n2) dij of
-    --   []    -> Nothing
-    --   (_:_) -> Just (GR.getDistance (fromEnum n2) dij)
-    -- where
-    --   dij = GQ.dijkstra (GH.unit 0 (GI.LP [(fromEnum n1, 0)])) g
-
--- cycle... very very slow
--- findCycle :: (Enum a) => CSet a -> [a]
--- findCycle (CSet gr) = map toEnum $ visited [] (GI.nodes gr)
---   where visited _ [] = []
---         visited vs (x:xs) | x `elem` vs = [x]
---                           | otherwise   = visited (x:vs) ((xs \\ next) ++ next)
---                                           where next = GI.suc gr x
 
 -- Bellman-Ford
 type Pred = Int

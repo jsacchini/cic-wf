@@ -133,14 +133,11 @@ infer (A.Local rg x) = do
   case w of
     Subset i a t -> do
       alpha <- freshConstrainedStage rg a
-      -- addWfConstraint (mkAnnot alpha) infty
       addWfConstraint (hat (mkAnnot alpha)) a
       let t' = substSizeName i (mkAnnot alpha) t
       w' <- whnf t'
       return (CBound n (mkAnnot alpha), w')
     _            -> return (Bound n, w)
-  -- traceTCM 35 $ text "inferred Local" <+> prettyTCM n <+> prettyTCM w
-  -- return (Bound n, w)
 
 infer (A.Global rg ident) = do
   gl <- getGlobal ident
@@ -265,13 +262,10 @@ infer (A.Case c) = forbidAnnot $ inferCase c
 -- Well-founded sizes
 infer (A.Intro rg Nothing e) = do
   (t, u) <- infer e
-  -- stage <- freshStage rg
-  -- addWfConstraint (mkAnnot stage) infty
   -- TODO: check that it is an inductive type (not coinductive)
   (a, u') <- case u of
     Ind a True x ps -> return (a, Ind (hat a) {- (mkAnnot stage) -} False x ps)
     _ -> typeError rg $ GenericError "in applied to non-inductive type."
-  -- addWfConstraint (hat a) (mkAnnot stage)
   return (I.Intro a t, u')
 
 infer (A.CoIntro rg Nothing e) = do
@@ -289,9 +283,6 @@ infer (A.CoIntro rg Nothing e) = do
   return (I.CoIntro im (mkAnnot stage) t, u')
 
 infer _ = __IMPOSSIBLE__
-
--- infer (A.Number _ _) = __IMPOSSIBLE__ -- Number n is transformed into S (S... O)) during scope checking
-
 
 
 inferConstr stage rg x pars = do

@@ -314,11 +314,3 @@ instance HasRange Constructor where
 
 instance HasRange Branch where
   range = brRange
-
-
-
--- instance Pretty Expr where
---   prettyPrint _ = text "TODO: Pretty Expr"
-
--- instance Pretty Declaration where
---   prettyPrint _ = text "TODO: Pretty Declaration"
