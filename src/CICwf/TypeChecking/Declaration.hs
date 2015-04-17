@@ -185,9 +185,12 @@ inferDecl (A.Print rg nm) = do
                              prettyTCM nm, text ":", prettyTCM ctype ]
                       $$ text " = " PP.<> align (prettyTCM tm))
     Cofixpoint fix ctype ->
-      outputTopLevel (prettyKeyword "fixpoint"
+      outputTopLevel (ppKind (fixKind fix)
                       <+> prettyTCM fix
                       $$ text " : " PP.<> align (prettyTCM ctype))
+      where
+        ppKind I = prettyKeyword "fixpoint"
+        ppKind CoI = prettyKeyword "cofixpoint"
     Assumption ctype ->
       outputTopLevel $ hsep [ prettyKeyword "assume"
                             , prettyTCM nm, text ":", prettyTCM ctype ]
@@ -205,6 +208,7 @@ inferDecl (A.Cofixpoint fix) = do
   m <- solveWfConstraints (range fix)
   let fix1 = substStageVars m fix0
       ctype1 = substStageVars m ctype
+  traceTCM 20 (text "COFIX" <+> text (show fix1))
   addGlobal $
     mkNamed (A.fixName fix) Cofixpoint { cofixTerm = fix1
                                        , cofixType = ctype1 }

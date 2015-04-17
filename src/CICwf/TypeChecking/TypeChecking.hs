@@ -395,23 +395,24 @@ check t u = do
             wfDelCheckpoint
             return (I.Intro a1 t')
 
-          CoI -> do
-            -- TODO: push im <= stage to all constraints generated from t
-            im <- freshSizeName (mkName "i")
-            stage <- freshStage (range t)
-            b1 <- mkApp (Ind (mkAnnot stage) False x1 ps1) args1
-                  `subType` mkApp (Ind a2 False x2 ps2) args2
-            unless b1 $ typeError (range t) $ NotConvertible r u
-            traceTCM 20 $ text "Ammending constraints:"
-              <+> (getWfConstraints >>= prettyTCM)
-            wfAddDecl im (mkAnnot stage)
-            traceTCM 20 $ text "Fixed constraints:"
-              <+> (getWfConstraints >>= prettyTCM)
-            -- addWfConstraint (mkAnnot stage) infty
-            pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot im) a1
-            pushWfDecl im (mkAnnot stage) $ addWfConstraint a1 (mkAnnot im)
-            addWfIndependent im (listAnnot t')
-            return (I.CoIntro im a1 t')
+          -- CoI -> do
+          --   -- TODO: push im <= stage to all constraints generated from t
+          --   im <- freshSizeName (mkName "i")
+          --   stage <- freshStage (range t)
+          --   b1 <- mkApp (Ind (mkAnnot stage) False x1 ps1) args1
+          --         `subType` mkApp (Ind a2 False x2 ps2) args2
+          --   unless b1 $ typeError (range t) $ NotConvertible r u
+          --   traceTCM 20 $ text "Ammending constraints:"
+          --     <+> (getWfConstraints >>= prettyTCM)
+          --   wfAddDecl im (mkAnnot stage)
+          --   traceTCM 20 $ text "Fixed constraints:"
+          --     <+> (getWfConstraints >>= prettyTCM)
+          --   -- addWfConstraint (mkAnnot stage) infty
+          --   pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot im) a1
+          --   pushWfDecl im (mkAnnot stage) $ addWfConstraint a1 (mkAnnot im)
+          --   addWfIndependent im (listAnnot t')
+          --   return (I.CoIntro im a1 t')
+          _ -> typeError (range t) $ NotConvertible r u
 
       _ -> typeError (range t) $ NotConvertible r u
 
