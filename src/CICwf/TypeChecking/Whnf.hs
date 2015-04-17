@@ -287,7 +287,7 @@ instance NormalForm WValue where
 
 instance NormalForm Term where
   normalForm t = do
-    traceTCM 40 $ text "*******" $$ text "Normalform:" <+> prettyTCM t
+    traceTCM 40 $ text "*******" $$ text "in context" $$ (ask >>= prettyTCM) $$ text "Normalform:" <+> prettyTCM t
     t' <- normalForm' t
     traceTCM 40 $ text "*******" $$ text "Got:" <+> prettyTCM t'
     return t'
@@ -320,8 +320,9 @@ instance NormalForm Term where
 
 instance NormalForm FixTerm where
   normalForm (FixTerm a k nm stage c tp body) =
-    liftM3 (FixTerm a k nm stage) (normalForm c) (nF tp)
-    (pushBind (mkBind nm (mkPi c tp)) $ nF body)
+    liftM3 (FixTerm a k nm stage) (normalForm c)
+    (pushCtx c $ normalForm tp)
+    (pushCtx c $ pushBind (mkBind nm (mkPi c tp)) $ nF body)
 
 
 -- instance (NormalForm a, Tr.Traversable t) => NormalForm (t a) where
