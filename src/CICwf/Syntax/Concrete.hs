@@ -515,13 +515,13 @@ instance Pretty Expr where
       pp _ (SApp _ b x k s) = (if b then text "!" else empty)
                               <> prettyIdent k x <> sizeColor (langles (prettySize s))
 
-      pp _ (Intro _  s e) = prettyKeyword "in" <> ppSize s <+> pp 2 e
+      pp _ (Intro _  s e) = prettyKeyword "in" <> ppSize s <+> pp 1 e
         where
           ppSize (Just s) = sizeColor (brackets (prettySize s))
           ppSize Nothing = empty
 
       pp _ (CoIntro _ i e) = prettyKeyword "coin" <> sizeColor (ppSize i)
-                             <+> pp 2 e
+                             <+> pp 1 e
         where
           ppSize (Just (i, a)) = braces (text "^" <> pretty i <+> text "⊑" <+> pretty a)
           ppSize Nothing = empty
@@ -601,15 +601,14 @@ instance Pretty Bind where
 
 instance Pretty CaseExpr where
   pretty (CaseExpr _ kind arg x indices ret brs) =
-    sep [ maybePPrint ppRet ret
-        , vsep [ sep [ hsep [ ppCaseKeyword kind <> ppAs x
-                            , pretty arg <> ppSapp kind
-                              <> maybePPrint ppIn indices
-                            , prettyKeyword "of" ]
-                     ]
-               , sep (map (nest 1 . (bar <+>) . pretty) brs)
-               ]
-        ]
+    vcat [ maybePPrint ppRet ret
+         , hsep [ ppCaseKeyword kind <> ppAs x
+                , pretty arg <> ppSapp kind
+                  <> maybePPrint ppIn indices
+                , prettyKeyword "of" ]
+         , sep (map (indent 2 . (bar <+>) . pretty) brs)
+         , prettyKeyword "end"
+         ]
       where
         ppCaseKeyword CaseKind = prettyKeyword "case"
         ppCaseKeyword (CocaseKind _) = prettyKeyword "cocase"
@@ -653,7 +652,7 @@ instance Pretty FixExpr where
   pretty (FixExpr _ _ f spec args tp body) = -- pretty f <+> text "..."
     hsep [pretty f <> prettyStage spec,
           prettyCtx args <> prettySpec spec, colon, pretty tp, defEq]
-    $$ (pretty body)
+    $$ indent 2 (pretty body)
     where
       prettySpec (FixStruct _ x) = empty <+> braces (prettyKeyword "rec" <+> pretty x)
       prettySpec _ = empty
@@ -671,11 +670,11 @@ instance Pretty ConstrExpr where
 instance Pretty Declaration where
   pretty (Definition _ x (Just e1) e2) =
     sep [ sep [ hsep [prettyKeyword "define", pretty x]
-              , nest 2 $ hsep [colon, pretty e1] ]
-        , nest 2 $ hsep [ defEq, pretty e2]
+              , indent 2 $ hsep [colon, pretty e1] ]
+        , indent 2 $ hsep [ defEq, pretty e2]
         ]
   pretty (Definition _ x Nothing e2) =
-    hsep [prettyKeyword "define", pretty x, defEq] </> nest 2 (pretty e2)
+    hsep [prettyKeyword "define", pretty x, defEq] </> indent 2 (pretty e2)
   pretty (Assumption _ x e) =
     hsep [prettyKeyword "assume", pretty x, colon, pretty e]
   pretty (Inductive _ indDef) = pretty indDef
@@ -696,7 +695,7 @@ instance Pretty Declaration where
 
 instance Pretty InductiveDef where
   pretty (InductiveDef x kind pars _ e cs) =
-    sep $ ind : map (nest 2 . (bar <+>) . pretty) cs
+    sep $ ind : map (indent 2 . (bar <+>) . pretty) cs
       where ind = hsep [ppKind kind, pretty x,
                         pretty pars, colon,
                         pretty e, defEq]
