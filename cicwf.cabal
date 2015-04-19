@@ -1,6 +1,10 @@
 Name:                cicwf
 Version:             0.1
-Description:
+Synopsis:            Calculus of (Co)Inductive Constructions with well-founded
+                     sized types
+Description:         Prototype implementation of the Calculus of (Co)Inductive
+                     Constructions with well-founded sized types for termination
+                     and productivity.
 License:             GPL
 License-file:        LICENSE
 Author:              Jorge Luis Sacchini
@@ -9,6 +13,7 @@ Build-Type:          Simple
 Cabal-Version:       >=1.2
 
 extra-source-files:  src/undefined.h
+                     examples/*.cic
 
 Executable cicwf
   main-is:           Main.hs
@@ -27,13 +32,13 @@ Executable cicwf
                      presburger -any
   build-Tools:       alex -any,
                      happy -any
-  ghc-options:       -O2
-                     -threaded
+  ghc-options:       -threaded
   other-modules:
                      CICwf.Syntax.Concrete
                      CICwf.Syntax.Abstract
                      CICwf.Syntax.Alex
                      CICwf.Syntax.Common
+                     CICwf.Syntax.Colors
                      CICwf.Syntax.Internal
                      CICwf.Syntax.InternalToConcrete
                      CICwf.Syntax.AbstractToConcrete
@@ -42,12 +47,12 @@ Executable cicwf
                      CICwf.Syntax.Parser
                      CICwf.Syntax.Position
                      CICwf.Syntax.Scope
+                     CICwf.Syntax.ScopeMonad
                      CICwf.Syntax.Tokens
                      CICwf.Utils.Fresh
                      CICwf.Utils.Impossible
                      CICwf.Utils.Maybe
                      CICwf.Utils.Misc
-                     CICwf.Utils.MonadUndo
                      CICwf.Utils.Pretty
                      CICwf.Utils.Sized
                      CICwf.TypeChecking.Case
