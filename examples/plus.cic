@@ -7,14 +7,28 @@ fixpoint plus <i> (m: nat<i>) (n:nat) : nat :=
 print plus.
 
 
-data eqn : nat -> nat -> Type0 :=
-  refl : forall n:nat. eqn n n.
+data eqn (n : nat) : nat -> Type0 :=
+  refl : eqn n n.
 
 print eqn.
-check refl.
 
-assume eqn_SS : forall m n : nat. eqn m n -> eqn (S m) (S n).
-print eqn_SS.
+define rewrite := -- : forall (P:nat -> Type0) (m n : nat).    P m -> eqn m n -> P n :=
+  fun (P : nat -> Type0) (m n : nat) (H : P m) (Heq : eqn m n) =>
+    <P n1>
+    case Heq in eqn _ n1 of
+    | refl => H
+    end.
+
+-- print rewrite.
+
+
+define f_equal := fun (f:nat -> nat) (m n:nat) (H:eqn m n) =>
+   rewrite (fun (k : nat) => eqn (f m) (f k)) m n (refl (f m)) H.
+
+-- print f_equal.
+
+define eqn_S := f_equal (fun n : nat => in (S n)).
+print eqn_S.
 
 
 define plus_n_0 : forall n : nat. eqn (plus n 0) n :=
@@ -22,7 +36,7 @@ define plus_n_0 : forall n : nat. eqn (plus n 0) n :=
     <eqn (plus n1 0) n1>
     case n1 := n of
     | O => refl (in O)
-    | S n' => eqn_SS (plus n' 0) n' (plus_n_0 n')
+    | S n' => eqn_S (plus n' 0) n' (plus_n_0 n')
     end.
 
 print plus_n_0.

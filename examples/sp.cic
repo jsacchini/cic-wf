@@ -10,10 +10,8 @@ data SPi (X ++: Type) (A : Type) (B : Type) : Type :=
 codata SPc (A : Type) (B : Type) : Type :=
 | out : SPi (SPc A B) A B -> SPc A B.
 
--- check fun (A B C : Type) (f : A -> SPi C A B) => get C A B f.
 
-
-cofixpoint runc2 <i> (A : Type) (B:Type) (sp : SPc<i> A B) (xs: stream A) : stream <i> B :=
+cofixpoint runc <i> (A : Type) (B:Type) (sp : SPc<i> A B) (xs: stream A) : stream <i> B :=
   coin < !stream B > cocase sp of
   | out spi =>
   ( fix run <j> (sp0 : SPi<j> (SPc A B) A B) (zs: stream A) : !stream B :=
@@ -22,10 +20,10 @@ cofixpoint runc2 <i> (A : Type) (B:Type) (sp : SPc<i> A B) (xs: stream A) : stre
     | get f => < !stream B > cocase xs of
                | ccons y ys => run (f y) ys
                end
-    | put w sp' => ccons B w (runc2 A B sp' zs)
+    | put w sp' => ccons B w (runc A B sp' zs)
     end
     ) spi xs
   end.
 
 
-print runc2.
+print runc.

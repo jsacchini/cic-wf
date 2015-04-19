@@ -25,6 +25,12 @@ cofixpoint fib <i> : stream<i> nat :=
 
 print fib.
 
+
+data vec (A++: Type) : nat -> Type :=
+  | vnil : vec A O
+  | vcons : forall n:nat. A -> vec A n -> vec A (S n).
+
+
 define head := fun (x:stream nat) => <nat> cocase x of
                  | ccons x _ => x end.
 
@@ -38,8 +44,18 @@ fixpoint nth <i> (n: nat<i>) (xs : stream nat) : nat :=
   | S n' => nth n' (tail xs)
   end.
 
+fixpoint vtake <i> (n : nat<i>) (xs : stream nat) : vec nat n :=
+  <vec nat n1>
+  case n1 := n of
+  | O => vnil nat
+  | S n' => vcons nat n' (head xs) (vtake n' (tail xs))
+  end.
+
+
 eval head fib.
 
 eval tail fib.
 
-eval nth 4 fib.
+eval nth 8 fib.
+
+eval vtake 8 fib.

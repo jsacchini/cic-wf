@@ -1,2 +1,0 @@
-data I : Type0 :=
-  C : Type1 -> I.

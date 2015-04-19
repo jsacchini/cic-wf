@@ -1,9 +1,0 @@
--- data nat : Type := O : nat | S : nat -> nat.
-
-define id := fix f (x : nat*) : nat* :=
-             < nat > case x of
-                     | O => O
-                     | S x' => S (f x')
-                     end.
-
-check id.
