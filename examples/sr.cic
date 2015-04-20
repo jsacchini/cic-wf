@@ -1,0 +1,30 @@
+-- Counterexample to Subject Reduction in Coq
+-- Example taken from Copatterns (Abel et al., POPL 2013)
+
+codata U : Type := intro : U -> U.
+
+cofixpoint u <i> : U<i> := coin (intro u).
+
+print u.
+
+define out := fun x : U => <U> cocase x of intro y => y end.
+
+print out.
+
+eval u.
+
+data eqU (x : U) : U -> Type :=
+  refl : eqU x x.
+
+check in (refl u) : eqU u (out u).
+
+-- The check below fails because size inference infers the following annotations
+-- for the type:
+--
+--     eqU  u[∞] (coin {^ı ⊑ ∞} intro u[∞])
+--
+-- However, refl u does have the following type:
+--
+--     eqU  u[∞] (coin {^ı ⊑ ∞} intro u[ı])
+
+check in (refl u) : eqU u (coin (intro u)).
