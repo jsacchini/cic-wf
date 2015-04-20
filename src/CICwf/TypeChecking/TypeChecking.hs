@@ -263,9 +263,10 @@ infer (A.Case c) = forbidAnnot $ inferCase c
 infer (A.Intro rg Nothing e) = do
   (t, u) <- infer e
   -- TODO: check that it is an inductive type (not coinductive)
-  (a, u') <- case u of
-    Ind a True x ps -> return (a, Ind (hat a) {- (mkAnnot stage) -} False x ps)
-    _ -> typeError rg $ GenericError "in applied to non-inductive type."
+  traceTCM 1 $ text "infer intro" <+> prettyTCM t <+> text "of type" <+> prettyTCM u
+  (a, u') <- case unApp u of
+    (Ind a True x ps, args) -> return (a, mkApp (Ind (hat a) False x ps) args)
+    _ -> typeError rg $ GenericError ("in applied to non-inductive type ("++show u++")")
   return (I.Intro a t, u')
 
 infer (A.CoIntro rg Nothing e) = do
