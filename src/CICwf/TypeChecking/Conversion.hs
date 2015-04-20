@@ -201,8 +201,13 @@ instance Conversion Type where
     convTest Conv (caseIndices c1) (caseIndices c2) `mAnd`
     mAll (zipWith (convTest Conv) (caseBranches c1) (caseBranches c2))
   convTest Conv (Intro _ t1) (Intro _ t2) = convTest Conv t1 t2
-  convTest _ _ _ = return False
-
+  convTest Conv (CoIntro _ _ t1) (CoIntro _ _ t2) = convTest Conv t1 t2
+  convTest c t u = do
+     traceTCM 20 $ hsep [ text "conversion"
+                        , text (show c)
+                        , text "failed:"
+                        , prettyTCM t $$ text "and" $$ prettyTCM u ]
+     return False
 
 instance Conversion FixTerm where
   convTest _ (FixTerm k1 n1 f1 stage1 ctx1 tp1 body1) (FixTerm k2 n2 f2 stage2 ctx2 tp2 body2) =
