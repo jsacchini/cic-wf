@@ -59,7 +59,7 @@ data Expr
                              -- ^ Inductive types are applied to parameters
   -- Well-founded sizes
   | Intro Range (Maybe SizeExpr) Expr
-  | CoIntro Range (Maybe (SizeName, SizeExpr)) Expr
+  | CoIntro Range (Maybe SizeName) (Maybe SizeExpr) Expr
   | SizeApp Range Expr (Maybe SizeExpr)
 
 
@@ -265,7 +265,7 @@ instance HasRange Expr where
   range (Ind r _ _ _ _)  = r
   -- Well-founded sizes
   range (Intro r _ _)    = r
-  range (CoIntro r _ _)  = r
+  range (CoIntro r _ _ _)  = r
   range (SizeApp r _ _)  = r
 
 
@@ -296,7 +296,7 @@ instance SetRange Expr where
   setRange r (Ind _ b x y z)  = Ind r b x y z
   setRange r (SApp _ x t y)   = SApp r x t y
   setRange r (Intro _ x y)    = Intro r x y
-  setRange r (CoIntro _ x y)  = CoIntro r x y
+  setRange r (CoIntro _ x y z)  = CoIntro r x y z
   setRange r (SizeApp _ x y)  = SizeApp r x y
 
 

@@ -27,4 +27,8 @@ check in (refl u) : eqU u (out u).
 --
 --     eqU  u[∞] (coin {^ı ⊑ ∞} intro u[ı])
 
-check in (refl u) : eqU u (coin (intro u)).
+-- check in (refl u) : eqU u (coin {i} (intro u[i])).
+
+-- check in (refl (coin {j} (intro u[j]))) : eqU (coin {k} (intro u[k])) (coin {l} (intro u[l])).
+
+eval coin {j} (intro u[j]).

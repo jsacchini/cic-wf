@@ -69,7 +69,7 @@ data GExpr a
   | Number Range Int        -- ^ built-in numbers
   -- Well-founded sizes
   | Intro Range (Maybe SizeExpr) (GExpr a)
-  | CoIntro Range (Maybe (SizeName, SizeExpr)) (GExpr a)
+  | CoIntro Range (Maybe SizeName) (Maybe SizeExpr) (GExpr a)
   | SizeApp Range (GExpr a) (Maybe SizeExpr)
   | Subset Range SizeExpr SizeExpr (GExpr a) -- [ ^ı ⊑ s ] T
   deriving(Show, Functor, Fold.Foldable)
@@ -329,7 +329,7 @@ instance HasRange Expr where
   range (Number r _) = r
   -- Well-founded sizes
   range (Intro r _ _) = r
-  range (CoIntro r _ _) = r
+  range (CoIntro r _ _ _) = r
   range (SizeApp r _ _) = r
 
 instance HasRange SizeExpr where
@@ -366,7 +366,7 @@ instance SetRange Expr where
   setRange r (Fix f b) = Fix (setRange r f) b
   -- Well-founded sizes
   setRange r (Intro _ x y) = Intro r x y
-  setRange r (CoIntro _ x y) = CoIntro r x y
+  setRange r (CoIntro _ x y z) = CoIntro r x y z
   setRange r (SizeApp _ x y) = SizeApp r x y
 
 
@@ -520,11 +520,13 @@ instance Pretty Expr where
           ppSize (Just s) = sizeColor (brackets (prettySize s))
           ppSize Nothing = empty
 
-      pp _ (CoIntro _ i e) = prettyKeyword "coin" <> sizeColor (ppSize i)
-                             <+> pp 1 e
+      pp _ (CoIntro _ i a e) = prettyKeyword "coin" <> sizeColor (ppSize i a)
+                               <+> pp 1 e
         where
-          ppSize (Just (i, a)) = braces (text "^" <> pretty i <+> text "⊑" <+> pretty a)
-          ppSize Nothing = empty
+          ppSize (Just i) (Just a) =
+            braces (text "^" <> pretty i <+> text "⊑" <+> pretty a)
+          ppSize (Just i) Nothing = braces (text "^" <> pretty i)
+          ppSize Nothing Nothing = empty
 
       pp n (SizeApp _ e Nothing) = pp n e
       pp _ (SizeApp _ e (Just s)) = pp 2 e <> brackets (prettySize s)

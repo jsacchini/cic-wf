@@ -120,7 +120,13 @@ instance Scope C.Expr A.Expr where
       mkNat k = A.App r (A.Constr r (mkName "S") []) explicitArg (mkNat (k-1))
 
   scope (C.Intro r Nothing e) = fmap (A.Intro r Nothing) (scope e)
-  scope (C.CoIntro r Nothing e) = fmap (A.CoIntro r Nothing) (scope e)
+  scope (C.CoIntro r Nothing Nothing e) = fmap (A.CoIntro r Nothing Nothing) (scope e)
+  scope (C.CoIntro r (Just im) Nothing e) = fmap (A.CoIntro r (Just im) Nothing) (extendSizeScope [im] $ scope e)
+  scope (C.SizeApp r i@(C.Ident {}) (Just s)) = do
+    i' <- scope i
+    s' <- scope s
+    return $ A.SizeApp r i' (Just s')
+
 
 newtype AppScope = AppScope (C.Expr, [(ArgType, C.Expr)])
                    deriving(Show)

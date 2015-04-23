@@ -176,8 +176,8 @@ instance Reify Term C.Expr where
         | otherwise -> C.Intro noRange (reifyAnnot a) <$> C.App noRange (C.Ident noRange False c1 C.ConstructorIdent) explicitArg <$> reify arg
       _ -> C.Intro noRange (reifyAnnot a) <$> reify t
 
-  reify (CoIntro x a t) | Just a' <- reifyAnnot a = C.CoIntro noRange (Just (x, a')) <$> reify t
-                        | otherwise = C.CoIntro noRange Nothing <$> reify t
+  reify (CoIntro x a t) | Just a' <- reifyAnnot a = C.CoIntro noRange (Just x) (Just a') <$> reify t
+                        | otherwise = C.CoIntro noRange Nothing Nothing <$> reify t
 
   reify (Subset i s t) = do
     let Just i' = reifyAnnot (hat (mkAnnot i))

@@ -148,10 +148,16 @@ instance ToConcrete A.Expr C.Expr where
     s' <- concretize s
     return $ C.Intro noRange s' e'
 
-  concretize (A.CoIntro _ s e) = do
+  concretize (A.CoIntro _ s1 s2 e) = do
+    e' <- concretize e
+    s1' <- concretize s1
+    s2' <- concretize s2
+    return $ C.CoIntro noRange s1' s2' e'
+
+  concretize (A.SizeApp r e s) = do
     e' <- concretize e
     s' <- concretize s
-    return $ C.CoIntro noRange s' e'
+    return $ C.SizeApp noRange e' s'
 
 -- -- Well-founded sizes
 --   | Intro Range (Maybe SizeExpr) Expr

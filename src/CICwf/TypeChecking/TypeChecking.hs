@@ -263,14 +263,16 @@ infer (A.Case c) = forbidAnnot $ inferCase c
 infer (A.Intro rg Nothing e) = do
   (t, u) <- infer e
   -- TODO: check that it is an inductive type (not coinductive)
-  traceTCM 1 $ text "infer intro" <+> prettyTCM t <+> text "of type" <+> prettyTCM u
+  -- traceTCM 1 $ text "infer intro" <+> prettyTCM t <+> text "of type" <+> prettyTCM u
   (a, u') <- case unApp u of
     (Ind a True x ps, args) -> return (a, mkApp (Ind (hat a) False x ps) args)
     _ -> typeError rg $ GenericError ("in applied to non-inductive type ("++show u++")")
   return (I.Intro a t, u')
 
-infer (A.CoIntro rg Nothing e) = do
-  im <- freshSizeName (mkName "i")
+infer (A.CoIntro rg mim Nothing e) = do
+  oldSizeMap <- getSizeMap
+
+  im <- getSizeName mim -- freshSizeName (mkName "i")
   stage <- freshStage rg
   (t, u) <- pushWfDecl im (mkAnnot stage) $ infer e
   -- TODO: check that it is a coinductive type (not inductive)
@@ -281,9 +283,62 @@ infer (A.CoIntro rg Nothing e) = do
   pushWfDecl im (mkAnnot stage) $ addWfConstraint (mkAnnot stage) a
   traceTCM 30 $ text "Adding independent" <+> prettyTCM im <+> text "∉" <+> prettyTCM (listAnnot t) $$ text "FROM:" <+> prettyTCM t
   addWfIndependent im (listAnnot t)
-  return (I.CoIntro im (mkAnnot stage) t, u')
 
-infer _ = __IMPOSSIBLE__
+  setSizeMap oldSizeMap
+  return (I.CoIntro im (mkAnnot stage) t, u')
+  where
+    getSizeName :: (MonadTCM tcm) => Maybe A.SizeName -> tcm Name
+    getSizeName Nothing = freshSizeName (mkName "i")
+    getSizeName (Just im) = do
+      alpha <- freshSizeName im
+      addSize im (mkAnnot alpha)
+      return alpha
+
+infer (A.SizeApp rg (A.Local _ x) (Just s)) = do
+  (n, b) <- localGetByName x
+  traceTCM 35 $ vcat [ text "infer Bound" <+> prettyTCM n
+                     , text "in ctx   " <+> (ask >>= prettyTCM) ]
+  w <- whnf (I.lift (n + 1) 0 (unArg (bindType b)))
+  case w of
+    Subset i a t -> do
+      sta <- inferSizeApp s
+      addWfConstraint (hat sta) a
+      let t' = substSizeName i sta t
+      w' <- whnf t'
+      return (CBound n sta, w')
+    _            -> typeError rg $ GenericError "Size application does not have constrained type"
+  where
+    inferSizeApp :: (MonadTCM tcm) => A.SizeExpr -> tcm Annot
+    inferSizeApp A.SizeInfty = return infty
+    inferSizeApp (A.SizeExpr rg nm k) = do
+      Just annot <- getSize nm
+      return $ hatn k annot
+
+
+infer (A.SizeApp rg (A.Global _ ident) (Just s)) = do
+  gl <- getGlobal ident
+  let ConstrType [] tp = case gl of
+        Definition {} -> defType gl
+        Assumption {} -> assumeType gl
+        Cofixpoint {} -> cofixType gl
+        _             -> __IMPOSSIBLE__
+  case tp of
+    Subset i a t -> do
+      sta <- inferSizeApp s
+      addWfConstraint (hat sta) a
+      let t' = substSizeName i sta t
+      w' <- whnf t'
+      return (CVar ident sta, w')
+    _            -> typeError rg $ GenericError "Size application does not have constrained type"
+  where
+    inferSizeApp :: (MonadTCM tcm) => A.SizeExpr -> tcm Annot
+    inferSizeApp A.SizeInfty = return infty
+    inferSizeApp (A.SizeExpr rg nm k) = do
+      Just annot <- getSize nm
+      return $ hatn k annot
+
+
+infer e = traceTCM 0 (text ("TODO INFER:") <+> prettyTCM e) >>  __IMPOSSIBLE__
 
 
 inferConstr stage rg x pars = do
@@ -330,14 +385,33 @@ check e@(A.Constr rg _ _) i@(Ind a False x pars) = do
   g@(Inductive {}) <- getGlobal x
   case indKind g of
     I -> check (A.Intro rg Nothing e) i
-    CoI -> check (A.CoIntro rg Nothing e) i
+    CoI -> check (A.CoIntro rg Nothing Nothing e) i
 
-check (A.CoIntro rg Nothing e) (Ind a False x pars) = do
+check (A.CoIntro rg Nothing Nothing e) (Ind a False x pars) = do
   im <- freshSizeName (mkName "i")
   e' <- pushWfDecl im a $ check e (Ind (mkAnnot im) True x pars)
   traceTCM 30 $ text "Adding independent" <+> prettyTCM im <+> text "_|_" <+> prettyTCM (listAnnot e') $$ text "FROM:" <+> prettyTCM e' $$ text "RAW:" <+> text (show e')
   addWfIndependent im (listAnnot e')
   return (I.CoIntro im a e')
+
+check (A.CoIntro rg mim Nothing e) (Ind a False x pars) = do
+  oldSizeMap <- getSizeMap
+
+  im <- getSizeName mim -- freshSizeName (mkName "i")
+  e' <- pushWfDecl im a $ check e (Ind (mkAnnot im) True x pars)
+  traceTCM 30 $ text "Adding independent" <+> prettyTCM im <+> text "_|_" <+> prettyTCM (listAnnot e') $$ text "FROM:" <+> prettyTCM e' $$ text "RAW:" <+> text (show e')
+  addWfIndependent im (listAnnot e')
+  setSizeMap oldSizeMap
+  return (I.CoIntro im a e')
+
+  where
+    getSizeName :: (MonadTCM tcm) => Maybe A.SizeName -> tcm Name
+    getSizeName Nothing = freshSizeName (mkName "i")
+    getSizeName (Just im) = do
+      alpha <- freshSizeName im
+      addSize im (mkAnnot alpha)
+      return alpha
+
 
 check e i@(Ind a True _ _) | (A.Constr rg x pars, args) <- A.unApp e = do
   (c, t) <- inferConstr a rg x pars

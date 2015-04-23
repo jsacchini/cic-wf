@@ -175,7 +175,11 @@ Exp : 'forall' Binding '.' Exp   { C.Pi (fuseRange $1 $4) (ctxFromList $2) $4 }
     | Case                       { C.Case $1 }
     | Fix                        { C.Fix $1 False }
     | 'in' Exp                   { C.Intro (fuseRange $1 $2) Nothing $2 }
-    | 'coin' Exp                 { C.CoIntro (fuseRange $1 $2) Nothing $2 }
+    | 'coin' CoIntroStage Exp    { C.CoIntro (fuseRange $1 $3) $2 Nothing $3 }
+
+CoIntroStage :: { Maybe C.SizeName }
+CoIntroStage : '{' SizeName '}'       { Just $2 }
+             | {- empty -} { Nothing }
 
 BindingArrow :: { [C.Bind] }
 BindingArrow :
@@ -193,6 +197,7 @@ Exp1 :: { C.Expr }
 Exp1 : '(' Exp ')'   { $2 }
      | Sort          { $1 }
      | Name '<' Size '>'          { C.SApp (fuseRange $1 $4) False (rangedValue $1) C.UnknownIdent $3 }
+     | Name '[' Size ']'          { C.SizeApp (fuseRange $1 $4) (C.Ident (range $1) False (rangedValue $1) C.UnknownIdent) (Just $3) }
      | Name          { C.Ident (range $1) False (rangedValue $1) C.UnknownIdent }
      | '_'           { C.Meta (mkRangeLen $1 1) Nothing }
      -- | identStar     {% unlessM starAllowed (fail $ "position type not allowed" ++ show (fst $1)) >> return (C.Ind (mkRangeLen (fst $1) (length (snd $1))) Star (mkName (snd $1)) []) } -- TODO: Parameter list
@@ -210,6 +215,9 @@ Size : Name '+' number  { let (pos, num) = $3
                           in C.SizeExpr (fuseRange $1 pos) (rangedValue $1) num }
      | Name             { C.SizeExpr (range $1) (rangedValue $1) 0 }
      | '*'              { C.SizeStar (range $1) }
+
+SizeName :: { C.SizeName }
+SizeName : Name         { rangedValue $1 }
 
 Sort :: { C.Expr }
 Sort : 'prop'  { C.mkProp (mkRangeLen $1 4) }
@@ -242,7 +250,7 @@ Case : CaseRet 'case' CaseArg Indices 'of' Branches 'end'
                                           (flip fuseRange $7) $1
                            in C.CaseExpr rg CaseKind (fst $3) (snd $3) $4 $1 $6
 }
-     | CaseRet 'cocase' CaseArg Indices 'of' Branches 'end'
+     | CaseRet 'cocase' CaseArg Indices 'of' CoBranches 'end'
                          { let rg = maybe (fuseRange $2 $7)
                                           (flip fuseRange $7) $1
                            in C.CaseExpr rg (CocaseKind Nothing) (fst $3) (snd $3) $4 $1 $6
@@ -300,10 +308,32 @@ Branch2 : '|' BasicBranch Branch2    { $2 : $3 }
         | {- empty -}     { [] }
 
 BasicBranch :: { C.Branch }
-BasicBranch : Name Pattern '=>' Exp
-                             { let rg = fuseRange (range $1) $4
-                               in C.Branch rg Nothing (rangedValue $1) $2 $4 }
+BasicBranch : BranchSize Name Pattern '=>' Exp
+                             { let rg = fuseRange (range $1) $5
+                               in C.Branch rg (rangedValue $1)(rangedValue $2) $3 $5 }
 
+BranchSize :: { Ranged (Maybe C.SizeName) }
+BranchSize : '[' SizeName ']'   { mkRanged (fuseRange $1 $3) (Just $2) }
+           | {- empty -}        { mkRanged noRange Nothing }
+
+CoBranches :: { [C.Branch] }
+CoBranches : CoBasicBranch CoBranch2   { $1 : $2 }
+         | '|' CoBasicBranch CoBranch2 { $2 : $3 }
+         | {- empty -}           { [] }
+
+
+CoBranch1 :: { Maybe C.Branch }
+CoBranch1 : CoBasicBranch            { Just $1 }
+        | {- empty -}            { Nothing }
+
+CoBranch2 :: { [C.Branch] }
+CoBranch2 : '|' CoBasicBranch CoBranch2    { $2 : $3 }
+        | {- empty -}     { [] }
+
+CoBasicBranch :: { C.Branch }
+CoBasicBranch : Name Pattern '=>' Exp
+                   { let rg = fuseRange (range $1) $4
+                     in C.Branch rg Nothing (rangedValue $1) $2 $4 }
 
 Fix :: { C.FixExpr }
 Fix : 'fix' Fixpoint { setRange (fuseRange $1 $2) $2 }
