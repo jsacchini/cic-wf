@@ -134,8 +134,8 @@ inferDecl (A.Definition rg0 nm (Just ctp) expBody) = do
 
   -- Check that types are convertible
   let tp = case ctp' of
-        ConstrType i1 i2 t -> t
-        UnConstrType t     -> t
+        ConstrType i t -> t
+        UnConstrType t -> t
   unlessM (bodyTp `subConstrType` ctp')
     $ typeError (range expBody) $ NotConvertible tp bodyTp
 
@@ -148,8 +148,7 @@ inferDecl (A.Definition rg0 nm (Just ctp) expBody) = do
 
   where
     pushConstrType :: (MonadTCM tcm) => ConstrType -> tcm a -> tcm a
-    pushConstrType (ConstrType i1 i2 _) =
-      pushWfDecl i1 (mkAnnot i2) . pushWfDecl i2 infty
+    pushConstrType (ConstrType i _) = pushWfDecl i infty
     pushConstrType (UnConstrType _) = id
 
 

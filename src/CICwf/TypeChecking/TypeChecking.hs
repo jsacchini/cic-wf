@@ -158,12 +158,9 @@ infer (A.Global rg ident) = do
           w' <- whnf t'
           return (CVar ident (mkAnnot alpha), w')
         _            -> return (Var ident, tp)
-    ConstrType i1 i2 tp -> do
+    ConstrType i tp -> do
       alpha1 <- freshStage rg
-      alpha2 <- freshStage rg
-      addWfConstraint (hat (mkAnnot alpha1)) (mkAnnot alpha2)
-      let tp' = substSizeName i1 (mkAnnot alpha1)
-                (substSizeName i2 (mkAnnot alpha2) tp)
+      let tp' = substSizeName i (mkAnnot alpha1) tp
       w' <- whnf tp'
       return (CVar ident (mkAnnot alpha1), w')
 
@@ -566,27 +563,14 @@ inferConstrType (A.UnConstrExpr e) = do
   (tp, s) <- inferType e
   return (UnConstrType tp, s)
 
-inferConstrType (A.ConstrExpr rg s1 s2 e) | A.SizeExpr _ i1 n1 <- s1
-                                          , n1 == 1
-                                          , A.SizeExpr _ i2 n2 <- s2
-                                          , n2 == 0
-                                          , i1 /= i2 = do
-  a1 <- freshSizeName i1
-  addSize i1 (mkAnnot a1)
-  a2 <- freshSizeName i2
-  addSize i2 (mkAnnot a2)
-  let pushConstr = pushWfDecl a2 (mkAnnot a1) . pushWfDecl a1 infty
+inferConstrType (A.ConstrExpr rg i e) = do
+  a <- freshSizeName i
+  addSize i (mkAnnot a)
+  let pushConstr = pushWfDecl a infty
   (tp, s) <- pushConstr $ inferType e
-  let r = ConstrType a1 a2 tp
+  let r = ConstrType a tp
   -- traceTCM 1 $ hsep [ text "Inferred:"
   --                   , prettyTCM r
   --                   , text "from:"
   --                   , prettyTCM (A.ConstrExpr rg s1 s2 e) ]
   return (r, s)
-
-
-
-inferConstrType c@(A.ConstrExpr rg s1 s2 e) = do
-  traceTCM 0 $ text "Found constrained type:" <+> prettyTCM c
-  traceTCM 0 $ text ("or: " ++ show c)
-  typeError rg $ GenericError "Constrained types must be of the form [ i+1 <= j ] T"

@@ -100,7 +100,7 @@ instance Pretty SizeExpr where
 
 -- | Constrained types
 data GConstrExpr a
-  = ConstrExpr Range SizeExpr SizeExpr (GExpr a)
+  = ConstrExpr Range SizeName (GExpr a)
     -- ^ Constrained type of the form
     --   [ i+1 <=  j ] T
     --   where i j are size variables. Same as Subset
@@ -342,7 +342,7 @@ instance HasRange SizeExpr where
   range (SizeStar r) = r
 
 instance HasRange ConstrExpr where
-  range (ConstrExpr r _ _ _) = r
+  range (ConstrExpr r _ _) = r
   range (UnConstrExpr e) = range e
 
 
@@ -377,7 +377,7 @@ instance SetRange Expr where
 
 
 instance SetRange ConstrExpr where
-  setRange r (ConstrExpr _ x y z) = ConstrExpr r x y z
+  setRange r (ConstrExpr _ x y) = ConstrExpr r x y
   setRange r (UnConstrExpr e) = UnConstrExpr (setRange r e)
 
 
@@ -623,8 +623,8 @@ instance Pretty FixExpr where
 
 
 instance Pretty ConstrExpr where
-  pretty (ConstrExpr _ s1 s2 e) =
-    brackets (prettySize s1 <+> text "⊑" <+> prettySize s2) <+> pretty e
+  pretty (ConstrExpr _ s e) =
+    colorize sizeColor (brackets (pretty s)) <+> pretty e
   pretty (UnConstrExpr e) = pretty e
 
 

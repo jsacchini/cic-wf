@@ -1,13 +1,13 @@
 codata stream (A ++:Type) : Type :=
    ccons : A -> stream A -> stream A.
 
-define head : [i+1 <= j] stream<j> nat -> nat
+define head : [i] stream<i+1> nat -> nat
        := fun (x:stream nat) => <nat> cocase x of
                  | ccons x _ => x end.
 
 print head.
 
-define tail : [i+1 <= j] stream<j> nat -> stream<i> nat
+define tail : [i] stream<i+1> nat -> stream<i> nat
        := fun (x:stream nat) => <stream nat> cocase x of
                  | ccons _ y => y end.
 
@@ -58,8 +58,8 @@ fixpoint vtake <i> (n : nat<i>) (xs : stream nat) : vec nat n :=
 
 eval head fib.
 
--- eval tail fib.
+eval tail fib.
 
--- eval nth 8 fib.
+eval nth 8 fib.
 
--- eval vtake 8 fib.
+eval vtake 8 fib.

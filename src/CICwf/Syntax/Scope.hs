@@ -379,11 +379,9 @@ scopeApp (func, args) = do
 
 instance Scope C.ConstrExpr A.ConstrExpr where
   -- TODO: check that s1 and s2 are different size variable names
-  scope (C.ConstrExpr r s1 s2 e) = do
-    e' <- extendSizeScope (name [s1, s2]) $ scope e
-    s1' <- extendSizeScope (name [s1, s2]) $ scope s1
-    s2' <- extendSizeScope (name [s1, s2]) $ scope s2
-    return $ A.ConstrExpr r s1' s2' e'
+  scope (C.ConstrExpr r i e) = do
+    e' <- extendSizeScope [i] $ scope e
+    return $ A.ConstrExpr r i e'
   scope (C.UnConstrExpr e) = A.UnConstrExpr <$> scope e
 
 instance Scope C.Declaration A.Declaration where

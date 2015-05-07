@@ -236,11 +236,11 @@ MaybeConstrExp : ':' ConstrExp     { Just $2 }
 
 ConstrExp :: { C.ConstrExpr }
 ConstrExp : Constraint Exp  { case $1 of
-                                Just (s1, s2) -> C.ConstrExpr (fuseRange s1 $2) s1 s2 $2
+                                Just s  -> C.ConstrExpr (fuseRange s $2) (rangedValue s) $2
                                 Nothing -> C.UnConstrExpr $2 }
 
-Constraint :: { Maybe (C.SizeExpr, C.SizeExpr) }
-Constraint : '[' Size '<=' Size ']'   { Just ($2, $4) }
+Constraint :: { Maybe (Ranged C.SizeName) }
+Constraint : '[' SizeName ']'         { Just (mkRanged (fuseRange $1 $3) $2) }
            | {- empty -}              { Nothing }
 
 Rest :: { Maybe C.Expr }

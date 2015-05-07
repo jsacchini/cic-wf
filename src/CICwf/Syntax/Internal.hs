@@ -160,14 +160,14 @@ type IsStar = Bool
 
 -- | Constrained types
 data ConstrType
-  = ConstrType SizeName SizeName Type
+  = ConstrType SizeName Type
     -- ^ Top level type of the form
     --   [ i+1 <=  j ] T
   | UnConstrType Type
 
 constrType :: ConstrType -> Type
 constrType (UnConstrType t) = t
-constrType (ConstrType i j t) = Subset i (mkAnnot j) t
+constrType (ConstrType i t) = Subset i infty t
 
 
 mkPi :: Context -> Term -> Term
@@ -578,9 +578,9 @@ instance HasAnnot Term where
 
 
 instance HasAnnot ConstrType where
-  modifySize f (ConstrType s1 s2 t) =  ConstrType s1 s2 (modifySize f t)
+  modifySize f (ConstrType s t) =  ConstrType s (modifySize f t)
   modifySize f (UnConstrType t) = UnConstrType (modifySize f t)
-  fAnnot (ConstrType _ _ t) = fAnnot t
+  fAnnot (ConstrType _ t) = fAnnot t
   fAnnot (UnConstrType t) = fAnnot t
 
 

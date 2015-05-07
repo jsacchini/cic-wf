@@ -230,11 +230,10 @@ instance ToConcrete A.Branch C.Branch where
 
 
 instance ToConcrete A.ConstrExpr C.ConstrExpr where
-  concretize (A.ConstrExpr _ s1 s2 e) = do
-    e' <- extendScope (name [s1, s2]) $ concretize e
-    s1' <- concretize s1
-    s2' <- concretize s2
-    return $ C.ConstrExpr noRange s1' s2' e'
+  concretize (A.ConstrExpr _ i e) = do
+    e' <- extendSizeScope [i] $ concretize e
+    i' <- concretize i
+    return $ C.ConstrExpr noRange i' e'
 
 
 instance ToConcrete A.Declaration C.Declaration where

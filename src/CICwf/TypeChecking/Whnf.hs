@@ -140,7 +140,10 @@ wH k (CVar x a) = do
   case d of
     Cofixpoint {} -> wHnf k (Fix (cofixTerm d) False a)
     Assumption {} -> return (k, WCVar x a)
-    -- TODO: Definition
+    Definition {} ->
+      case defType d of
+        ConstrType i _ -> wHnf k (substSizeName i a (defTerm d))
+        UnConstrType _ -> __IMPOSSIBLE__
     _ -> __IMPOSSIBLE__
 wH k (SIdent x a) = return (k, WSIdent x a)
 wH k (Lam ctx t) = hReduce k (WLam ctx t)
@@ -276,23 +279,23 @@ instance NormalForm WValue where
 instance NormalForm Term where
   normalForm t = do
     traceTCM 40 $ text "*******" $$ text "in context" $$ (ask >>= prettyTCM) $$ text "Normalform:" <+> prettyTCM t
-    t' <- normalForm' t
+    t' <- normalForm' EnvEmpty t
     traceTCM 40 $ text "*******" $$ text "Got:" <+> prettyTCM t'
     return t'
     where
-      normalForm' :: (MonadTCM tcm) => Term -> tcm Term
-      normalForm' t = do
-        (s, w) <- wHnf EnvEmpty t
+      normalForm' :: (MonadTCM tcm) => Stack -> Term -> tcm Term
+      normalForm' s t = do
+        (s', w) <- wHnf s t
         w' <- normalForm w
-        nF s (wvalueToTerm w')
+        nF s' (wvalueToTerm w')
         where
           nF :: (MonadTCM tcm) => Stack -> Term -> tcm Term
           nF EnvEmpty t = return t
           nF (s :< FApp args) t = do
-            args' <- mapM normalForm' args
+            args' <- mapM (normalForm' s) args
             nF s (mkApp t args')
           nF (s :< FCase c) t = do
-            ret' <- normalForm' (caseTpRet c)
+            ret' <- pushBind (mkBind (caseAsName c) (Sort Prop)) $ pushCtx (patternCtx (caseIndices c)) $ normalForm' s (caseTpRet c)
             branches' <- mapM normalForm (caseBranches c)
             in' <- normalForm (caseIndices c)
             nF s (Case (c { caseArg      = t
@@ -302,6 +305,9 @@ instance NormalForm Term where
                           }))
           nF (s :< FIntro a) t = nF s (Intro a t)
           nF (s :< FCoIntro im a) t = nF s (CoIntro im a t)
+          fakeTypedPattern (PatternVar x)   = mkBind x (Sort Prop)
+          fakeTypedPattern (PatternDef x t) = mkBindDef x (Sort Prop) t
+          patternCtx = foldr ((:>) . fakeTypedPattern) CtxEmpty
 
 
 instance NormalForm FixTerm where

@@ -17,13 +17,15 @@ print head.
 --         ccons _ ys => ys
 --       end.
 
-define tail : [i+1 <= j] forall (A:Type). stream<j> A -> stream<i> A :=
+define tail : [i] forall (A:Type). stream<i+1> A -> stream<i> A :=
    λ (A:Type) (xs:stream A) =>
       <stream A> cocase xs of
         ccons _ ys => ys
       end.
 
 print tail.
+check tail.
+eval tail.
 
 cofixpoint zeroes <i> : stream<i> nat :=
      coin (ccons nat O (coin (ccons nat O (<stream nat>

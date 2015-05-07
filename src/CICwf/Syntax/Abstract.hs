@@ -67,7 +67,7 @@ type SizeName = Name
 
 -- | Constrained types
 data ConstrExpr
-  = ConstrExpr Range SizeExpr SizeExpr Expr
+  = ConstrExpr Range SizeName Expr
   | UnConstrExpr Expr
   deriving(Show)
 
@@ -278,7 +278,7 @@ instance HasRange Expr where
 
 
 instance HasRange ConstrExpr where
-  range (ConstrExpr r _ _ _) = r
+  range (ConstrExpr r _ _) = r
   range (UnConstrExpr e) = range e
 
 instance HasRange Bind where
@@ -311,7 +311,7 @@ instance SetRange Expr where
 
 
 instance SetRange ConstrExpr where
-  setRange r (ConstrExpr _ x y z) = ConstrExpr r x y z
+  setRange r (ConstrExpr _ x y) = ConstrExpr r x y
   setRange r (UnConstrExpr e) = UnConstrExpr (setRange r e)
 
 instance SetRange CaseExpr where

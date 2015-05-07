@@ -61,8 +61,8 @@ subSort _        _        = return False
 
 
 subConstrType :: (MonadTCM tcm) => Type -> ConstrType -> tcm Bool
-subConstrType t1 (ConstrType i1 i2 t2) =
-  pushWfDecl i1 (mkAnnot i2) $ pushWfDecl i2 infty $ subType t1 t2
+subConstrType t1 (ConstrType i t2) =
+  pushWfDecl i infty $ subType t1 t2
 subConstrType t1 (UnConstrType t2) = subType t1 t2
 
 data ConversionTest = Conv -- ^ Test for conversion
