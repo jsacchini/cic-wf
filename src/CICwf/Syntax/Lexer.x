@@ -42,6 +42,7 @@ tokens :-
   \\          { ident  }
   "->"        { symbol }
   "=>"        { symbol }
+  "<="        { symbol }
   ","         { symbol }
   ":="        { symbol }
   "."         { symbol }

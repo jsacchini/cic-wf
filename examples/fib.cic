@@ -1,6 +1,17 @@
 codata stream (A ++:Type) : Type :=
    ccons : A -> stream A -> stream A.
 
+define head : [i+1 <= j] stream<j> nat -> nat
+       := fun (x:stream nat) => <nat> cocase x of
+                 | ccons x _ => x end.
+
+print head.
+
+define tail : [i+1 <= j] stream<j> nat -> stream<i> nat
+       := fun (x:stream nat) => <stream nat> cocase x of
+                 | ccons _ y => y end.
+
+
 fixpoint plus <i> (m: nat<i>) (n:nat) : nat :=
      < nat > case m of
              | O => n
@@ -20,8 +31,7 @@ print sum.
 
 cofixpoint fib <i> : stream<i> nat :=
   coin (ccons nat 0 (coin (ccons nat 1
-      (sum fib (<stream nat> cocase fib of
-                 | ccons _ y => y end))))).
+      (sum fib (tail fib))))).
 
 print fib.
 
@@ -30,12 +40,6 @@ data vec (A++: Type) : nat -> Type :=
   | vnil : vec A O
   | vcons : forall n:nat. A -> vec A n -> vec A (S n).
 
-
-define head := fun (x:stream nat) => <nat> cocase x of
-                 | ccons x _ => x end.
-
-define tail := fun (x:stream nat) => <stream nat> cocase x of
-                 | ccons _ y => y end.
 
 fixpoint nth <i> (n: nat<i>) (xs : stream nat) : nat :=
   <nat>
@@ -54,8 +58,8 @@ fixpoint vtake <i> (n : nat<i>) (xs : stream nat) : vec nat n :=
 
 eval head fib.
 
-eval tail fib.
+-- eval tail fib.
 
-eval nth 8 fib.
+-- eval nth 8 fib.
 
-eval vtake 8 fib.
+-- eval vtake 8 fib.

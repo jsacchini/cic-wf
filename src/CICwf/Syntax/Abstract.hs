@@ -61,15 +61,15 @@ data Expr
   | Intro Range (Maybe SizeExpr) Expr
   | CoIntro Range (Maybe SizeName) (Maybe SizeExpr) Expr
   | SizeApp Range Expr (Maybe SizeExpr)
-
+  deriving(Show)
 
 type SizeName = Name
 
 -- | Constrained types
 data ConstrExpr
-  = ConstrExpr Range [Name] Expr -- ^ Top level type of the form
-                                 --   { i j k } -> T
-                                 --   where i j k are size variables
+  = ConstrExpr Range SizeExpr SizeExpr Expr
+  | UnConstrExpr Expr
+  deriving(Show)
 
 
 data SizeExpr
@@ -78,6 +78,10 @@ data SizeExpr
   | SizeEmpty
   | SizeInfty
   deriving(Show)
+
+instance HasNames SizeExpr where
+  name (SizeExpr _ x _) = [x]
+  name _                = []
 
 
 mkApp :: Expr -> [Expr] -> Expr
@@ -117,6 +121,7 @@ data Bind
   | LetBind Range Name Expr (Arg (Maybe Expr))
                      -- ^ @x := e2 : e1@
   | BindName Range ArgType Name
+  deriving(Show)
 
 type Context = Ctx Bind
 
@@ -138,6 +143,7 @@ mkBind r x i e = Bind r [x] (modifyImplicit (const i) (mkArg e))
 data SinglePattern
   = PatternVar Range Name
   | PatternDef Range Name Expr
+  deriving(Show)
 
 instance HasNames SinglePattern where
   name (PatternVar _ x)   = name x
@@ -166,7 +172,7 @@ data CaseExpr
                -- ^ Return type
              , caseBranches :: [Branch]
              }
-
+    deriving(Show)
 
 data IndicesSpec
   = IndicesSpec { indspecRange :: Range
@@ -175,6 +181,7 @@ data IndicesSpec
                 , indspecArgs  :: Pattern
                   -- ^ The subfamily specification
                 }
+  deriving(Show)
 
 instance HasRange IndicesSpec where
   range = range . indspecRange
@@ -187,7 +194,7 @@ data Branch
            , brArgsNames :: Pattern
            , brBody      :: Expr
            }
-
+    deriving(Show)
 
 
 instance HasNames IndicesSpec where
@@ -204,6 +211,7 @@ data FixExpr
             , fixType  :: Expr
             , fixBody  :: Expr
             }
+  deriving(Show)
 
 instance HasNames FixExpr where
   name = (:[]) . fixName
@@ -213,7 +221,7 @@ data FixSpec
   = FixStruct Range Int     -- Recursive argument
   | FixPosition Int         -- Position type (types annotated with stars)
   | FixStage Range Name Int -- Recursive size variable
-
+  deriving(Show)
 
 -- | Global declarations
 
@@ -225,7 +233,7 @@ data Declaration
   | Check Expr (Maybe Expr)
   | Print Range Name
   | Cofixpoint FixExpr
-
+  deriving(Show)
 
 -- | (Co-)inductive definitions
 data InductiveDef
@@ -236,7 +244,7 @@ data InductiveDef
                  , indType       :: Expr
                  , indConstr     :: [Constructor]
                  }
-
+  deriving(Show)
 
 -- | Contructors
 data Constructor
@@ -244,7 +252,7 @@ data Constructor
                 , constrName  :: Name
                 , constrType  :: Expr
                 }
-
+  deriving(Show)
 
 
 -- HasRange and SetRange instances
@@ -270,10 +278,12 @@ instance HasRange Expr where
 
 
 instance HasRange ConstrExpr where
-  range (ConstrExpr r _ _) = r
+  range (ConstrExpr r _ _ _) = r
+  range (UnConstrExpr e) = range e
 
 instance HasRange Bind where
   range (Bind r _ _) = r
+
 
 instance HasRange CaseExpr where
   range = caseRange
@@ -301,7 +311,8 @@ instance SetRange Expr where
 
 
 instance SetRange ConstrExpr where
-  setRange r (ConstrExpr _ x y) = ConstrExpr r x y
+  setRange r (ConstrExpr _ x y z) = ConstrExpr r x y z
+  setRange r (UnConstrExpr e) = UnConstrExpr (setRange r e)
 
 instance SetRange CaseExpr where
   setRange r c = c { caseRange = r }

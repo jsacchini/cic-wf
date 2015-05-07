@@ -140,6 +140,7 @@ wH k (CVar x a) = do
   case d of
     Cofixpoint {} -> wHnf k (Fix (cofixTerm d) False a)
     Assumption {} -> return (k, WCVar x a)
+    -- TODO: Definition
     _ -> __IMPOSSIBLE__
 wH k (SIdent x a) = return (k, WSIdent x a)
 wH k (Lam ctx t) = hReduce k (WLam ctx t)

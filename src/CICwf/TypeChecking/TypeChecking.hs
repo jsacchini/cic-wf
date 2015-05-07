@@ -141,21 +141,31 @@ infer (A.Local rg x) = do
 
 infer (A.Global rg ident) = do
   gl <- getGlobal ident
-  let ConstrType [] tp = case gl of
+  let ctp = case gl of
         Definition {} -> defType gl
         Assumption {} -> assumeType gl
         Cofixpoint {} -> cofixType gl
         _             -> __IMPOSSIBLE__
-  case tp of
-    Subset i a t -> do
-      alpha <- freshStage rg
-      traceTCM 10 $ (text "Global constrained type:" <+> prettyTCM tp
-                     $$ text "Adding constraint:" <+> prettyTCM (hat (mkAnnot alpha)) <+> text "<=" <+> prettyTCM a)
-      addWfConstraint (hat (mkAnnot alpha)) a
-      let t' = substSizeName i (mkAnnot alpha) t
-      w' <- whnf t'
-      return (CVar ident (mkAnnot alpha), w')
-    _            -> return (Var ident, tp)
+  case ctp of
+    UnConstrType tp ->
+      case tp of
+        Subset i a t -> do
+          alpha <- freshStage rg
+          traceTCM 10 $ (text "Global constrained type:" <+> prettyTCM tp
+                         $$ text "Adding constraint:" <+> prettyTCM (hat (mkAnnot alpha)) <+> text "<=" <+> prettyTCM a)
+          addWfConstraint (hat (mkAnnot alpha)) a
+          let t' = substSizeName i (mkAnnot alpha) t
+          w' <- whnf t'
+          return (CVar ident (mkAnnot alpha), w')
+        _            -> return (Var ident, tp)
+    ConstrType i1 i2 tp -> do
+      alpha1 <- freshStage rg
+      alpha2 <- freshStage rg
+      addWfConstraint (hat (mkAnnot alpha1)) (mkAnnot alpha2)
+      let tp' = substSizeName i1 (mkAnnot alpha1)
+                (substSizeName i2 (mkAnnot alpha2) tp)
+      w' <- whnf tp'
+      return (CVar ident (mkAnnot alpha1), w')
 
 
 infer (A.SApp rg _ _ _) = notImplemented rg "TODO: infer SApp"
@@ -317,7 +327,7 @@ infer (A.SizeApp rg (A.Local _ x) (Just s)) = do
 
 infer (A.SizeApp rg (A.Global _ ident) (Just s)) = do
   gl <- getGlobal ident
-  let ConstrType [] tp = case gl of
+  let UnConstrType tp = case gl of
         Definition {} -> defType gl
         Assumption {} -> assumeType gl
         Cofixpoint {} -> cofixType gl
@@ -549,3 +559,34 @@ inferNoTerm fix = do
                   , fixArgs = ctx
                   , fixType = tp
                   , fixBody = body }, recTp)
+
+
+inferConstrType :: (MonadTCM tcm) => A.ConstrExpr -> tcm (ConstrType, Sort)
+inferConstrType (A.UnConstrExpr e) = do
+  (tp, s) <- inferType e
+  return (UnConstrType tp, s)
+
+inferConstrType (A.ConstrExpr rg s1 s2 e) | A.SizeExpr _ i1 n1 <- s1
+                                          , n1 == 1
+                                          , A.SizeExpr _ i2 n2 <- s2
+                                          , n2 == 0
+                                          , i1 /= i2 = do
+  a1 <- freshSizeName i1
+  addSize i1 (mkAnnot a1)
+  a2 <- freshSizeName i2
+  addSize i2 (mkAnnot a2)
+  let pushConstr = pushWfDecl a2 (mkAnnot a1) . pushWfDecl a1 infty
+  (tp, s) <- pushConstr $ inferType e
+  let r = ConstrType a1 a2 tp
+  -- traceTCM 1 $ hsep [ text "Inferred:"
+  --                   , prettyTCM r
+  --                   , text "from:"
+  --                   , prettyTCM (A.ConstrExpr rg s1 s2 e) ]
+  return (r, s)
+
+
+
+inferConstrType c@(A.ConstrExpr rg s1 s2 e) = do
+  traceTCM 0 $ text "Found constrained type:" <+> prettyTCM c
+  traceTCM 0 $ text ("or: " ++ show c)
+  typeError rg $ GenericError "Constrained types must be of the form [ i+1 <= j ] T"

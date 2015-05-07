@@ -36,7 +36,7 @@ data Keyword = KwForall | KwFun | KwProp | KwType | KwLet | KwDefine | KwImport
              deriving(Eq,Show)
 
 data Symbol = SymbLeftParen | SymbRightParen | SymbLeftBrace | SymbRightBrace
-            | SymbArrow | SymbImplies
+            | SymbArrow | SymbImplies | SymbGets
             | SymbComma | SymbColonEq | SymbDot | SymbColon | SymbDoubleColon
             | SymbBar | SymbPos | SymbNeg | SymbSPos | SymbNeut
             | SymbStar
@@ -88,6 +88,7 @@ symbol p s =
           , ("}" , SymbRightBrace)
           , ("->", SymbArrow)
           , ("=>", SymbImplies)
+          , ("<=", SymbGets)
           , ("," , SymbComma)
           , (":=", SymbColonEq)
           , ("." , SymbDot)

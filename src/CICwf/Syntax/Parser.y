@@ -75,6 +75,7 @@ import CICwf.Utils.Sized
   ':'              { TokSymbol SymbColon $$ }
   ','              { TokSymbol SymbComma $$ }
   '=>'             { TokSymbol SymbImplies $$ }
+  '<='             { TokSymbol SymbGets $$ }
   '->'             { TokSymbol SymbArrow $$ }
   '|'              { TokSymbol SymbBar $$ }
   '+'              { TokSymbol SymbPos $$ }
@@ -157,8 +158,8 @@ BasicConstr :: { C.Constructor }
 BasicConstr : Name ':' Exp
               { C.Constructor (fuseRange $1 $3) (rangedValue $1) $3 }
 
-TLExp :: { C.ConstrExpr }
-TLExp : '{' PureNames '}' '->' Exp  { C.ConstrExpr (fuseRange $1 $3) (fst $2) $5 }
+-- TLExp :: { C.ConstrExpr }
+-- TLExp : '{' PureNames '}' '->' Exp  { C.ConstrExpr (fuseRange $1 $3) (fst $2) $5 }
 
 
 Exp :: { C.Expr }
@@ -234,11 +235,13 @@ MaybeConstrExp : ':' ConstrExp     { Just $2 }
                | {- empty -}       { Nothing }
 
 ConstrExp :: { C.ConstrExpr }
-ConstrExp : Constraint Exp  { C.ConstrExpr (snd $1) (fst $1) $2 }
+ConstrExp : Constraint Exp  { case $1 of
+                                Just (s1, s2) -> C.ConstrExpr (fuseRange s1 $2) s1 s2 $2
+                                Nothing -> C.UnConstrExpr $2 }
 
-Constraint :: { ([Name], Range) }
-Constraint : '{' Names '}' '=>'   { $2 }
-           | {- empty -}         { ([], noRange) }
+Constraint :: { Maybe (C.SizeExpr, C.SizeExpr) }
+Constraint : '[' Size '<=' Size ']'   { Just ($2, $4) }
+           | {- empty -}              { Nothing }
 
 Rest :: { Maybe C.Expr }
 Rest : '->' Exp          { Just $2 }

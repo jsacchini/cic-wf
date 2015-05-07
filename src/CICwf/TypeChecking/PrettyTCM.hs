@@ -203,6 +203,7 @@ instance PrettyTCM (Named Global) where prettyTCM b = reify b >>= return . PP.pr
 
 
 instance PrettyTCM A.Expr where prettyTCM b = AC.concretize b >>= return . PP.pretty
+instance PrettyTCM A.ConstrExpr where prettyTCM b = AC.concretize b >>= return . PP.pretty
 instance PrettyTCM A.Context where prettyTCM b = AC.concretize b >>= return . PP.pretty
 instance PrettyTCM A.IndicesSpec where prettyTCM b = AC.concretize b >>= return . PP.pretty
 instance PrettyTCM A.SinglePattern where prettyTCM b = AC.concretize b >>= return . PP.pretty

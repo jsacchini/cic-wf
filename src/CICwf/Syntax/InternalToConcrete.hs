@@ -191,8 +191,9 @@ instance Reify Term C.Expr where
 
 
 instance Reify ConstrType C.ConstrExpr where
-  reify (ConstrType xs t) =
-    C.ConstrExpr noRange xs <$> reify t
+  reify (ConstrType s1 s2 t) =
+    C.ConstrExpr noRange (C.SizeExpr noRange s1 1) (C.SizeExpr noRange s2 0) <$> reify t
+  reify (UnConstrType t) = C.UnConstrExpr <$> reify t
 
 instance Reify (CaseKind Annot) (CaseKind (Maybe C.SizeExpr)) where
   reify CaseKind = return CaseKind

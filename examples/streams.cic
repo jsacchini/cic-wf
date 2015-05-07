@@ -11,7 +11,13 @@ define head : forall (A:Type). stream A -> A :=
 
 print head.
 
-define tail : forall (A:Type). stream A -> stream A :=
+-- define tail : forall (A:Type). stream A -> stream A :=
+--    λ (A:Type) (xs:stream A) =>
+--       <stream A> cocase xs of
+--         ccons _ ys => ys
+--       end.
+
+define tail : [i+1 <= j] forall (A:Type). stream<j> A -> stream<i> A :=
    λ (A:Type) (xs:stream A) =>
       <stream A> cocase xs of
         ccons _ ys => ys
@@ -25,7 +31,12 @@ cofixpoint zeroes <i> : stream<i> nat :=
                               | ccons _ ys => ys
                               end)))).
 
-print zeroes.
+check zeroes.
+
+cofixpoint zz <i> : stream<i> nat :=
+     coin (ccons nat O (coin (ccons nat O (tail nat zz)))).
+
+eval zz.
 
 -- cofixpoint map (A B : Type) (f : A -> B) (xs : stream* A) : stream* B :=
 --   <stream B>

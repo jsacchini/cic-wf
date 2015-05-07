@@ -85,6 +85,9 @@ data SizeExpr
   | SizeStar Range
   deriving(Show)
 
+instance HasNames SizeExpr where
+  name (SizeExpr _ x _) = [x]
+  name (SizeStar _)     = []
 
 instance Pretty SizeExpr where
   pretty (SizeExpr _ x n) =
@@ -97,9 +100,11 @@ instance Pretty SizeExpr where
 
 -- | Constrained types
 data GConstrExpr a
-  = ConstrExpr Range [Name] (GExpr a) -- ^ Constrained type of the form
-                                 --   { i j k } -> T
-                                 --   where i j k are size variables
+  = ConstrExpr Range SizeExpr SizeExpr (GExpr a)
+    -- ^ Constrained type of the form
+    --   [ i+1 <=  j ] T
+    --   where i j are size variables. Same as Subset
+  | UnConstrExpr (GExpr a)
   deriving(Show, Functor, Fold.Foldable)
 
 type ConstrExpr = GConstrExpr SizeExpr
@@ -337,7 +342,8 @@ instance HasRange SizeExpr where
   range (SizeStar r) = r
 
 instance HasRange ConstrExpr where
-  range (ConstrExpr r _ _) = r
+  range (ConstrExpr r _ _ _) = r
+  range (UnConstrExpr e) = range e
 
 
 instance HasRange Bind where
@@ -371,7 +377,8 @@ instance SetRange Expr where
 
 
 instance SetRange ConstrExpr where
-  setRange r (ConstrExpr _ x y) = ConstrExpr r x y
+  setRange r (ConstrExpr _ x y z) = ConstrExpr r x y z
+  setRange r (UnConstrExpr e) = UnConstrExpr (setRange r e)
 
 
 instance SetRange CaseExpr where
@@ -616,10 +623,9 @@ instance Pretty FixExpr where
 
 
 instance Pretty ConstrExpr where
-  pretty (ConstrExpr _ xs e) = ppConstraint <+> pretty e
-    where
-      ppConstraint | null xs = empty
-                   | otherwise = braces (hsep (map prettySizeVar xs)) <+> implies
+  pretty (ConstrExpr _ s1 s2 e) =
+    brackets (prettySize s1 <+> text "⊑" <+> prettySize s2) <+> pretty e
+  pretty (UnConstrExpr e) = pretty e
 
 
 instance Pretty Declaration where

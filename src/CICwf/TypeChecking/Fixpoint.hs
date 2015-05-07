@@ -122,7 +122,7 @@ inferFix fixexpr@(A.FixExpr rg ki nmf
   -- Find constrained type
   let eraseNotAlpha _ s = s
 
-      ctype = ConstrType [stage] (modifySize (eraseNotAlpha (Stage Infty)) (mkPi argCtx tp'))
+      ctype = UnConstrType (mkPi argCtx tp') -- ConstrType [stage] (modifySize (eraseNotAlpha (Stage Infty)) (mkPi argCtx tp'))
 
 
   -- Restore star stages
@@ -133,4 +133,4 @@ inferFix fixexpr@(A.FixExpr rg ki nmf
            (modifySize (eraseNotAlpha Empty) argCtx) (modifySize (eraseNotAlpha Empty) tp')
            ({- eraseSize -} body')
          , resType -- mkPi argCtx tp'
-         , ConstrType [] resType )-- ctype )
+         , UnConstrType resType )-- ctype )

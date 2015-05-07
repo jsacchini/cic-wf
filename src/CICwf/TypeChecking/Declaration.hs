@@ -62,15 +62,103 @@ outputTopLevel d = printTCMLn (d PP.<> line)
 
 
 inferDecl :: (MonadTCM tcm) =>  A.Declaration -> tcm ()
-inferDecl (A.Definition rg0 nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
+-- inferDecl (A.Definition rg0 nm (Just (A.ConstrExpr rg stas expType)) expBody) = do
+
+--   -- Reset constraint-related state
+--   resetConstraints
+
+--   -- Infer type using new size map
+--   sizeMap <- mkFreshStages rg stas
+--   traceTCM 40 $ text "new size map" <+> prettyTCM sizeMap
+
+--   (tp, s) <- allowSizes $ inferType expType
+
+--   -- Infer body forbidding annotations
+--   (body, bodyTp) <- forbidAnnot $ infer expBody
+
+--   -- Check that types are convertible
+--   unlessM (bodyTp `subType` tp)
+--     $ typeError (range expBody) $ NotConvertible tp bodyTp
+
+--   -- Check that constrained type is satisfiable
+--   -- Step 1: check that there is no negative cycle for each size variable
+--   forM_ sizeMap checkConstraint
+--   -- Step 2: check that there is no path between any pair of size variables
+--   forM_ (pairs sizeMap) checkIndependence
+
+--   m <- solveWfConstraints rg0
+--   let body0 = substStageVars m body -- toInfty body
+--       tp0   = substStageVars m tp -- toInftyBut stas tp
+--   traceTCM 30 $ text "GLOBAL DEF" <+> text (show body0)
+--   mapM_ addGlobal [mkNamed nm Definition { defType = ConstrType stas tp0
+--                                          , defTerm = body0 }]
+
+--     where
+--       pairs :: [a] -> [(a,a)]
+--       pairs [] = []
+--       pairs (x:xs) = map (x,) xs ++ pairs xs
+
+--       checkConstraint :: (MonadTCM tcm) => (Name, StageVar) -> tcm ()
+--       checkConstraint (nmsize, s) = do
+--         constraints <- allConstraints
+--         case findNegCycle (VarNode s) (unSC constraints) of
+--           [] -> return ()
+--           _  -> notImplemented rg ("Size constraint not satisfied "
+--                                    ++ show nmsize)
+
+--       checkIndependence :: (MonadTCM tcm) =>
+--                            ((Name, StageVar), (Name, StageVar)) -> tcm ()
+--       checkIndependence ((nm1, s1), (nm2, s2)) =
+--         checkPath nm1 s1 s2 >> checkPath nm2 s2 s1
+
+--       checkPath :: (MonadTCM tcm) =>
+--                    Name -> StageVar -> StageVar -> tcm ()
+--       checkPath nmsize s1 s2 = do
+--         constraints <- allConstraints
+--         -- Check that there is no path from s1 to s2
+--         let ups = upward (unSC constraints) [VarNode s1]
+--         when (VarNode s2 `elem` ups)
+--           $ notImplemented rg ("Size constraint not satisfied "
+--                                ++ show nmsize)
+
+inferDecl (A.Definition rg0 nm (Just ctp) expBody) = do
 
   -- Reset constraint-related state
   resetConstraints
 
   -- Infer type using new size map
-  sizeMap <- mkFreshStages rg stas
-  traceTCM 40 $ text "new size map" <+> prettyTCM sizeMap
+  (ctp', s) <- allowSizes $ inferConstrType ctp
 
+  -- Infer body forbidding annotations
+  (body, bodyTp) <- pushConstrType ctp' $ forbidAnnot $ infer expBody
+
+  -- Check that types are convertible
+  let tp = case ctp' of
+        ConstrType i1 i2 t -> t
+        UnConstrType t     -> t
+  unlessM (bodyTp `subConstrType` ctp')
+    $ typeError (range expBody) $ NotConvertible tp bodyTp
+
+  m <- solveWfConstraints rg0
+  let body0 = substStageVars m body -- toInfty body
+      ctp0  = substStageVars m ctp' -- toInftyBut stas tp
+  traceTCM 30 $ text "GLOBAL DEF" <+> text (show body0)
+  mapM_ addGlobal [mkNamed nm Definition { defType = ctp0
+                                         , defTerm = body0 }]
+
+  where
+    pushConstrType :: (MonadTCM tcm) => ConstrType -> tcm a -> tcm a
+    pushConstrType (ConstrType i1 i2 _) =
+      pushWfDecl i1 (mkAnnot i2) . pushWfDecl i2 infty
+    pushConstrType (UnConstrType _) = id
+
+
+inferDecl (A.Definition rg0 nm (Just (A.UnConstrExpr expType)) expBody) = do
+
+  -- Reset constraint-related state
+  resetConstraints
+
+  -- Infer type using new size map
   (tp, s) <- allowSizes $ inferType expType
 
   -- Infer body forbidding annotations
@@ -80,46 +168,13 @@ inferDecl (A.Definition rg0 nm (Just (A.ConstrExpr rg stas expType)) expBody) = 
   unlessM (bodyTp `subType` tp)
     $ typeError (range expBody) $ NotConvertible tp bodyTp
 
-  -- Check that constrained type is satisfiable
-  -- Step 1: check that there is no negative cycle for each size variable
-  forM_ sizeMap checkConstraint
-  -- Step 2: check that there is no path between any pair of size variables
-  forM_ (pairs sizeMap) checkIndependence
-
   m <- solveWfConstraints rg0
   let body0 = substStageVars m body -- toInfty body
       tp0   = substStageVars m tp -- toInftyBut stas tp
   traceTCM 30 $ text "GLOBAL DEF" <+> text (show body0)
-  mapM_ addGlobal [mkNamed nm Definition { defType = ConstrType stas tp0
+  mapM_ addGlobal [mkNamed nm Definition { defType = UnConstrType tp0
                                          , defTerm = body0 }]
 
-    where
-      pairs :: [a] -> [(a,a)]
-      pairs [] = []
-      pairs (x:xs) = map (x,) xs ++ pairs xs
-
-      checkConstraint :: (MonadTCM tcm) => (Name, StageVar) -> tcm ()
-      checkConstraint (nmsize, s) = do
-        constraints <- allConstraints
-        case findNegCycle (VarNode s) (unSC constraints) of
-          [] -> return ()
-          _  -> notImplemented rg ("Size constraint not satisfied "
-                                   ++ show nmsize)
-
-      checkIndependence :: (MonadTCM tcm) =>
-                           ((Name, StageVar), (Name, StageVar)) -> tcm ()
-      checkIndependence ((nm1, s1), (nm2, s2)) =
-        checkPath nm1 s1 s2 >> checkPath nm2 s2 s1
-
-      checkPath :: (MonadTCM tcm) =>
-                   Name -> StageVar -> StageVar -> tcm ()
-      checkPath nmsize s1 s2 = do
-        constraints <- allConstraints
-        -- Check that there is no path from s1 to s2
-        let ups = upward (unSC constraints) [VarNode s1]
-        when (VarNode s2 `elem` ups)
-          $ notImplemented rg ("Size constraint not satisfied "
-                               ++ show nmsize)
 
 inferDecl (A.Definition rg x Nothing e) = do
   resetConstraints
@@ -127,16 +182,14 @@ inferDecl (A.Definition rg x Nothing e) = do
   m <- solveWfConstraints rg
   let tm0 = substStageVars m tm
       tp0 = substStageVars m tp
-  mapM_ addGlobal [mkNamed x Definition { defType = ConstrType [] tp0
+  mapM_ addGlobal [mkNamed x Definition { defType = UnConstrType tp0
                                         , defTerm = tm0 }]
 
-inferDecl (A.Assumption rg nm (A.ConstrExpr _ stas expr)) = do
+inferDecl (A.Assumption rg nm (A.UnConstrExpr expr)) = do
   resetConstraints
-  _ {- sizeMap -} <- mkFreshStages rg stas
   (tm, tp) <- allowSizes $ inferType expr
-  let tm0 = toInftyBut stas tm
   clearSizeMap
-  mapM_ addGlobal [mkNamed nm (Assumption (ConstrType stas tm0))]
+  mapM_ addGlobal [mkNamed nm (Assumption (UnConstrType tm))]
 
 inferDecl (A.Inductive _ indDef) = do
   resetConstraints
