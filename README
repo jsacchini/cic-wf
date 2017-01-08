@@ -1,42 +1,4 @@
-The goal of this project is to build a prototype for the typing system of my
-thesis. 
+# cicminus
 
-Goal for version 1. A typing system for CC with the added rule (Type, Type).
-This system is inconsistent, but it simulates the hierarchy of universes Type_i.
-
-Goal for version 2. Add inductive families and global definitions, with case and
-fixpoint for elimination. Fixpoints are unrestricted.
-
-Goal for version 3. Add sized inductive families.
-
---------------
-
-For combining monads, one interesting paper is:
-
-  Mark P. Jones. Functional Programming with Overloading and Higher-Order
-  Polymorphism
-
-Also, this paper introduces a different way of combining monads:
-
-  Mauro Jaskelioff. Monatron: An Extensible Monad Transformer Library
-
---------------
-
-Possible grammar:
-
-expr ::= sexpr rest
-
-rest ::= "->" expr
-       | expr*
-
-sexpr ::= "forall" decl "," expr
-        | "fun" decl "=>" expr
-	| sort
-	| id
-	| "(" expr ")"
-
-id ::= ident        --> if free then Free ident else Bound x
-     | constr       --> do we check that constructors are fully applied at the 
-                        parser level or at the typing level? do we check that
-			constructors are fully applied at all? probably not
-			necessary
+Playground implementation of the Calculus of (Co-)Inductive Constructions with
+type-based termination/productivity.
