@@ -2,3 +2,13 @@
 
 Playground implementation of the Calculus of (Co-)Inductive Constructions with
 well-founded sized types for termination/productivity checking.
+
+# Installation instructions:
+Run `stack init; stack build` in this directory.
+
+Duo to incompatibility of old versions of GHC and new versions of macOS, this
+will not work with macOS >= 10.11.
+I recommend using a linux system.
+
+# Usage instructions:
+Run `stack run cicwf file.cic` to execute the CIC^_ program in `file.cic`.
